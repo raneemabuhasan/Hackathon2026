@@ -1,0 +1,6 @@
+# Personal Xcode state and local build output
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/

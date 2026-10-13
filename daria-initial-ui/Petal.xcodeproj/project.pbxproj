@@ -3,16 +3,34 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
+
+/* Begin PBXBuildFile section */
+		CC0000000000000000000001 /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* CompanionView.swift */; };
+		CC0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ContentView.swift */; };
+		CC0000000000000000000003 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* CycleStore.swift */; };
+		CC0000000000000000000004 /* CycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000004 /* CycleView.swift */; };
+		CC0000000000000000000005 /* LogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000005 /* LogSheet.swift */; };
+		CC0000000000000000000006 /* NourishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000006 /* NourishView.swift */; };
+		CC0000000000000000000007 /* PetalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* PetalApp.swift */; };
+		CC0000000000000000000008 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
+		CC0000000000000000000009 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* TodayView.swift */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		AA0000000000000000000001 /* Petal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Petal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000003 /* CycleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleStore.swift; sourceTree = "<group>"; };
+		BB0000000000000000000004 /* CycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000005 /* LogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSheet.swift; sourceTree = "<group>"; };
+		BB0000000000000000000006 /* NourishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NourishView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000007 /* PetalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetalApp.swift; sourceTree = "<group>"; };
+		BB0000000000000000000008 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		BB0000000000000000000009 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000002 /* Petal */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Petal; sourceTree = "<group>"; };
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0000000000000000000003 /* Frameworks */ = {
@@ -25,6 +43,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AA0000000000000000000002 /* Petal */ = {
+			isa = PBXGroup;
+			children = (
+				BB0000000000000000000001 /* CompanionView.swift */,
+				BB0000000000000000000002 /* ContentView.swift */,
+				BB0000000000000000000003 /* CycleStore.swift */,
+				BB0000000000000000000004 /* CycleView.swift */,
+				BB0000000000000000000005 /* LogSheet.swift */,
+				BB0000000000000000000006 /* NourishView.swift */,
+				BB0000000000000000000007 /* PetalApp.swift */,
+				BB0000000000000000000008 /* Theme.swift */,
+				BB0000000000000000000009 /* TodayView.swift */,
+			);
+			path = Petal;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000004 = {
 			isa = PBXGroup;
 			children = (
@@ -56,9 +90,6 @@
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-				AA0000000000000000000002 /* Petal */,
-			);
 			name = Petal;
 			packageProductDependencies = (
 			);
@@ -89,8 +120,7 @@
 				Base,
 			);
 			mainGroup = AA0000000000000000000004;
-			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
+			compatibilityVersion = "Xcode 14.0";
 			productRefGroup = AA0000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -115,6 +145,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC0000000000000000000001 /* CompanionView.swift in Sources */,
+				CC0000000000000000000002 /* ContentView.swift in Sources */,
+				CC0000000000000000000003 /* CycleStore.swift in Sources */,
+				CC0000000000000000000004 /* CycleView.swift in Sources */,
+				CC0000000000000000000005 /* LogSheet.swift in Sources */,
+				CC0000000000000000000006 /* NourishView.swift in Sources */,
+				CC0000000000000000000007 /* PetalApp.swift in Sources */,
+				CC0000000000000000000008 /* Theme.swift in Sources */,
+				CC0000000000000000000009 /* TodayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
