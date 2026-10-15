@@ -14,7 +14,7 @@ Xcode 15.4 is the compatibility baseline. The deployment target is iOS 17.0.
 Newer Xcode versions should be checked by teammates; compatibility with every version is not guaranteed.
 There is no separate test project. Simulator runs do not require an Apple development team; physical-device runs require signing setup.
 
-Swift packages (Firebase, GoogleSignIn, Lottie) download automatically the first time Xcode opens the project. Their versions are pinned so they still build on Xcode 15.4: Firebase 11.x, GoogleSignIn 9.0.x, Lottie 4.5.x and swift-protobuf 1.33.1. Newer releases of these need Xcode 16+, so don't upgrade them without checking with the team.
+Swift packages (Firebase, GoogleSignIn, Lottie) download automatically the first time Xcode opens the project. Their versions are pinned so they still build on Xcode 15.4: Firebase exactly 11.13.0, GoogleSignIn 9.0.x, Lottie 4.5.x and swift-protobuf exactly 1.33.1. Newer releases need Xcode 16+ (Firebase 11.14+ uses Swift 6 syntax even though its package says 5.9), so don't upgrade them without checking with the team.
 
 The backend is Firebase project `hackathon-2026-8f327`. Firestore security rules live in `firestore.rules` at the repo root; deploy changes with `firebase deploy --only firestore`.
 

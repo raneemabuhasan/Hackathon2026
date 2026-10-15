@@ -12,10 +12,13 @@ final class Assistant {
     /// Most current Gemini models aren't served from us-central1 (the SDK's default location).
     static let location = "global"
     /// Gemini 3.x models require "thought signatures" to be sent back with tool results, which the
-    /// Firebase 11.x SDK (pinned for Xcode 15.4) doesn't support, so every tool call would fail with a 400.
+    /// Firebase 11.13 SDK (pinned for Xcode 15.4) doesn't support, so every tool call would fail with a 400.
     /// Gemini 2.5 Flash doesn't require them. Once the team is on Xcode 16.3+, upgrade Firebase to 12.x
     /// and switch this to a current model (e.g. gemini-3.8-flash).
     static let modelName = "gemini-2.5-flash"
+    /// For recipes and the daily plan: no "thinking" step by default, so ~5 s / ~1.5 s instead of 20-60 s.
+    /// (Firebase 11.13, pinned for Xcode 15.4, can't turn thinking off on the full Flash model.)
+    static let fastModelName = "gemini-2.5-flash-lite"
 
     private weak var store: CycleStore?
     private let chat: Chat
@@ -276,10 +279,8 @@ final class Assistant {
     static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, recentSymptoms: [String] = [],
                           notLike previous: [String] = []) async throws -> [Meal] {
         let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
-            modelName: modelName,
-            // Thinking off: same quality for recipes, ~8 s instead of 20-60 s.
-            generationConfig: GenerationConfig(temperature: 0.9, responseMIMEType: "application/json", responseSchema: mealSchema,
-                                               thinkingConfig: ThinkingConfig(thinkingBudget: 0))
+            modelName: fastModelName,
+            generationConfig: GenerationConfig(temperature: 0.9, responseMIMEType: "application/json", responseSchema: mealSchema)
         )
         let prompt = """
         Suggest 4 different recipes for someone in the \(phase.name.lowercased()) phase of their menstrual cycle. \
@@ -331,9 +332,8 @@ final class Assistant {
     /// Three small suggestions for today, based on what the user logged and where they are in their cycle.
     static func dailyPlan(context: String) async throws -> [PlanItem] {
         let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
-            modelName: modelName,
-            generationConfig: GenerationConfig(temperature: 0.7, responseMIMEType: "application/json", responseSchema: planSchema,
-                                               thinkingConfig: ThinkingConfig(thinkingBudget: 0))
+            modelName: fastModelName,
+            generationConfig: GenerationConfig(temperature: 0.7, responseMIMEType: "application/json", responseSchema: planSchema)
         )
         let prompt = """
         You write the "Your plan for today" card in Petal, a period-tracking app. Give exactly 3 gentle, optional \
