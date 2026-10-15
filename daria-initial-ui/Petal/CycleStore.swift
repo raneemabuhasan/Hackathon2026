@@ -73,7 +73,13 @@ struct Meal: Identifiable {
     let why: String
     let diets: [String]
     let allergens: [String]
+    /// Plain item names for the grocery list.
     let items: [String]
+    // Recipe details; only AI-generated meals have them.
+    var minutes: Int? = nil
+    var servings: Int? = nil
+    var ingredients: [String] = []
+    var steps: [String] = []
 }
 
 struct Reminder: Identifiable, Codable {
@@ -460,6 +466,73 @@ final class CycleStore {
             diets.allSatisfy(meal.diets.contains) && !meal.allergens.contains(where: avoid.contains)
         }
     }
+
+    // MARK: AI meal ideas
+
+    /// Generated recipes for this session, keyed by phase + preferences (see mealKey).
+    private(set) var aiMeals: [String: [Meal]] = [:]
+    private(set) var mealsLoading: Set<String> = []
+    private(set) var mealsFailed: Set<String> = []
+
+    func mealKey(_ phase: Phase) -> String {
+        "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
+    }
+
+    /// What Nourish shows: AI recipes once loaded, otherwise the built-in ideas.
+    func shownMeals(for phase: Phase) -> [Meal] { aiMeals[mealKey(phase)] ?? meals(for: phase) }
+
+    func loadMeals(for phase: Phase, refresh: Bool = false) async {
+        let key = mealKey(phase)
+        guard refresh || aiMeals[key] == nil, !mealsLoading.contains(key) else { return }
+        mealsLoading.insert(key)
+        mealsFailed.remove(key)
+        defer { mealsLoading.remove(key) }
+        do {
+            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid,
+                                                      notLike: aiMeals[key]?.map(\.name) ?? [])
+            let safe = ideas.filter(fitsPreferences)
+            if safe.isEmpty { throw CancellationError() }
+            aiMeals[key] = safe
+        } catch {
+            print("Meal ideas failed:", error)
+            mealsFailed.insert(key)
+        }
+    }
+
+    /// Second check on AI recipes: the model's own labels, then a keyword scan of the ingredients.
+    private func fitsPreferences(_ meal: Meal) -> Bool {
+        guard diets.allSatisfy(meal.diets.contains), !meal.allergens.contains(where: avoid.contains) else { return false }
+        let text = ([meal.name] + meal.ingredients + meal.items).joined(separator: " ").lowercased()
+        return !avoid.contains { allergen in
+            var scanned = text
+            for phrase in Self.allergenLookalikes[allergen] ?? [] { scanned = scanned.replacingOccurrences(of: phrase, with: " ") }
+            return (Self.allergenWords[allergen] ?? [allergen]).contains {
+                scanned.range(of: "\\b\($0)", options: .regularExpression) != nil
+            }
+        }
+    }
+
+    private static let allergenWords: [String: [String]] = [
+        "nuts": ["nut", "almond", "cashew", "walnut", "pecan", "hazelnut", "pistachio", "macadamia", "pesto", "praline", "marzipan"],
+        "dairy": ["milk", "cheese", "yogurt", "yoghurt", "butter", "cream", "parmesan", "feta", "mozzarella", "ghee", "whey", "paneer"],
+        "gluten": ["wheat", "flour", "bread", "pasta", "couscous", "barley", "rye", "spelt", "sourdough", "noodle", "soy sauce", "seitan", "bulgur", "tortilla", "oats"],
+        "soy": ["soy", "tofu", "tempeh", "edamame", "miso"],
+        "eggs": ["egg"],
+        "fish": ["fish", "salmon", "tuna", "cod", "anchov", "sardine", "mackerel", "trout", "haddock"],
+        "sesame": ["sesame", "tahini"],
+    ]
+
+    /// Phrases that contain an allergen word but aren't that allergen; removed before scanning.
+    private static let allergenLookalikes: [String: [String]] = [
+        "nuts": ["coconut", "nutmeg", "butternut", "nutritional yeast", "nut-free"],
+        "dairy": ["coconut milk", "oat milk", "almond milk", "soy milk", "rice milk", "plant milk", "plant-based milk",
+                  "coconut yogurt", "coconut yoghurt", "soy yogurt", "dairy-free", "vegan cheese", "vegan butter",
+                  "peanut butter", "almond butter", "nut butter", "cashew butter", "cocoa butter", "butternut", "coconut cream"],
+        "gluten": ["gluten-free soy sauce", "gluten-free pasta", "gluten-free bread", "gluten-free flour", "gluten-free oats",
+                   "gluten-free tortilla", "gluten-free", "buckwheat", "rice noodle", "rice flour", "corn tortilla", "almond flour", "coconut flour"],
+        "soy": ["soy-free"],
+        "eggs": ["eggplant", "egg-free"],
+    ]
 
     func isOnList(_ meal: Meal) -> Bool { meal.items.allSatisfy { item in grocery.contains { $0.name == item } } }
 

@@ -226,11 +226,66 @@ final class Assistant {
 
     private func mealIdeas(_ args: JSONObject, _ store: CycleStore) -> JSONObject {
         let phase = args.string("phase").flatMap(Phase.init(rawValue:)) ?? store.currentPhase
-        let meals = store.meals(for: phase).map {
+        let meals = store.shownMeals(for: phase).map {
             JSONValue.object(["name": .string($0.name), "why": .string($0.why), "ingredients": .array($0.items.map(JSONValue.string))])
         }
         return ["ok": .bool(true), "phase": .string(phase.name), "meals": .array(meals)]
     }
+
+    // MARK: Meal ideas (Nourish)
+
+    /// Asks Gemini for recipes that suit a cycle phase and the user's diet. Callers should still
+    /// re-check allergens: the model's own labels can be wrong.
+    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, notLike previous: [String] = []) async throws -> [Meal] {
+        let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
+            modelName: modelName,
+            // Thinking off: same quality for recipes, ~8 s instead of 20-60 s.
+            generationConfig: GenerationConfig(temperature: 0.9, responseMIMEType: "application/json", responseSchema: mealSchema,
+                                               thinkingConfig: ThinkingConfig(thinkingBudget: 0))
+        )
+        let prompt = """
+        Suggest 4 different recipes for someone in the \(phase.name.lowercased()) phase of their menstrual cycle. \
+        Context: \(phase.blurb)
+
+        Requirements:
+        - Every recipe must suit: \(diets.isEmpty ? "no particular diet" : diets.sorted().joined(separator: ", ")).
+        - Must not contain, even as part of another ingredient: \(avoid.isEmpty ? "nothing excluded" : avoid.sorted().joined(separator: ", ")). \
+        For example nuts rules out almond milk and pesto; gluten rules out regular pasta, bread and soy sauce.
+        - One breakfast, one lunch, one dinner and one snack. Each under 45 minutes with common supermarket ingredients.
+        - why: one friendly sentence on why it fits this phase, in general nutrition terms (iron, fibre, protein, \
+        hydration, warmth). Never claim food treats symptoms, cures anything or balances hormones.
+        - diets: every listed diet the recipe fits. allergens: every listed allergen it contains. Be thorough.
+        - ingredients: with metric quantities, e.g. "200 g red lentils". shopping: 3-6 plain item names for a \
+        grocery list, e.g. "Red lentils". steps: 3-6 short steps.
+        \(previous.isEmpty ? "" : "- Don't repeat these: \(previous.joined(separator: ", ")).")
+        """
+        let response = try await model.generateContent(prompt)
+        guard let data = response.text?.data(using: .utf8) else { throw MealError.empty }
+        return try JSONDecoder().decode([GeneratedMeal].self, from: data).map {
+            Meal(name: $0.name, why: $0.why, diets: $0.diets, allergens: $0.allergens, items: $0.shopping,
+                 minutes: $0.minutes, servings: $0.servings, ingredients: $0.ingredients, steps: $0.steps)
+        }
+    }
+
+    private enum MealError: Error { case empty }
+
+    private struct GeneratedMeal: Decodable {
+        let name, why: String
+        let minutes, servings: Int
+        let diets, allergens, ingredients, shopping, steps: [String]
+    }
+
+    private static let mealSchema = Schema.array(items: .object(properties: [
+        "name": .string(),
+        "why": .string(),
+        "minutes": .integer(description: "Total time in minutes."),
+        "servings": .integer(),
+        "diets": .array(items: .enumeration(values: CycleStore.dietOptions)),
+        "allergens": .array(items: .enumeration(values: CycleStore.allergenOptions)),
+        "ingredients": .array(items: .string()),
+        "shopping": .array(items: .string()),
+        "steps": .array(items: .string()),
+    ]))
 
     // MARK: Helpers
 
