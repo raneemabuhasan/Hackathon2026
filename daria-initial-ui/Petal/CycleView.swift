@@ -4,6 +4,7 @@ import SwiftUI
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
     @State private var monthOffset = 0
+    @State private var logToDelete: DayLog?
 
     var body: some View {
         Page {
@@ -14,6 +15,7 @@ struct CycleView: View {
             calendar
             lengths
             symptoms
+            logHistory
         }
     }
 
@@ -154,5 +156,61 @@ struct CycleView: View {
                 .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
+    }
+
+    // MARK: Saved log history (HACK-1)
+
+    private var logHistory: some View {
+        let recent = Array(store.logs.sorted { $0.date > $1.date }.prefix(20))
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Saved day logs", trailing: "\(store.logs.count) entries")
+            if recent.isEmpty {
+                Text("No logs yet. Tap + to record your day.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            ForEach(recent) { log in
+                HStack(spacing: 12) {
+                    Button {
+                        store.selectedLogDate = log.date
+                        store.showLog = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(log.date.formatted(.dateTime.month(.abbreviated).day().year()))
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(([log.flow != "None" ? "Flow: \(log.flow)" : ""]
+                                + log.symptoms).filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.inkSoft)
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        logToDelete = log
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.accent)
+                            .padding(10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
+                }
+                Divider().overlay(Palette.line)
+            }
+        }
+        .card()
+        .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete log", role: .destructive) {
+                if let logToDelete { store.deleteLog(logToDelete) }
+                logToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { logToDelete = nil }
+        } message: {
+            Text("This entry will be removed from your symptom history.")
+        }
     }
 }

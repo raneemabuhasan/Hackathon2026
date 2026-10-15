@@ -3,10 +3,11 @@ import SwiftUI
 @MainActor
 struct LogSheet: View {
     @Environment(CycleStore.self) private var store
+    @State private var logDate = Calendar.current.startOfDay(for: .now)
     @State private var flow = "None"
     @State private var moods: Set<String> = []
     @State private var symptoms: Set<String> = []
-    @State private var pain = 2.0
+    @State private var pain = 0.0
     @State private var energy = 3.0
     @State private var note = ""
 
@@ -18,7 +19,7 @@ struct LogSheet: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Eyebrow(text: "Today · " + store.today.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                        Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                         DisplayTitle(before: "How are you ", accent: "today?", size: 30)
                     }
                     Spacer()
@@ -31,6 +32,10 @@ struct LogSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
                 }
+
+                DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                    .font(.system(size: 14, weight: .semibold))
+                    .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
                 field("Flow") {
                     HStack(spacing: 8) {
@@ -101,10 +106,10 @@ struct LogSheet: View {
                 }
 
                 Button {
-                    store.save(DayLog(date: store.today, flow: flow, moods: Array(moods), symptoms: Array(symptoms),
+                    store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
                                       pain: Int(pain), energy: Int(energy), note: note))
                 } label: {
-                    Text("Save today's log")
+                    Text("Save log")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -122,16 +127,28 @@ struct LogSheet: View {
         .tint(Palette.accent)
         .animation(.easeOut(duration: 0.2), value: pain >= 7)
         .onAppear {
-            if let log = store.todayLog {
-                flow = log.flow
-                moods = Set(log.moods)
-                symptoms = Set(log.symptoms)
-                pain = Double(log.pain)
-                energy = Double(log.energy)
-                note = log.note
-            } else if store.cycleDay <= store.periodLength {
-                flow = "Medium"
-            }
+            logDate = store.selectedLogDate ?? store.today
+            loadDraft(for: logDate)
+        }
+        .onDisappear { store.selectedLogDate = nil }
+    }
+
+    /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).
+    private func loadDraft(for date: Date) {
+        if let saved = store.log(for: date) {
+            flow = saved.flow
+            moods = Set(saved.moods)
+            symptoms = Set(saved.symptoms)
+            pain = Double(saved.pain)
+            energy = Double(saved.energy)
+            note = saved.note
+        } else {
+            flow = "None"
+            moods = []
+            symptoms = []
+            pain = 0
+            energy = 3
+            note = ""
         }
     }
 

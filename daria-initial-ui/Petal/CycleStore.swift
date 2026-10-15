@@ -121,6 +121,8 @@ struct ChatMessage: Identifiable {
 final class CycleStore {
     var tab: Tab = .today
     var showLog = false
+    /// Day to open in LogSheet when editing a past entry; nil means today.
+    var selectedLogDate: Date?
     var toast: String?
 
     let uid: String
@@ -328,13 +330,22 @@ final class CycleStore {
         }
     }
 
-    var todayLog: DayLog? { logs.first { Self.cal.isDate($0.date, inSameDayAs: today) } }
+    func log(for date: Date) -> DayLog? {
+        logs.first { Self.cal.isDate($0.date, inSameDayAs: date) }
+    }
 
+    /// Logs are keyed by day, so saving replaces that day's entry (not necessarily today's).
     func save(_ log: DayLog) {
         try? userRef.collection("logs").document(log.id).setData(from: log)
         showLog = false
+        selectedLogDate = nil
         let tags = log.moods.count + log.symptoms.count
         showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
+    }
+
+    func deleteLog(_ log: DayLog) {
+        userRef.collection("logs").document(log.id).delete { error in if let error { print("Delete log failed:", error) } }
+        showToast("Log deleted")
     }
 
     func setReminder(_ reminder: Reminder, on: Bool) {
