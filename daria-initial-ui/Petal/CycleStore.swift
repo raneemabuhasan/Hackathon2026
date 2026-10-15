@@ -119,6 +119,47 @@ struct ChatMessage: Identifiable {
 /// (immediately for local writes, and offline thanks to Firestore's cache).
 @MainActor @Observable
 final class CycleStore {
+    private(set) var periodHistory = PeriodHistory()
+    var periodStorageError: String?
+    private let periodKey = "petal.periodHistory.v1"
+
+    func savePeriod(id: UUID? = nil, start: Date, end: Date?) throws {
+        var next = periodHistory
+        try next.save(id: id, start: start, end: end)
+        try persistPeriods(next)
+    }
+
+    func removePeriod(id: UUID) throws {
+        var next = periodHistory
+        next.remove(id: id)
+        try persistPeriods(next)
+    }
+
+    private func persistPeriods(_ next: PeriodHistory) throws {
+        let data = try JSONEncoder().encode(next)
+        UserDefaults.standard.set(data, forKey: periodKey)
+        periodHistory = next
+        periodStorageError = nil
+    }
+
+    private(set) var baseline: CycleBaseline?
+    var showCycleSetup = false
+    var forecast: CycleForecast { CycleForecast(baseline: baseline, records: periodHistory.records) }
+    var ongoingPeriod: PeriodRecord? { periodHistory.records.first { $0.end == nil } }
+    var forecastBasis: String {
+        if forecast.sampleCount > 0 { return "Based on \(forecast.sampleCount) recorded cycle intervals." }
+        return baseline?.cycleDays == nil ? "Using a 28-day starting estimate while we learn your cycle." : "Based on the cycle length you entered."
+    }
+    func saveBaseline(_ value: CycleBaseline, ongoing: Bool) throws {
+        let data = try JSONEncoder().encode(value)
+        if ongoing, let start = value.lastStart, ongoingPeriod == nil {
+            try savePeriod(start: start, end: nil)
+        }
+        UserDefaults.standard.set(data, forKey: "petal.cycleBaseline.v1")
+        baseline = value
+        showCycleSetup = false
+    }
+
     var tab: Tab = .today
     var showLog = false
     /// Day to open in LogSheet when editing a past entry; nil means today.
@@ -126,7 +167,7 @@ final class CycleStore {
     var toast: String?
 
     let uid: String
-    let today: Date
+    var today: Date
 
     /// Nil until onboarding is done. `loaded` flips once the first profile snapshot arrives.
     private(set) var profile: Profile?
@@ -364,21 +405,24 @@ final class CycleStore {
     }
 
     /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
-    func deleteAllData() {
-        let refs = logs.map { userRef.collection("logs").document($0.id) }
-            + reminders.map { userRef.collection("reminders").document($0.id) }
-            + grocery.map { userRef.collection("grocery").document($0.id) }
-            + [userRef]
-        // Firestore batches are capped at 500 writes.
-        for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
-            let batch = db.batch()
-            chunk.forEach { batch.deleteDocument($0) }
-            batch.commit { error in if let error { print("Delete failed:", error) } }
-        }
-        messages = []
-        tab = .today
-        showToast("Your data was deleted")
-    }
+      func deleteAllData() {
+          let refs = logs.map { userRef.collection("logs").document($0.id) }
+              + reminders.map { userRef.collection("reminders").document($0.id) }
+              + grocery.map { userRef.collection("grocery").document($0.id) }
+              + [userRef]
+          // Firestore batches are capped at 500 writes.
+          for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
+              let batch = db.batch()
+              chunk.forEach { batch.deleteDocument($0) }
+              batch.commit { error in if let error { print("Delete failed:", error) } }
+          }
+          periodHistory = PeriodHistory()
+          UserDefaults.standard.removeObject(forKey: periodKey)
+          periodStorageError = nil
+          messages = []
+          tab = .today
+          showToast("Your data was deleted")
+      }
 
     #if DEBUG
     /// Writes five past cycles of made-up logs so the charts have something to show in a demo.

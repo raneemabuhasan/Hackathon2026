@@ -2,7 +2,8 @@ import SwiftUI
 
 @MainActor
 struct ContentView: View {
-    @Environment(CycleStore.self) private var store
+      @Environment(CycleStore.self) private var store
+      @Environment(\.scenePhase) private var scenePhase 
 
     var body: some View {
         @Bindable var store = store
@@ -43,6 +44,12 @@ struct ContentView: View {
                 .presentationBackground(Palette.bg)
         }
         .environment(store)
+        .fullScreenCover(isPresented: $store.showCycleSetup) {
+            CycleSetupView().environment(store)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.today = Calendar.current.startOfDay(for: Date()) }
+        }
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
     }
