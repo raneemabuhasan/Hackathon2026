@@ -85,8 +85,8 @@ final class Assistant {
             description: "Save symptoms, moods, flow, pain or details for one day. Adds to anything already logged that day.",
             parameters: [
                 "date": .string(description: "Day as YYYY-MM-DD in the user's local time. Use today if the user didn't say."),
-                "symptoms": .array(items: .enumeration(values: CycleStore.symptomOptions), description: "Symptoms to add."),
-                "moods": .array(items: .enumeration(values: CycleStore.moodOptions), description: "Moods to add."),
+                "symptoms": .array(items: .string(), description: "Symptoms to add. Use these names when they fit: \(CycleStore.symptomOptions.joined(separator: ", ")). Otherwise a short name of your own (max 30 characters), e.g. \"Joint pain\"."),
+                "moods": .array(items: .string(), description: "Moods to add. Use these names when they fit: \(CycleStore.moodOptions.joined(separator: ", ")). Otherwise a short name of your own (max 30 characters)."),
                 "flow": .enumeration(values: ["None", "Light", "Medium", "Heavy"], description: "Bleeding that day."),
                 "pain": .integer(description: "Pain from 0 to 10. Only if the user gave a number."),
                 "description": .string(description: "The user's own words about severity or details, e.g. \"strong\"."),
@@ -152,9 +152,16 @@ final class Assistant {
         guard date <= store.today else { return Self.failure("Can't log a future date.") }
         guard date >= CycleStore.add(store.today, -365) else { return Self.failure("Can only log the past year.") }
 
-        let symptoms = args.strings("symptoms"), moods = args.strings("moods")
-        let unknown = symptoms.filter { !CycleStore.symptomOptions.contains($0) } + moods.filter { !CycleStore.moodOptions.contains($0) }
-        guard unknown.isEmpty else { return Self.failure("Unknown symptom or mood: \(unknown.joined(separator: ", ")).") }
+        // Built-in names pass through; anything else becomes one of the user's own tags (saved for next time).
+        var symptoms: [String] = [], moods: [String] = []
+        for name in args.strings("symptoms") {
+            guard let tag = store.addCustom(symptom: true, name) else { return Self.failure("Symptom names must be 1-30 characters.") }
+            symptoms.append(tag)
+        }
+        for name in args.strings("moods") {
+            guard let tag = store.addCustom(symptom: false, name) else { return Self.failure("Mood names must be 1-30 characters.") }
+            moods.append(tag)
+        }
         let flow = args.string("flow")
         if let flow, !["None", "Light", "Medium", "Heavy"].contains(flow) { return Self.failure("Flow must be None, Light, Medium or Heavy.") }
         let pain = args.int("pain")
@@ -266,7 +273,8 @@ final class Assistant {
 
     /// Asks Gemini for recipes that suit a cycle phase and the user's diet. Callers should still
     /// re-check allergens: the model's own labels can be wrong.
-    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, notLike previous: [String] = []) async throws -> [Meal] {
+    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, recentSymptoms: [String] = [],
+                          notLike previous: [String] = []) async throws -> [Meal] {
         let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
             modelName: modelName,
             // Thinking off: same quality for recipes, ~8 s instead of 20-60 s.
@@ -281,6 +289,7 @@ final class Assistant {
         - Every recipe must suit: \(diets.isEmpty ? "no particular diet" : diets.sorted().joined(separator: ", ")).
         - Must not contain, even as part of another ingredient: \(avoid.isEmpty ? "nothing excluded" : avoid.sorted().joined(separator: ", ")). \
         For example nuts rules out almond milk and pesto; gluten rules out regular pasta, bread and soy sauce.
+        \(recentSymptoms.isEmpty ? "" : "- Recently logged: \(recentSymptoms.joined(separator: ", ")). Where it fits naturally, favour comforting, gentle options for these, without claiming to treat them.")
         - One breakfast, one lunch, one dinner and one snack. Each under 45 minutes with common supermarket ingredients.
         - why: one friendly sentence on why it fits this phase, in general nutrition terms (iron, fibre, protein, \
         hydration, warmth). Never claim food treats symptoms, cures anything or balances hormones.
@@ -315,6 +324,43 @@ final class Assistant {
         "ingredients": .array(items: .string()),
         "shopping": .array(items: .string()),
         "steps": .array(items: .string()),
+    ]))
+
+    // MARK: Daily plan (Today)
+
+    /// Three small suggestions for today, based on what the user logged and where they are in their cycle.
+    static func dailyPlan(context: String) async throws -> [PlanItem] {
+        let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
+            modelName: modelName,
+            generationConfig: GenerationConfig(temperature: 0.7, responseMIMEType: "application/json", responseSchema: planSchema,
+                                               thinkingConfig: ThinkingConfig(thinkingBudget: 0))
+        )
+        let prompt = """
+        You write the "Your plan for today" card in Petal, a period-tracking app. Give exactly 3 gentle, optional \
+        suggestions for today: one food idea, one comfort or self-care idea, and one rest or movement idea.
+
+        \(context)
+
+        Rules:
+        - Tie each suggestion to what was logged (symptoms, mood, energy, pain, flow) and the cycle phase. If nothing \
+        was logged today, base it on the phase and say so lightly ("if you're feeling...").
+        - The food idea must fit the diet and avoid lists.
+        - title: at most 6 words. detail: one short, warm sentence.
+        - You are not a doctor. No diagnoses, no supplements or medication doses, never claim food or habits treat \
+        symptoms or balance hormones. If pain is 7 or more, make the self-care suggestion to consider a GP or pharmacist.
+        - icon: pick the closest from the allowed list.
+        """
+        let response = try await model.generateContent(prompt)
+        guard let data = response.text?.data(using: .utf8) else { throw MealError.empty }
+        return try JSONDecoder().decode([PlanItem].self, from: data)
+    }
+
+    static let planIcons = ["leaf", "fork.knife", "cup.and.saucer", "drop", "heart", "moon", "bed.double", "figure.walk", "figure.yoga", "sun.max", "phone", "bag"]
+
+    private static let planSchema = Schema.array(items: .object(properties: [
+        "icon": .enumeration(values: planIcons),
+        "title": .string(),
+        "detail": .string(),
     ]))
 
     // MARK: Helpers

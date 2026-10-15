@@ -65,10 +65,20 @@ struct Profile: Codable {
     var periodLength: Int
     var diets: [String] = []
     var avoid: [String] = []
+    /// The user's own tags, shown next to the built-in ones. Optional so older profiles still decode.
+    var customMoods: [String]? = nil
+    var customSymptoms: [String]? = nil
 }
 
-struct Meal: Identifiable {
-    let id = UUID()
+/// One suggestion on Today's "Your plan for today" card.
+struct PlanItem: Codable, Hashable {
+    let icon: String
+    let title: String
+    let detail: String
+}
+
+struct Meal: Identifiable, Codable {
+    var id = UUID()
     let name: String
     let why: String
     let diets: [String]
@@ -182,6 +192,7 @@ final class CycleStore {
                     self.profile = try? snap?.data(as: Profile.self)
                     self.loaded = true
                     self.syncNotifications()
+                    self.prefetchAI()
                     if self.profile != nil, self.messages.isEmpty { self.greet() }
                 }
             },
@@ -190,6 +201,7 @@ final class CycleStore {
                     if let error { print("Logs listener:", error) }
                     self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
                     self?.syncNotifications() // predictions may have moved
+                    self?.prefetchAI()
                 }
             },
             userRef.collection("reminders").order(by: "created", descending: true).addSnapshotListener { [weak self] snap, error in
@@ -408,6 +420,25 @@ final class CycleStore {
         showToast("Reminder deleted")
     }
 
+    var allMoods: [String] { Self.moodOptions + (profile?.customMoods ?? []) }
+    var allSymptoms: [String] { Self.symptomOptions + (profile?.customSymptoms ?? []) }
+
+    /// Adds a custom mood or symptom to the user's list. Returns the cleaned-up name, or nil if it's empty/too long.
+    @discardableResult
+    func addCustom(symptom: Bool, _ name: String) -> String? {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean.count <= 30 else { return nil }
+        let tag = clean.prefix(1).uppercased() + clean.dropFirst()
+        let existing = symptom ? allSymptoms : allMoods
+        if let match = existing.first(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) { return match }
+        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayUnion([tag])])
+        return tag
+    }
+
+    func removeCustom(symptom: Bool, _ name: String) {
+        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayRemove([name])])
+    }
+
     func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
     func toggleAvoid(_ allergen: String) { toggle("avoid", allergen, avoid.contains(allergen)) }
 
@@ -431,6 +462,13 @@ final class CycleStore {
             chunk.forEach { batch.deleteDocument($0) }
             batch.commit { error in if let error { print("Delete failed:", error) } }
         }
+        cacheRef.getDocuments { snap, _ in
+            let batch = Firestore.firestore().batch()
+            snap?.documents.forEach { batch.deleteDocument($0.reference) }
+            batch.commit()
+        }
+        aiMeals = [:]
+        plan = nil
         messages = []
         assistant = nil
         ReminderNotifications.sync([], windowStart: windowStart)
@@ -499,6 +537,11 @@ final class CycleStore {
     private(set) var mealsLoading: Set<String> = []
     private(set) var mealsFailed: Set<String> = []
 
+    // AI results are cached in users/{uid}/cache so they show instantly next time and are only
+    // regenerated when their inputs change.
+    private var cacheRef: CollectionReference { userRef.collection("cache") }
+    private static let mealCacheDays = 7
+
     func mealKey(_ phase: Phase) -> String {
         "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
     }
@@ -512,15 +555,95 @@ final class CycleStore {
         mealsLoading.insert(key)
         mealsFailed.remove(key)
         defer { mealsLoading.remove(key) }
+        let doc = cacheRef.document("meals-" + key)
+        if !refresh, let cached = try? await doc.getDocument(as: CachedMeals.self),
+           cached.created > Self.add(.now, -Self.mealCacheDays) {
+            aiMeals[key] = cached.meals.filter(fitsPreferences)
+            return
+        }
         do {
-            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid,
+            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid, recentSymptoms: recentSymptoms,
                                                       notLike: aiMeals[key]?.map(\.name) ?? [])
             let safe = ideas.filter(fitsPreferences)
             if safe.isEmpty { throw CancellationError() }
             aiMeals[key] = safe
+            try? doc.setData(from: CachedMeals(meals: safe, created: .now))
         } catch {
             print("Meal ideas failed:", error)
             mealsFailed.insert(key)
+        }
+    }
+
+    private struct CachedMeals: Codable {
+        let meals: [Meal]
+        let created: Date
+    }
+
+    /// Symptoms logged in the last 3 days, most frequent first.
+    var recentSymptoms: [String] {
+        let since = Self.add(today, -3)
+        var counts: [String: Int] = [:]
+        for log in logs where log.date >= since { for s in log.symptoms { counts[s, default: 0] += 1 } }
+        return counts.sorted { $0.value > $1.value }.map(\.key)
+    }
+
+    // MARK: AI plan for today
+
+    /// nil until loaded; Today shows the built-in suggestions meanwhile.
+    private(set) var plan: [PlanItem]?
+    private(set) var planLoading = false
+
+    /// Everything the plan depends on. When this text changes, the plan is regenerated.
+    var planContext: String {
+        let todayEntry = log(for: today)
+        let yesterday = log(for: Self.add(today, -1))
+        var lines = [
+            "Date: \(today.formatted(.dateTime.weekday(.wide).month(.wide).day())). Cycle day \(cycleDay), \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb)",
+            "Diet: \(diets.isEmpty ? "no restrictions" : diets.sorted().joined(separator: ", ")). Avoid: \(avoid.isEmpty ? "nothing" : avoid.sorted().joined(separator: ", ")).",
+        ]
+        if let e = todayEntry {
+            lines.append("Logged today: flow \(e.flow); moods \(e.moods.isEmpty ? "none" : e.moods.joined(separator: ", ")); symptoms \(e.symptoms.isEmpty ? "none" : e.symptoms.joined(separator: ", ")); pain \(e.pain)/10; energy \(e.energy)/5.")
+        } else {
+            lines.append("Nothing logged yet today.")
+        }
+        if let yesterday, !yesterday.symptoms.isEmpty {
+            lines.append("Yesterday's symptoms: \(yesterday.symptoms.joined(separator: ", ")).")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func loadPlan() async {
+        let context = planContext
+        guard !planLoading else { return }
+        planLoading = true
+        defer { planLoading = false }
+        let doc = cacheRef.document("plan")
+        if let cached = try? await doc.getDocument(as: CachedPlan.self), cached.context == context {
+            plan = cached.items
+            return
+        }
+        do {
+            let items = try await Assistant.dailyPlan(context: context)
+                .filter { Assistant.planIcons.contains($0.icon) && !$0.title.isEmpty }
+            guard !items.isEmpty, context == planContext else { return } // inputs changed mid-flight; the next call handles it
+            plan = Array(items.prefix(3))
+            try? doc.setData(from: CachedPlan(items: Array(items.prefix(3)), context: context))
+        } catch {
+            print("Daily plan failed:", error)
+        }
+    }
+
+    private struct CachedPlan: Codable {
+        let items: [PlanItem]
+        let context: String
+    }
+
+    /// Start AI work early so Today and Nourish are ready by the time the user looks.
+    private func prefetchAI() {
+        guard profile != nil else { return }
+        Task {
+            await loadPlan()
+            await loadMeals(for: currentPhase)
         }
     }
 

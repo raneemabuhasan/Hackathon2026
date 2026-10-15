@@ -197,17 +197,22 @@ struct ReminderEditor: View {
                 .disabled(trimmedTitle.isEmpty)
 
                 if let original {
-                    Button(confirmingDelete ? "Tap again to delete" : "Delete reminder") {
-                        if confirmingDelete {
+                    Button { confirmingDelete = true } label: {
+                        Label("Delete reminder", systemImage: "trash")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .confirmationDialog("Delete \"\(original.title)\"?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) {
                             store.deleteReminder(original)
                             dismiss()
-                        } else {
-                            confirmingDelete = true
                         }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("You won't get this reminder any more.")
                     }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, 20)

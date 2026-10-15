@@ -39,6 +39,11 @@ service cloud.firestore {
       match /grocery/{id} {
         allow read, write: if isOwner(uid);
       }
+
+      // Cached AI output (today's plan, recipes) so it shows instantly next time.
+      match /cache/{id} {
+        allow read, write: if isOwner(uid);
+      }
     }
   }
 }

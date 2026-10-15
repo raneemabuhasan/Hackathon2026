@@ -183,9 +183,23 @@ struct TodayView: View {
     }
 
     private var plan: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Your plan for today", trailing: "optional")
-            ForEach(planItems, id: \.title) { item in
+        let ai = store.plan
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Your plan for today").font(.system(size: 15, weight: .semibold))
+                if ai != nil {
+                    Text("AI").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Palette.accentSoft, in: Capsule())
+                }
+                Spacer()
+                if store.planLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(ai == nil ? "optional" : "from today's log").font(.caption).foregroundStyle(Palette.inkFaint)
+                }
+            }
+            ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: item.icon)
                         .font(.system(size: 17))
@@ -202,12 +216,16 @@ struct TodayView: View {
                     }
                 }
             }
+            if ai != nil {
+                Text("AI suggestions, not medical advice.").font(.caption).foregroundStyle(Palette.inkFaint)
+            }
         }
         .card()
+        .animation(.easeOut(duration: 0.25), value: ai)
+        .task(id: store.planContext) { await store.loadPlan() }
     }
 }
 
-@MainActor
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
 
