@@ -16,10 +16,10 @@ struct LogSheet: View {
 
     private let flows = [("None", 0), ("Light", 1), ("Medium", 2), ("Heavy", 3)]
     private let energyLevels = [("Drained", "battery.0percent"), ("Low", "battery.25percent"), ("Steady", "battery.50percent"),
-                                ("Good", "battery.75percent"), ("Glowing", "battery.100percent")]
+                                ("Good", "battery.75percent"), ("Energised", "battery.100percent")]
     private static let emoji: [String: String] = [
         "Calm": "😌", "Happy": "😊", "Confident": "😎", "Tired": "😴", "Anxious": "😰", "Irritable": "😤", "Low": "😔", "Sensitive": "🥺",
-        "Cramps": "🌀", "Headache": "🤕", "Bloating": "🎈", "Tender breasts": "💗", "Back pain": "🦴", "Acne": "🫧",
+        "Cramps": "🌀", "Headache": "🤕", "Bloating": "🎈", "Tender breasts": "👙", "Back pain": "🦴", "Acne": "🧴",
         "Fatigue": "🪫", "Cravings": "🍫", "Trouble sleeping": "🌙",
     ]
     private let tileColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
@@ -234,23 +234,37 @@ struct LogSheet: View {
         .foregroundStyle(dashed ? Palette.accent : Palette.ink)
     }
 
-    /// 0-10 row of dots that deepen from blush to wine.
+    /// 0-10 scale that works like a slider: drag or tap along the dots. Dots up to the level fill with the gradient.
     private var painScale: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 0) {
-                ForEach(0...10, id: \.self) { level in
-                    let on = Int(pain) == level
-                    Button { pain = Double(level) } label: {
+            GeometryReader { geo in
+                let step = geo.size.width / 11
+                HStack(spacing: 0) {
+                    ForEach(0...10, id: \.self) { level in
+                        let filled = level <= Int(pain)
+                        let current = level == Int(pain)
                         Circle()
-                            .fill(on ? Self.painColor(level) : Self.painColor(level).opacity(0.28))
-                            .frame(width: on ? 26 : 18, height: on ? 26 : 18)
-                            .overlay(Circle().stroke(Palette.ink, lineWidth: on ? 2 : 0))
-                            .frame(maxWidth: .infinity, minHeight: 32)
-                            .contentShape(Rectangle())
+                            .fill(Self.painColor(level).opacity(filled ? 1 : 0.25))
+                            .frame(width: current ? 26 : 16, height: current ? 26 : 16)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: current ? 2 : 0))
+                            .frame(width: step, height: 32)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Pain \(level), \(Self.painWord(level))")
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                    pain = Double(min(10, max(0, Int(drag.location.x / step))))
+                })
+            }
+            .frame(height: 32)
+            .sensoryFeedback(.selection, trigger: Int(pain))
+            .accessibilityElement()
+            .accessibilityLabel("Pain")
+            .accessibilityValue("\(Int(pain)) out of 10, \(Self.painWord(Int(pain)))")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: pain = min(10, pain + 1)
+                case .decrement: pain = max(0, pain - 1)
+                @unknown default: break
                 }
             }
             HStack {
@@ -258,7 +272,7 @@ struct LogSheet: View {
             }
             .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
         }
-        .animation(.spring(duration: 0.2), value: pain)
+        .animation(.spring(duration: 0.15), value: pain)
     }
 
     static func painWord(_ level: Int) -> String {
