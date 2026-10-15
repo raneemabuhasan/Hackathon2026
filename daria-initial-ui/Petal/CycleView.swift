@@ -2,9 +2,7 @@ import SwiftUI
 
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
-    @Environment(AuthModel.self) private var auth
     @State private var monthOffset = 0
-    @State private var confirmingDelete = false
 
     var body: some View {
         Page {
@@ -15,7 +13,6 @@ struct CycleView: View {
             calendar
             lengths
             symptoms
-            dataCard
         }
     }
 
@@ -156,54 +153,5 @@ struct CycleView: View {
                 .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
-    }
-
-    // MARK: Data
-
-    private var dataCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Your data")
-            Text("Your logs are stored in your private account and only you can read them. Nothing is shared or sold. You can erase everything at any time.")
-                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-            if confirmingDelete {
-                Text("This erases every log and preference in your account. It can't be undone.")
-                    .font(.system(size: 13))
-                HStack {
-                    outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
-                    Button("Keep my data") { confirmingDelete = false }
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(Palette.surface2, in: Capsule())
-                        .buttonStyle(.plain)
-                }
-            } else {
-                outlineButton("Delete all my data") { confirmingDelete = true }
-            }
-            #if DEBUG
-            outlineButton("Add sample history (debug)") { store.addSampleHistory() }
-            #endif
-            Divider().overlay(Palette.line)
-            HStack {
-                Text("Signed in as \(auth.user?.email ?? store.name)")
-                    .font(.system(size: 12)).foregroundStyle(Palette.inkFaint)
-                    .lineLimit(1)
-                Spacer()
-                Button("Sign out") { auth.signOut() }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .buttonStyle(.plain)
-            }
-        }
-        .card()
-        .animation(.easeOut(duration: 0.2), value: confirmingDelete)
-    }
-
-    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-            .buttonStyle(.plain)
     }
 }

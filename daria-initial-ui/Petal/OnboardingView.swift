@@ -8,43 +8,56 @@ struct OnboardingView: View {
     @State private var lastStart = CycleStore.add(.now, -10)
     @State private var cycleLength = 28
     @State private var periodLength = 5
+    @FocusState private var nameFocused: Bool
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Eyebrow(text: "A few quick questions")
-                    DisplayTitle(before: "Tell us about ", accent: "your cycle")
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    DisplayTitle(before: "Tell us about ", accent: "your cycle", size: 32)
+                        .multilineTextAlignment(.center)
                     Text("Rough answers are fine. Petal learns from what you log and gets more accurate over time.")
                         .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(.top, 40)
+                .padding(.top, 56)
+                .padding(.bottom, 12)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    row("What should we call you?") {
-                        TextField("First name", text: $name)
-                            .multilineTextAlignment(.trailing)
-                            .textContentType(.givenName)
-                    }
-                    Divider().overlay(Palette.line)
-                    row("When did your last period start?") {
-                        DatePicker("", selection: $lastStart, in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
-                            .labelsHidden()
-                    }
-                    Divider().overlay(Palette.line)
-                    row("Usual cycle length") {
-                        Stepper("\(cycleLength) days", value: $cycleLength, in: 18...45).fixedSize()
-                    }
-                    Divider().overlay(Palette.line)
-                    row("Usual period length") {
-                        Stepper("\(periodLength) days", value: $periodLength, in: 2...10).fixedSize()
+                question("What should we call you?") {
+                    TextField("First name", text: $name)
+                        .textContentType(.givenName)
+                        .focused($nameFocused)
+                        .submitLabel(.done)
+                        .font(.system(size: 15))
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                        .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                question("When did your last period start?") {
+                    DatePicker("Start date", selection: $lastStart, in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Palette.inkSoft)
+                }
+
+                question("What's usual for you?") {
+                    VStack(spacing: 12) {
+                        stepper("Cycle length", value: $cycleLength, range: 18...45)
+                        Divider().overlay(Palette.line)
+                        stepper("Period length", value: $periodLength, range: 2...10)
                     }
                 }
-                .font(.system(size: 14))
-                .card()
-
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 10) {
                 Button {
-                    store.completeOnboarding(name: name.trimmingCharacters(in: .whitespaces), lastPeriodStart: lastStart,
+                    store.completeOnboarding(name: trimmedName, lastPeriodStart: lastStart,
                                              cycleLength: cycleLength, periodLength: periodLength)
                 } label: {
                     Text("Start tracking")
@@ -52,21 +65,27 @@ struct OnboardingView: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(Palette.accent.opacity(name.isEmpty ? 0.4 : 1), in: Capsule())
+                        .background(Palette.accent.opacity(trimmedName.isEmpty ? 0.4 : 1), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(trimmedName.isEmpty)
 
-                Button("Sign out") { auth.signOut() }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 4) {
+                    Text("Not you?").foregroundStyle(Palette.inkSoft)
+                    Button("Sign out") { auth.signOut() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Palette.accent)
+                }
+                .font(.system(size: 14))
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 40)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(Palette.cream.opacity(0.9))
         }
-        .scrollIndicators(.hidden)
-        .background(Palette.bg.ignoresSafeArea())
+        .background(
+            RadialGradient(colors: [Palette.blush, Palette.mist, Palette.cream], center: .top, startRadius: 0, endRadius: 520)
+                .ignoresSafeArea())
         .onAppear {
             if name.isEmpty, let full = auth.user?.displayName {
                 name = full.components(separatedBy: " ").first ?? full
@@ -74,11 +93,21 @@ struct OnboardingView: View {
         }
     }
 
-    private func row<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
-        HStack {
-            Text(title).font(.system(size: 14, weight: .semibold))
-            Spacer(minLength: 12)
+    private func question<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.system(size: 15, weight: .semibold))
             content()
+        }
+        .card()
+    }
+
+    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        Stepper(value: value, in: range) {
+            HStack {
+                Text(title).font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                Spacer()
+                Text("\(value.wrappedValue) days").font(.system(size: 14, weight: .semibold)).monospacedDigit()
+            }
         }
     }
 }

@@ -214,6 +214,16 @@ final class CycleStore {
             note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")]
     }
 
+    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
+        userRef.updateData([
+            "name": name,
+            "lastPeriodStart": Timestamp(date: Self.cal.startOfDay(for: lastPeriodStart)),
+            "cycleLength": cycleLength,
+            "periodLength": periodLength,
+        ]) { error in if let error { print("Profile update failed:", error) } }
+        showToast("Settings saved")
+    }
+
     /// Writes the profile plus a few default reminders the first time someone signs in.
     func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
         let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),

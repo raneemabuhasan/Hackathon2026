@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TodayView: View {
     @Environment(CycleStore.self) private var store
+    @Environment(AuthModel.self) private var auth
+    @State private var showSettings = false
 
     var body: some View {
         Page {
@@ -11,11 +13,15 @@ struct TodayView: View {
                     DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
                 }
                 Spacer()
-                Text(String(store.name.prefix(1)).uppercased())
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 42, height: 42)
-                    .background(Palette.accentSoft, in: Circle())
+                Button { showSettings = true } label: {
+                    Text(String(store.name.prefix(1)).uppercased())
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 42, height: 42)
+                        .background(Palette.accentSoft, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
 
             hero
@@ -23,6 +29,13 @@ struct TodayView: View {
             week
             quickActions
             plan
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environment(store)
+                .environment(auth)
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
         }
     }
 
