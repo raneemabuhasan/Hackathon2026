@@ -7,7 +7,7 @@ struct LogSheet: View {
     @State private var flow = "None"
     @State private var moods: Set<String> = []
     @State private var symptoms: Set<String> = []
-    @State private var pain = 2.0
+    @State private var pain = 0.0
     @State private var energy = 3.0
     @State private var note = ""
 
@@ -133,7 +133,7 @@ struct LogSheet: View {
         .onDisappear { store.selectedLogDate = nil }
     }
 
-    /// Fills the form from that day's saved log, or sensible defaults for a new entry.
+    /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).
     private func loadDraft(for date: Date) {
         if let saved = store.log(for: date) {
             flow = saved.flow
@@ -143,10 +143,10 @@ struct LogSheet: View {
             energy = Double(saved.energy)
             note = saved.note
         } else {
-            flow = store.isPeriod(date) ? "Medium" : "None"
+            flow = "None"
             moods = []
             symptoms = []
-            pain = 2
+            pain = 0
             energy = 3
             note = ""
         }
