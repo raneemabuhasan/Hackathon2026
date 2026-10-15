@@ -1,0 +1,4 @@
+
+# Local macOS and Xcode files
+.DS_Store
+*.xcuserstate
