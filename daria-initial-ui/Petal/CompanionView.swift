@@ -8,6 +8,13 @@ struct CompanionView: View {
     /// Whether the on-screen keyboard is actually showing. Focus alone isn't enough: with a hardware
     /// keyboard (e.g. the simulator) there's no on-screen keyboard and the field would drop behind the tab bar.
     @State private var keyboardShown = false
+    @State private var editing: ReminderSheet?
+
+    /// Which reminder the editor sheet is open for.
+    private enum ReminderSheet: Identifiable {
+        case new, edit(Reminder)
+        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
+    }
 
     private let prompts = ["When is my next period?", "Remind me to restock pads", "I have cramps", "What should I eat today?"]
 
@@ -20,19 +27,40 @@ struct CompanionView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    SectionHeader(title: "Reminders", trailing: "opt-in")
+                    SectionHeader(title: "Reminders", trailing: "tap to edit")
                     ForEach(store.reminders) { r in
-                        Toggle(isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(r.title).font(.system(size: 14, weight: .semibold))
-                                Text(r.detail).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                        HStack(spacing: 12) {
+                            Button { editing = .edit(r) } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.title).font(.system(size: 14, weight: .semibold))
+                                    Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
+                                .labelsHidden()
+                                .tint(Palette.accent)
                         }
-                        .tint(Palette.accent)
                         .padding(.vertical, 8)
                     }
+                    Button { editing = .new } label: {
+                        Label("New reminder", systemImage: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .padding(.top, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .card()
+                .sheet(item: $editing) { target in
+                    ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                        .environment(store)
+                        .presentationDetents([.large])
+                        .presentationCornerRadius(32)
+                        .presentationBackground(Palette.bg)
+                }
 
                 FlowLayout {
                     ForEach(prompts, id: \.self) { p in

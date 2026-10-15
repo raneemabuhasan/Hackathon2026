@@ -82,14 +82,6 @@ struct Meal: Identifiable {
     var steps: [String] = []
 }
 
-struct Reminder: Identifiable, Codable {
-    var id = UUID().uuidString
-    var title: String
-    var detail: String
-    var on: Bool
-    var created = Date()
-}
-
 struct GroceryItem: Identifiable, Codable {
     var id = UUID().uuidString
     var name: String
@@ -189,6 +181,7 @@ final class CycleStore {
                     if let error { print("Profile listener:", error) }
                     self.profile = try? snap?.data(as: Profile.self)
                     self.loaded = true
+                    self.syncNotifications()
                     if self.profile != nil, self.messages.isEmpty { self.greet() }
                 }
             },
@@ -196,12 +189,19 @@ final class CycleStore {
                 MainActor.assumeIsolated {
                     if let error { print("Logs listener:", error) }
                     self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
+                    self?.syncNotifications() // predictions may have moved
                 }
             },
             userRef.collection("reminders").order(by: "created", descending: true).addSnapshotListener { [weak self] snap, error in
                 MainActor.assumeIsolated {
+                    guard let self else { return }
                     if let error { print("Reminders listener:", error) }
-                    self?.reminders = snap?.documents.compactMap { try? $0.data(as: Reminder.self) } ?? []
+                    let docs = snap?.documents ?? []
+                    self.reminders = docs.compactMap { try? $0.data(as: Reminder.self) }
+                    // Reminders from before schedules existed have no "kind"; swap them for the new defaults.
+                    let legacy = docs.filter { $0.data()["kind"] == nil }.map(\.reference)
+                    if !legacy.isEmpty { self.replaceLegacyReminders(legacy, seedDefaults: legacy.count == docs.count) }
+                    self.syncNotifications()
                 }
             },
             userRef.collection("grocery").order(by: "created").addSnapshotListener { [weak self] snap, error in
@@ -242,17 +242,28 @@ final class CycleStore {
                               cycleLength: cycleLength, periodLength: periodLength)
         let batch = db.batch()
         try? batch.setData(from: profile, forDocument: userRef)
-        let next = Self.add(profile.lastPeriodStart, cycleLength)
-        let defaults = [
-            Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(next, -3))) · before your likely window", on: true),
-            Reminder(title: "Evening check-in", detail: "Every day · 8:30 pm", on: true),
-            Reminder(title: "Restock pads & tampons", detail: "\(fmt(Self.add(next, -6))) · once", on: false),
-        ]
-        for (i, var r) in defaults.enumerated() {
+        addDefaultReminders(to: batch)
+        batch.commit { error in if let error { print("Onboarding write failed:", error) } }
+        ReminderNotifications.requestPermission()
+    }
+
+    private func addDefaultReminders(to batch: WriteBatch) {
+        for (i, var r) in Reminder.defaults.enumerated() {
             r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
             try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
         }
-        batch.commit { error in if let error { print("Onboarding write failed:", error) } }
+    }
+
+    private func replaceLegacyReminders(_ refs: [DocumentReference], seedDefaults: Bool) {
+        let batch = db.batch()
+        refs.forEach { batch.deleteDocument($0) }
+        if seedDefaults { addDefaultReminders(to: batch) }
+        batch.commit { error in if let error { print("Reminder migration failed:", error) } }
+    }
+
+    private func syncNotifications() {
+        guard profile != nil else { return }
+        ReminderNotifications.sync(reminders, windowStart: windowStart)
     }
 
     // MARK: Cycle maths
@@ -358,9 +369,10 @@ final class CycleStore {
         try await set(log, at: userRef.collection("logs").document(log.id))
     }
 
-    func addReminder(title: String, detail: String) async throws {
-        let reminder = Reminder(title: title, detail: detail, on: true)
+    /// Saves a reminder and waits for Firestore, so the assistant only confirms real saves.
+    func addReminder(_ reminder: Reminder) async throws {
         try await set(reminder, at: userRef.collection("reminders").document(reminder.id))
+        ReminderNotifications.requestPermission()
     }
 
     private func set<T: Encodable>(_ value: T, at ref: DocumentReference) async throws {
@@ -382,6 +394,18 @@ final class CycleStore {
 
     func setReminder(_ reminder: Reminder, on: Bool) {
         userRef.collection("reminders").document(reminder.id).updateData(["on": on])
+        if on { ReminderNotifications.requestPermission() }
+    }
+
+    func saveReminder(_ reminder: Reminder) {
+        try? userRef.collection("reminders").document(reminder.id).setData(from: reminder)
+        ReminderNotifications.requestPermission()
+        showToast("Reminder saved")
+    }
+
+    func deleteReminder(_ reminder: Reminder) {
+        userRef.collection("reminders").document(reminder.id).delete()
+        showToast("Reminder deleted")
     }
 
     func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
@@ -409,6 +433,7 @@ final class CycleStore {
         }
         messages = []
         assistant = nil
+        ReminderNotifications.sync([], windowStart: windowStart)
         tab = .today
         showToast("Your data was deleted")
     }
@@ -592,9 +617,7 @@ final class CycleStore {
         if let i = messages.firstIndex(where: { $0.id == messageID }) { messages[i].actions = [] }
         switch action {
         case .setReminder(let title):
-            let reminder = Reminder(title: title, detail: "\(fmt(Self.add(windowStart, -2))) · once", on: true)
-            try? userRef.collection("reminders").document(reminder.id).setData(from: reminder)
-            showToast("Reminder set")
+            saveReminder(Reminder(title: title, kind: .beforePeriod, hour: 9, minute: 0, daysBefore: 2))
             ai("Done. You'll find it under Reminders, and you can switch it off any time.")
         case .notNow:
             ai("No problem.")

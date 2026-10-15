@@ -109,12 +109,16 @@ final class Assistant {
         ),
         FunctionDeclaration(
             name: "add_reminder",
-            description: "Create a reminder the user asked for.",
+            description: "Create a reminder the user asked for. It becomes a phone notification.",
             parameters: [
                 "title": .string(description: "What to remind them about, e.g. \"Restock pads\"."),
-                "when": .string(description: "Short timing, e.g. \"Oct 20 · once\" or \"Every day · 8:30 pm\"."),
+                "schedule": .enumeration(values: ["daily", "once", "before_period"],
+                                         description: "daily = every day; once = on one date; before_period = some days before the predicted period window."),
+                "time": .string(description: "24-hour HH:mm. Default 09:00 if the user didn't say."),
+                "date": .string(description: "YYYY-MM-DD, only for schedule once."),
+                "days_before": .integer(description: "1-7, only for schedule before_period. Default 2."),
             ],
-            optionalParameters: ["when"]
+            optionalParameters: ["time", "date", "days_before"]
         ),
         FunctionDeclaration(
             name: "get_meal_ideas",
@@ -215,10 +219,36 @@ final class Assistant {
         guard let title = args.string("title")?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty, title.count <= 80 else {
             return Self.failure("A reminder needs a title of up to 80 characters.")
         }
-        let when = args.string("when")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kind: Reminder.Kind
+        switch args.string("schedule") {
+        case "daily": kind = .daily
+        case "once": kind = .once
+        case "before_period": kind = .beforePeriod
+        default: return Self.failure("schedule must be daily, once or before_period.")
+        }
+        var hour = 9, minute = 0
+        if let time = args.string("time") {
+            let parts = time.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2, (0...23).contains(parts[0]), (0...59).contains(parts[1]) else { return Self.failure("time must be HH:mm.") }
+            (hour, minute) = (parts[0], parts[1])
+        }
+        var reminder = Reminder(title: title, kind: kind, hour: hour, minute: minute)
+        switch kind {
+        case .daily:
+            break
+        case .once:
+            guard let date = args.string("date").flatMap(Self.day), date >= store.today else {
+                return Self.failure("A one-off reminder needs a date (YYYY-MM-DD) today or later.")
+            }
+            reminder.date = date
+        case .beforePeriod:
+            let days = args.int("days_before") ?? 2
+            guard (1...7).contains(days) else { return Self.failure("days_before must be 1-7.") }
+            reminder.daysBefore = days
+        }
         do {
-            try await store.addReminder(title: title, detail: (when?.isEmpty == false ? when! : "Once"))
-            return ["ok": .bool(true), "title": .string(title)]
+            try await store.addReminder(reminder)
+            return ["ok": .bool(true), "title": .string(title), "when": .string(reminder.detail(windowStart: store.windowStart))]
         } catch {
             return Self.failure("Saving failed: \(error.localizedDescription)")
         }
