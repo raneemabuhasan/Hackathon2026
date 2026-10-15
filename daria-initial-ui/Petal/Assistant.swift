@@ -11,7 +11,11 @@ import FirebaseAI
 final class Assistant {
     /// Most current Gemini models aren't served from us-central1 (the SDK's default location).
     static let location = "global"
-    static let modelName = "gemini-3.8-flash"
+    /// Gemini 3.x models require "thought signatures" to be sent back with tool results, which the
+    /// Firebase 11.x SDK (pinned for Xcode 15.4) doesn't support, so every tool call would fail with a 400.
+    /// Gemini 2.5 Flash doesn't require them. Once the team is on Xcode 16.3+, upgrade Firebase to 12.x
+    /// and switch this to a current model (e.g. gemini-3.8-flash).
+    static let modelName = "gemini-2.5-flash"
 
     private weak var store: CycleStore?
     private let chat: Chat
