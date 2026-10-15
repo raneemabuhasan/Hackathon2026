@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Petal stores sensitive health data. Every document lives under users/{uid}
+// and only the signed-in owner can read or write it. Everything else is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

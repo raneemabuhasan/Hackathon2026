@@ -11,6 +11,7 @@ struct CycleView: View {
     @State private var periodError: String?
     @State private var deletingPeriod: PeriodRecord?
     @State private var interactionFrames: [String: CGRect] = [:]
+    @State private var logToDelete: DayLog?
 
     var body: some View {
         Page {
@@ -27,7 +28,7 @@ struct CycleView: View {
             Text("Demo insights below use fictional cycle and symptom data, not your saved periods.").font(.caption).foregroundStyle(Palette.inkSoft)
             lengths
             symptoms
-            dataCard
+            logHistory
         }
         .coordinateSpace(name: "periodCalendarPage")
         .onPreferenceChange(PeriodInteractionBounds.self) { interactionFrames = $0 }
@@ -324,19 +325,25 @@ struct CycleView: View {
     // MARK: Cycle lengths
 
     private var lengths: some View {
-        let values = Array(store.pastLengths.reversed())
-        let height = { (v: Int) in CGFloat(v - 20) / 14 * 90 }
+        let cycles = Array(store.completedCycles.reversed())
+        let height = { (v: Int) in CGFloat(max(v - 16, 4)) / 18 * 90 }
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "last 5 cycles")
-            HStack(alignment: .bottom, spacing: 10) {
-                ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    bar(value: v, height: height(v), label: store.starts[values.count - i].formatted(.dateTime.month(.abbreviated)), highlight: false)
+            SectionHeader(title: "Cycle length", trailing: cycles.isEmpty ? nil : "last \(cycles.count) cycles")
+            if cycles.isEmpty {
+                Text("Log your next period and your cycle lengths will show up here.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+            } else {
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(Array(cycles.enumerated()), id: \.offset) { _, c in
+                        bar(value: c.length, height: height(c.length), label: c.start.formatted(.dateTime.month(.abbreviated)), highlight: false)
+                    }
+                    bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
                 }
-                bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
+                .frame(height: 130, alignment: .bottom)
+                Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            .frame(height: 130, alignment: .bottom)
-            Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
     }
@@ -384,39 +391,60 @@ struct CycleView: View {
         .card()
     }
 
-    // MARK: Data
+    // MARK: Saved log history (HACK-1)
 
-    private var dataCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Your data")
-            Text("Logs stay on this device. Nothing is shared or sold. You can erase everything at any time.")
-                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-            if confirmingDelete {
-                Text("This erases every log and preference on this device. It can't be undone.")
+    private var logHistory: some View {
+        let recent = Array(store.logs.sorted { $0.date > $1.date }.prefix(20))
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Saved day logs", trailing: "\(store.logs.count) entries")
+            if recent.isEmpty {
+                Text("No logs yet. Tap + to record your day.")
                     .font(.system(size: 13))
-                HStack {
-                    outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
-                    Button("Keep my data") { confirmingDelete = false }
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(Palette.surface2, in: Capsule())
-                        .buttonStyle(.plain)
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            ForEach(recent) { log in
+                HStack(spacing: 12) {
+                    Button {
+                        store.selectedLogDate = log.date
+                        store.showLog = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(log.date.formatted(.dateTime.month(.abbreviated).day().year()))
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(([log.flow != "None" ? "Flow: \(log.flow)" : ""]
+                                + log.symptoms).filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.inkSoft)
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        logToDelete = log
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.accent)
+                            .padding(10)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
                 }
-            } else {
-                outlineButton("Delete all my data") { confirmingDelete = true }
+                Divider().overlay(Palette.line)
             }
         }
         .card()
-        .animation(.easeOut(duration: 0.2), value: confirmingDelete)
-    }
-
-    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-            .buttonStyle(.plain)
+        .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete log", role: .destructive) {
+                if let logToDelete { store.deleteLog(logToDelete) }
+                logToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { logToDelete = nil }
+        } message: {
+            Text("This entry will be removed from your symptom history.")
+        }
     }
 }
 
