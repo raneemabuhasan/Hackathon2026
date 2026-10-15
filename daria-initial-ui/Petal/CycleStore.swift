@@ -44,8 +44,8 @@ enum Phase: String, CaseIterable, Identifiable {
     }
 }
 
-struct DayLog: Identifiable {
-    let id = UUID()
+struct DayLog: Identifiable, Codable {
+    var id = UUID()
     var date: Date
     var flow = "None"
     var moods: [String] = []
@@ -98,6 +98,7 @@ struct ChatMessage: Identifiable {
 final class CycleStore {
     var tab: Tab = .today
     var showLog = false
+    var selectedLogDate: Date?
     var toast: String?
 
     let today: Date
@@ -111,6 +112,12 @@ final class CycleStore {
     var diets: Set<String> = ["vegetarian"]
     var avoid: Set<String> = ["nuts"]
     var messages: [ChatMessage] = []
+
+    // Persist a JSON file inside the app sandbox; no account or cloud upload is involved.
+    private static var dayLogsURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PetalDayLogs.json")
+    }
 
     static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
     static let cal = Calendar.current
@@ -143,6 +150,20 @@ final class CycleStore {
             ]
         }
         logs.append(DayLog(date: Self.add(t, -6), symptoms: ["Headache"]))
+
+        // Keep sample logs only for the very first launch of this demo profile.
+        // After that, load edited history from disk (including a deliberately empty history).
+        if FileManager.default.fileExists(atPath: Self.dayLogsURL.path) {
+            do {
+                let saved = try Data(contentsOf: Self.dayLogsURL)
+                logs = try JSONDecoder().decode([DayLog].self, from: saved)
+            } catch {
+                logs = [] // Preserve startup and print an error if storage is unreadable.
+                print("Petal could not read saved day logs: \(error)")
+            }
+        } else {
+            persistLogs()
+        }
 
         reminders = [
             Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(windowStart, -1))) · the day before your window", on: true),
@@ -210,18 +231,48 @@ final class CycleStore {
         }
     }
 
+    func log(for date: Date) -> DayLog? {
+        logs.first { Self.cal.isDate($0.date, inSameDayAs: date) }
+    }
+
     func save(_ log: DayLog) {
-        logs.removeAll { Self.cal.isDate($0.date, inSameDayAs: today) }
+        // Replace that day's entry, not necessarily today's entry.
+        logs.removeAll { Self.cal.isDate($0.date, inSameDayAs: log.date) }
         logs.append(log)
+        persistLogs()
         showLog = false
+        selectedLogDate = nil
         let tags = log.moods.count + log.symptoms.count
         showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
+    }
+
+    func deleteLog(id: UUID) {
+        logs.removeAll { $0.id == id }
+        persistLogs()
+        showToast("Log deleted")
+    }
+
+    private func persistLogs() {
+        do {
+            let folder = Self.dayLogsURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let encoded = try JSONEncoder().encode(logs)
+            try encoded.write(to: Self.dayLogsURL, options: .atomic)
+        } catch {
+            print("Petal could not save day logs: \(error)")
+            showToast("Could not save logs to this device")
+        }
     }
 
     func deleteAllData() {
         logs = []
         grocery = []
-        showToast("Your data was deleted")
+        diets = []
+        avoid = []
+        reminders = []
+        messages = []
+        persistLogs() // An empty saved list prevents demo logs from reappearing on restart.
+        showToast("Saved logs and in-app selections cleared")
     }
 
     // MARK: Nourish

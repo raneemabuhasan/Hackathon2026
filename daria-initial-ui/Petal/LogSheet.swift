@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LogSheet: View {
     @Environment(CycleStore.self) private var store
+    @State private var logDate = Calendar.current.startOfDay(for: .now)
     @State private var flow = "None"
     @State private var moods: Set<String> = []
     @State private var symptoms: Set<String> = []
@@ -17,7 +18,7 @@ struct LogSheet: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Eyebrow(text: "Today · " + store.today.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                        Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                         DisplayTitle(before: "How are you ", accent: "today?", size: 30)
                     }
                     Spacer()
@@ -30,6 +31,10 @@ struct LogSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
                 }
+
+                DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                    .font(.system(size: 14, weight: .semibold))
+                    .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
                 field("Flow") {
                     HStack(spacing: 8) {
@@ -100,10 +105,17 @@ struct LogSheet: View {
                 }
 
                 Button {
-                    store.save(DayLog(date: store.today, flow: flow, moods: Array(moods), symptoms: Array(symptoms),
-                                      pain: Int(pain), energy: Int(energy), note: note))
+                    var edited = store.log(for: logDate) ?? DayLog(date: logDate)
+                    edited.date = logDate
+                    edited.flow = flow
+                    edited.moods = moods.sorted()
+                    edited.symptoms = symptoms.sorted()
+                    edited.pain = Int(pain)
+                    edited.energy = Int(energy)
+                    edited.note = note
+                    store.save(edited)
                 } label: {
-                    Text("Save today's log")
+                    Text("Save log")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -121,7 +133,27 @@ struct LogSheet: View {
         .tint(Palette.accent)
         .animation(.easeOut(duration: 0.2), value: pain >= 7)
         .onAppear {
-            if store.cycleDay <= store.periodLength { flow = "Medium" }
+            logDate = store.selectedLogDate ?? store.today
+            loadDraft(for: logDate)
+        }
+        .onDisappear { store.selectedLogDate = nil }
+    }
+
+    private func loadDraft(for date: Date) {
+        if let saved = store.log(for: date) {
+            flow = saved.flow
+            moods = Set(saved.moods)
+            symptoms = Set(saved.symptoms)
+            pain = Double(saved.pain)
+            energy = Double(saved.energy)
+            note = saved.note
+        } else {
+            flow = "None"
+            moods = []
+            symptoms = []
+            pain = 0
+            energy = 3
+            note = ""
         }
     }
 
