@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DD0000000000000000000001 = {isa = PBXBuildFile; fileRef = DD0000000000000000000002; };
 		CC0000000000000000000001 /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* CompanionView.swift */; };
 		CC0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ContentView.swift */; };
 		CC0000000000000000000003 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* CycleStore.swift */; };
@@ -19,6 +20,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		DD0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
 		AA0000000000000000000001 /* Petal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Petal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -46,6 +48,7 @@
 		AA0000000000000000000002 /* Petal */ = {
 			isa = PBXGroup;
 			children = (
+				DD0000000000000000000002,
 				BB0000000000000000000001 /* CompanionView.swift */,
 				BB0000000000000000000002 /* ContentView.swift */,
 				BB0000000000000000000003 /* CycleStore.swift */,
@@ -145,6 +148,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DD0000000000000000000001,
 				CC0000000000000000000001 /* CompanionView.swift in Sources */,
 				CC0000000000000000000002 /* ContentView.swift in Sources */,
 				CC0000000000000000000003 /* CycleStore.swift in Sources */,

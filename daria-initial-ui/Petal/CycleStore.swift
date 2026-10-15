@@ -96,11 +96,52 @@ struct ChatMessage: Identifiable {
 /// All app state for the mockup. Everything here is fictional demo data held in memory.
 @MainActor @Observable
 final class CycleStore {
+    private(set) var periodHistory = PeriodHistory()
+    var periodStorageError: String?
+    private let periodKey = "petal.periodHistory.v1"
+
+    func savePeriod(id: UUID? = nil, start: Date, end: Date?) throws {
+        var next = periodHistory
+        try next.save(id: id, start: start, end: end)
+        try persistPeriods(next)
+    }
+
+    func removePeriod(id: UUID) throws {
+        var next = periodHistory
+        next.remove(id: id)
+        try persistPeriods(next)
+    }
+
+    private func persistPeriods(_ next: PeriodHistory) throws {
+        let data = try JSONEncoder().encode(next)
+        UserDefaults.standard.set(data, forKey: periodKey)
+        periodHistory = next
+        periodStorageError = nil
+    }
+
+    private(set) var baseline: CycleBaseline?
+    var showCycleSetup = false
+    var forecast: CycleForecast { CycleForecast(baseline: baseline, records: periodHistory.records) }
+    var ongoingPeriod: PeriodRecord? { periodHistory.records.first { $0.end == nil } }
+    var forecastBasis: String {
+        if forecast.sampleCount > 0 { return "Based on \(forecast.sampleCount) recorded cycle intervals." }
+        return baseline?.cycleDays == nil ? "Using a 28-day starting estimate while we learn your cycle." : "Based on the cycle length you entered."
+    }
+    func saveBaseline(_ value: CycleBaseline, ongoing: Bool) throws {
+        let data = try JSONEncoder().encode(value)
+        if ongoing, let start = value.lastStart, ongoingPeriod == nil {
+            try savePeriod(start: start, end: nil)
+        }
+        UserDefaults.standard.set(data, forKey: "petal.cycleBaseline.v1")
+        baseline = value
+        showCycleSetup = false
+    }
+
     var tab: Tab = .today
     var showLog = false
     var toast: String?
 
-    let today: Date
+    var today: Date
     let periodLength = 5
     let pastLengths = CycleStore.demoLengths
     let starts: [Date]
@@ -129,9 +170,17 @@ final class CycleStore {
     init() {
         let t = Self.cal.startOfDay(for: .now)
         today = t
+        if let data = UserDefaults.standard.data(forKey: "petal.cycleBaseline.v1") {
+            baseline = try? JSONDecoder().decode(CycleBaseline.self, from: data)
+        }
+        if let data = UserDefaults.standard.data(forKey: periodKey) {
+            do { periodHistory = try JSONDecoder().decode(PeriodHistory.self, from: data) }
+            catch { periodStorageError = "Saved period records could not be read. Your stored data has not been overwritten." }
+        }
         var s = [Self.add(t, -13)]
         for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
         starts = s
+        showCycleSetup = baseline == nil
 
         for start in s.prefix(3) {
             logs += [
@@ -221,6 +270,9 @@ final class CycleStore {
     func deleteAllData() {
         logs = []
         grocery = []
+        periodHistory = PeriodHistory()
+        UserDefaults.standard.removeObject(forKey: periodKey)
+        periodStorageError = nil
         showToast("Your data was deleted")
     }
 
