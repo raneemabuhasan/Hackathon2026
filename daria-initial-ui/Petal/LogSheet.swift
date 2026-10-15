@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LogSheet: View {
     @Environment(CycleStore.self) private var store
     @State private var logDate = Calendar.current.startOfDay(for: .now)
@@ -105,15 +106,8 @@ struct LogSheet: View {
                 }
 
                 Button {
-                    var edited = store.log(for: logDate) ?? DayLog(date: logDate)
-                    edited.date = logDate
-                    edited.flow = flow
-                    edited.moods = moods.sorted()
-                    edited.symptoms = symptoms.sorted()
-                    edited.pain = Int(pain)
-                    edited.energy = Int(energy)
-                    edited.note = note
-                    store.save(edited)
+                    store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
+                                      pain: Int(pain), energy: Int(energy), note: note))
                 } label: {
                     Text("Save log")
                         .font(.system(size: 16, weight: .semibold))
@@ -139,6 +133,7 @@ struct LogSheet: View {
         .onDisappear { store.selectedLogDate = nil }
     }
 
+    /// Fills the form from that day's saved log, or sensible defaults for a new entry.
     private func loadDraft(for date: Date) {
         if let saved = store.log(for: date) {
             flow = saved.flow
@@ -148,10 +143,10 @@ struct LogSheet: View {
             energy = Double(saved.energy)
             note = saved.note
         } else {
-            flow = "None"
+            flow = store.isPeriod(date) ? "Medium" : "None"
             moods = []
             symptoms = []
-            pain = 0
+            pain = 2
             energy = 3
             note = ""
         }

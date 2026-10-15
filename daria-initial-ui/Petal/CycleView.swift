@@ -1,11 +1,10 @@
 import SwiftUI
 
+@MainActor
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
     @State private var monthOffset = 0
-    @State private var confirmingDelete = false
-    @State private var logToDelete: UUID?
-    @State private var confirmingLogDelete = false
+    @State private var logToDelete: DayLog?
 
     var body: some View {
         Page {
@@ -17,7 +16,6 @@ struct CycleView: View {
             lengths
             symptoms
             logHistory
-            dataCard
         }
     }
 
@@ -94,19 +92,25 @@ struct CycleView: View {
     // MARK: Cycle lengths
 
     private var lengths: some View {
-        let values = Array(store.pastLengths.reversed())
-        let height = { (v: Int) in CGFloat(v - 20) / 14 * 90 }
+        let cycles = Array(store.completedCycles.reversed())
+        let height = { (v: Int) in CGFloat(max(v - 16, 4)) / 18 * 90 }
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "last 5 cycles")
-            HStack(alignment: .bottom, spacing: 10) {
-                ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    bar(value: v, height: height(v), label: store.starts[values.count - i].formatted(.dateTime.month(.abbreviated)), highlight: false)
+            SectionHeader(title: "Cycle length", trailing: cycles.isEmpty ? nil : "last \(cycles.count) cycles")
+            if cycles.isEmpty {
+                Text("Log your next period and your cycle lengths will show up here.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+            } else {
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(Array(cycles.enumerated()), id: \.offset) { _, c in
+                        bar(value: c.length, height: height(c.length), label: c.start.formatted(.dateTime.month(.abbreviated)), highlight: false)
+                    }
+                    bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
                 }
-                bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
+                .frame(height: 130, alignment: .bottom)
+                Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            .frame(height: 130, alignment: .bottom)
-            Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
     }
@@ -184,8 +188,7 @@ struct CycleView: View {
                     }
                     .buttonStyle(.plain)
                     Button {
-                        logToDelete = log.id
-                        confirmingLogDelete = true
+                        logToDelete = log
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 15))
@@ -199,49 +202,15 @@ struct CycleView: View {
             }
         }
         .card()
-        .confirmationDialog("Delete this saved log?", isPresented: $confirmingLogDelete, titleVisibility: .visible) {
+        .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
+                            titleVisibility: .visible) {
             Button("Delete log", role: .destructive) {
-                if let logToDelete { store.deleteLog(id: logToDelete) }
+                if let logToDelete { store.deleteLog(logToDelete) }
                 logToDelete = nil
             }
             Button("Cancel", role: .cancel) { logToDelete = nil }
         } message: {
             Text("This entry will be removed from your symptom history.")
         }
-    }
-
-    // MARK: Data
-
-    private var dataCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Your data")
-            Text("Logs are saved on this device. You can delete entries or clear saved logs and in-app selections. Fictional demo cycle dates may still display in this prototype.")
-                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-            if confirmingDelete {
-                Text("This clears saved day logs and in-app selections. Demo cycle dates are not removed in this prototype.")
-                    .font(.system(size: 13))
-                HStack {
-                    outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
-                    Button("Keep my data") { confirmingDelete = false }
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(Palette.surface2, in: Capsule())
-                        .buttonStyle(.plain)
-                }
-            } else {
-                outlineButton("Delete all my data") { confirmingDelete = true }
-            }
-        }
-        .card()
-        .animation(.easeOut(duration: 0.2), value: confirmingDelete)
-    }
-
-    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-            .buttonStyle(.plain)
     }
 }

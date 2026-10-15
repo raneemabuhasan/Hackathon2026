@@ -1,9 +1,12 @@
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
-    @State private var store = CycleStore()
+    @Environment(CycleStore.self) private var store
 
     var body: some View {
+        @Bindable var store = store
+
         ZStack(alignment: .bottom) {
             Palette.bg.ignoresSafeArea()
 
@@ -45,6 +48,7 @@ struct ContentView: View {
     }
 }
 
+@MainActor
 struct TabBar: View {
     @Environment(CycleStore.self) private var store
 
@@ -87,4 +91,3 @@ struct TabBar: View {
     }
 }
 
-#Preview { ContentView() }

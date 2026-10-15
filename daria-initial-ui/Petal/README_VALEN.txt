@@ -3,8 +3,7 @@
 **Files changed:** `CycleStore.swift`, `LogSheet.swift`, `CycleView.swift`.
 
 ### Changes
-- DayLog gains Codable and a stable UUID for saving/reloading.
-- Saved day logs are stored as local JSON in Application Support and survive restarting the app.
 - The logger can select a date up to today and loads existing data for that date.
+- Saving replaces that day's entry. Logs are stored in Firestore under users/{uid}/logs/{yyyy-MM-dd}, so they sync to the signed-in account.
 - The Cycle screen shows the 20 most recent saved logs; tap a log to edit or tap the trash icon to delete it.
-- Deleting all data clears saved logs and the currently active in-app selections; **demo cycle dates remain hard-coded**. This is NOT a production-complete privacy deletion implementation.
+- "Delete all my data" lives in Settings (tap the avatar on Today) and erases every log and preference in the account.

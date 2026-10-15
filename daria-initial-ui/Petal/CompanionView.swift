@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct CompanionView: View {
     @Environment(CycleStore.self) private var store
     @State private var draft = ""
@@ -8,8 +9,6 @@ struct CompanionView: View {
     private let prompts = ["When is my next period?", "Remind me to restock pads", "I have cramps", "What should I eat today?"]
 
     var body: some View {
-        @Bindable var store = store
-
         ScrollViewReader { proxy in
             Page {
                 VStack(alignment: .leading, spacing: 4) {
@@ -19,8 +18,8 @@ struct CompanionView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     SectionHeader(title: "Reminders", trailing: "opt-in")
-                    ForEach($store.reminders) { $r in
-                        Toggle(isOn: $r.on) {
+                    ForEach(store.reminders) { r in
+                        Toggle(isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) })) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(r.title).font(.system(size: 14, weight: .semibold))
                                 Text(r.detail).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)

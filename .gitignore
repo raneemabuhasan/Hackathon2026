@@ -1,4 +1,11 @@
-
-# Local macOS and Xcode files
+# Personal Xcode state and local build output
 .DS_Store
+xcuserdata/
 *.xcuserstate
+DerivedData/
+build/
+
+# Firebase CLI local state
+.firebase/
+firebase-debug*.log
+firestore-debug.log
