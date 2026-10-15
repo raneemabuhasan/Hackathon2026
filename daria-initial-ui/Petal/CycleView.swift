@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
     @State private var monthOffset = 0

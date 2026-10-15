@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct NourishView: View {
     @Environment(CycleStore.self) private var store
     @State private var phase: Phase?

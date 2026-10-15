@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
     @Environment(CycleStore.self) private var store
 
@@ -47,6 +48,7 @@ struct ContentView: View {
     }
 }
 
+@MainActor
 struct TabBar: View {
     @Environment(CycleStore.self) private var store
 

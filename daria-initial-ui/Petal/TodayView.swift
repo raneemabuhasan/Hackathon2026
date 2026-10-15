@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct TodayView: View {
     @Environment(CycleStore.self) private var store
     @Environment(AuthModel.self) private var auth
@@ -206,6 +207,7 @@ struct TodayView: View {
     }
 }
 
+@MainActor
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
 
