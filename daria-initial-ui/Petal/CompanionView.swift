@@ -5,6 +5,9 @@ struct CompanionView: View {
     @Environment(CycleStore.self) private var store
     @State private var draft = ""
     @FocusState private var focused: Bool
+    /// Whether the on-screen keyboard is actually showing. Focus alone isn't enough: with a hardware
+    /// keyboard (e.g. the simulator) there's no on-screen keyboard and the field would drop behind the tab bar.
+    @State private var keyboardShown = false
 
     private let prompts = ["When is my next period?", "Remind me to restock pads", "I have cramps", "What should I eat today?"]
 
@@ -77,7 +80,9 @@ struct CompanionView: View {
             .background(Palette.surface, in: Capsule())
             .shadow(color: Palette.berry.opacity(0.1), radius: 12, y: 4)
             .padding(.horizontal, 20)
-            .padding(.bottom, focused ? 8 : 92)
+            .padding(.bottom, keyboardShown ? 8 : 92)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         }
     }
 
