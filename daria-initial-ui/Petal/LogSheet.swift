@@ -2,10 +2,14 @@ import SwiftUI
 
 struct LogSheet: View {
     @Environment(CycleStore.self) private var store
+    @State private var date = Date()
+    @State private var entryID = UUID()
+    @State private var confirmingDelete = false
     @State private var flow = "None"
     @State private var moods: Set<String> = []
     @State private var symptoms: Set<String> = []
-    @State private var pain = 2.0
+    @State private var pain = 0.0
+    @State private var reportPain = false
     @State private var energy = 3.0
     @State private var note = ""
 
@@ -18,7 +22,7 @@ struct LogSheet: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Eyebrow(text: "Today · " + store.today.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        DisplayTitle(before: "How are you ", accent: "today?", size: 30)
+                        DisplayTitle(before: "Your ", accent: "daily log", size: 30)
                     }
                     Spacer()
                     Button { store.showLog = false } label: {
@@ -30,6 +34,11 @@ struct LogSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
                 }
+
+                DatePicker("Date", selection: $date, in: ...Date(), displayedComponents: .date)
+                    .onChange(of: date) { _, value in load(value) }
+                if let error = store.storageError { Text(error).foregroundStyle(Palette.accent) }
+                Text("One entry per day. Existing entries load when you choose their date.").font(.caption)
 
                 field("Flow") {
                     HStack(spacing: 8) {
@@ -73,9 +82,10 @@ struct LogSheet: View {
                     }
                 }
 
-                field("Pain level", value: "\(Int(pain)) / 10") {
-                    Slider(value: $pain, in: 0...10, step: 1)
-                    if pain >= 7 {
+                field("Overall daily pain", value: reportPain ? "\(Int(pain)) / 10" : "Not reported") {
+                    Toggle("Include a pain rating", isOn: $reportPain)
+                    if reportPain { Slider(value: $pain, in: 0...10, step: 1) }
+                    if reportPain && pain >= 7 {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Pain that stops you doing everyday things deserves proper care. Consider talking to a GP or pharmacist.")
                             Link("NHS: period pain", destination: CycleStore.nhsPeriodPain).foregroundStyle(Palette.accent)
@@ -100,10 +110,10 @@ struct LogSheet: View {
                 }
 
                 Button {
-                    store.save(DayLog(date: store.today, flow: flow, moods: Array(moods), symptoms: Array(symptoms),
-                                      pain: Int(pain), energy: Int(energy), note: note))
+                    store.save(DayLog(id: entryID, date: CycleStore.cal.startOfDay(for: date), flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
+                                      pain: reportPain ? Int(pain) : nil, energy: Int(energy), note: note))
                 } label: {
-                    Text("Save today's log")
+                    Text("Save log")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -111,6 +121,10 @@ struct LogSheet: View {
                         .background(Palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(!store.storageReady)
+                if store.logs.contains(where: { $0.id == entryID }) {
+                    Button("Delete entry", role: .destructive) { confirmingDelete = true }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -121,8 +135,23 @@ struct LogSheet: View {
         .tint(Palette.accent)
         .animation(.easeOut(duration: 0.2), value: pain >= 7)
         .onAppear {
-            if store.cycleDay <= store.periodLength { flow = "Medium" }
+            date = store.editingLog?.date ?? store.today
+            load(date)
         }
+        .confirmationDialog("Delete this entry?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if store.deleteLog(id: entryID) { store.showLog = false }
+            }
+        }
+    }
+
+    private func load(_ selectedDate: Date) {
+        let log = store.logs.first { CycleStore.cal.isDate($0.date, inSameDayAs: selectedDate) }
+            ?? DayLog(date: selectedDate)
+        entryID = log.id
+        flow = log.flow; moods = Set(log.moods); symptoms = Set(log.symptoms)
+        pain = Double(log.pain ?? 0); reportPain = log.pain != nil
+        energy = Double(log.energy); note = log.note
     }
 
     private func toggle(_ set: inout Set<String>, _ value: String) {

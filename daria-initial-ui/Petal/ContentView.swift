@@ -39,6 +39,16 @@ struct ContentView: View {
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
         }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { store.referenceDate = $0 }
+        .onChange(of: store.showLog) { _, showing in
+            if !showing { store.editingLog = nil }
+        }
+        .safeAreaInset(edge: .top) {
+            if let error = store.storageError {
+                Text(error).font(.caption).padding(10).frame(maxWidth: .infinity)
+                    .background(Palette.surface2)
+            }
+        }
         .environment(store)
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)

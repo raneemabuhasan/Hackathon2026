@@ -44,17 +44,6 @@ enum Phase: String, CaseIterable, Identifiable {
     }
 }
 
-struct DayLog: Identifiable {
-    let id = UUID()
-    var date: Date
-    var flow = "None"
-    var moods: [String] = []
-    var symptoms: [String] = []
-    var pain = 0
-    var energy = 3
-    var note = ""
-}
-
 struct Meal: Identifiable {
     let id = UUID()
     let name: String
@@ -93,26 +82,41 @@ struct ChatMessage: Identifiable {
     var actions: [ChatAction] = []
 }
 
-/// All app state for the mockup. Everything here is fictional demo data held in memory.
+/// Shared user history. Every history mutation persists before publishing UI state.
 @MainActor @Observable
 final class CycleStore {
     var tab: Tab = .today
     var showLog = false
+    var editingLog: DayLog?
     var toast: String?
 
-    let today: Date
-    let periodLength = 5
-    let pastLengths = CycleStore.demoLengths
-    let starts: [Date]
-
-    var logs: [DayLog] = []
+    var referenceDate = Date()
+    var today: Date { Self.cal.startOfDay(for: referenceDate) }
+    private(set) var history = PersonalHistory()
+    private(set) var storageReady = false
+    var storageError: String?
+    private var repository: (any HistoryRepository)?
+    var starts: [Date] { history.starts.sorted(by: >) }
+    var logs: [DayLog] { history.logs }
+    var pastLengths: [Int] {
+        let dates = starts.reversed()
+        return Array(zip(dates, dates.dropFirst()).map { Self.days($0.1, from: $0.0) }.reversed())
+    }
+    var prediction: PeriodPrediction? {
+        CyclePredictionEngine.predict(starts: starts, asOf: .now)
+    }
     var reminders: [Reminder] = []
-    var grocery: [GroceryItem] = [GroceryItem(name: "Oat milk"), GroceryItem(name: "Ginger tea", done: true)]
-    var diets: Set<String> = ["vegetarian"]
-    var avoid: Set<String> = ["nuts"]
+    var grocery: [GroceryItem] = []
+    var diets: Set<String> {
+        get { history.diets }
+        set { commit { $0.diets = newValue } }
+    }
+    var avoid: Set<String> {
+        get { history.avoid }
+        set { commit { $0.avoid = newValue } }
+    }
     var messages: [ChatMessage] = []
 
-    static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
     static let cal = Calendar.current
     static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
     static func days(_ a: Date, from b: Date) -> Int {
@@ -126,69 +130,89 @@ final class CycleStore {
     static let nhsPeriodPain = URL(string: "https://www.nhs.uk/conditions/period-pain/")!
     static let nhsHeavyPeriods = URL(string: "https://www.nhs.uk/conditions/heavy-periods/")!
 
-    init() {
-        let t = Self.cal.startOfDay(for: .now)
-        today = t
-        var s = [Self.add(t, -13)]
-        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
-        starts = s
-
-        for start in s.prefix(3) {
-            logs += [
-                DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]),
-                DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]),
-                DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]),
-                DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]),
-                DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]),
-            ]
+    init(repository: (any HistoryRepository)? = nil) {
+        do {
+            let selected: any HistoryRepository
+            if let repository { selected = repository }
+            else { selected = try PersonalHistoryRepository.deviceRepository() }
+            self.repository = selected
+            history = try selected.load()
+            storageReady = true
+        } catch {
+            storageError = "Could not open history. Existing data was preserved. \(error.localizedDescription)"
         }
-        logs.append(DayLog(date: Self.add(t, -6), symptoms: ["Headache"]))
-
-        reminders = [
-            Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(windowStart, -1))) · the day before your window", on: true),
-            Reminder(title: "Evening check-in", detail: "Every day · 8:30 pm", on: true),
-            Reminder(title: "Restock pads & tampons", detail: "\(fmt(Self.add(windowStart, -4))) · once", on: false),
-        ]
-        messages = [ChatMessage(
-            fromUser: false,
-            text: "Hi Maya. You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
-            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")]
+        messages = [ChatMessage(fromUser: false,
+            text: "Your recorded history is available in Cycle. The AI assistant is not connected yet.")]
     }
 
-    // MARK: Cycle maths
-
-    var lastStart: Date { starts[0] }
-    private var mean: Double { Double(pastLengths.reduce(0, +)) / Double(pastLengths.count) }
-    var average: Int { Int(mean.rounded()) }
-    /// Uncertainty in days either side of the predicted start, never less than 2.
-    var spread: Int {
-        let variance = pastLengths.map { pow(Double($0) - mean, 2) }.reduce(0, +) / Double(pastLengths.count)
-        return max(2, Int((sqrt(variance) * 1.5).rounded()))
-    }
-    var nextStart: Date { Self.add(lastStart, average) }
-    var windowStart: Date { Self.add(nextStart, -spread) }
-    var windowEnd: Date { Self.add(nextStart, spread) }
-    var cycleDay: Int { Self.days(today, from: lastStart) + 1 }
-
-    func range(of phase: Phase) -> ClosedRange<Int> {
-        switch phase {
-        case .menstrual: 1...periodLength
-        case .follicular: (periodLength + 1)...(average - 16)
-        case .mid: (average - 15)...(average - 12)
-        case .luteal: (average - 11)...average
+    @discardableResult
+    func commit(_ change: (inout PersonalHistory) -> Void) -> Bool {
+        guard storageReady, let repository else {
+            storageError = "History is unavailable. Reopen the app to retry; no changes were saved."
+            return false
+        }
+        var next = history
+        change(&next)
+        do {
+            try repository.save(next)
+            history = next
+            storageError = nil
+            return true
+        } catch {
+            storageError = "Not saved. Please retry. \(error.localizedDescription)"
+            return false
         }
     }
-    func phase(forDay day: Int) -> Phase { Phase.allCases.first { range(of: $0).contains(day) } ?? .luteal }
-    var currentPhase: Phase { phase(forDay: cycleDay) }
+
+    var cycleDay: Int { starts.first.map { Self.days(today, from: $0) + 1 } ?? 0 }
+    // TODO(wellness teammate): reviewed personalization independent of inferred biological phase.
+    // A neutral selection for browsing the existing meal catalog, never presented as measured phase.
+    var currentPhase: Phase { .menstrual }
 
     func isPeriod(_ date: Date) -> Bool {
-        date <= today && starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength }
+        let day = Self.cal.startOfDay(for: date)
+        return history.starts.contains { start in
+            if let end = history.periodEnds[start] { return day >= start && day <= end }
+            return day == start
+        } || logs.contains { Self.cal.isDate($0.date, inSameDayAs: day) && $0.flow != "None" }
     }
     func isPredicted(_ date: Date) -> Bool {
-        let x = Self.days(date, from: nextStart); return x >= 0 && x < periodLength
+        guard let prediction, prediction.windowEnd >= today else { return false }
+        return date >= prediction.windowStart && date <= prediction.windowEnd
     }
-    func isMaybe(_ date: Date) -> Bool {
-        !isPredicted(date) && date >= windowStart && date <= Self.add(windowEnd, periodLength - 1)
+    func isMaybe(_ date: Date) -> Bool { false }
+
+    @discardableResult
+    func savePeriod(start: Date, end: Date?, replacing original: Date? = nil) -> Bool {
+        let start = Self.cal.startOfDay(for: start)
+        let end = end.map { Self.cal.startOfDay(for: $0) }
+        guard start <= today, end.map({ $0 >= start && $0 <= today }) ?? true else {
+            storageError = "Check period dates: end must be on or after start, and dates cannot be in the future."
+            return false
+        }
+        let others = history.starts.filter { $0 != original }
+        guard !others.contains(start), !others.contains(where: { other in
+            let otherEnd = history.periodEnds[other] ?? other
+            return start <= otherEnd && (end ?? start) >= other
+        }) else {
+            storageError = "This period overlaps an existing period. Edit that record instead."
+            return false
+        }
+        return commit { data in
+            if let original {
+                data.starts.removeAll { $0 == original }
+                data.periodEnds.removeValue(forKey: original)
+            }
+            data.starts.append(start)
+            data.periodEnds[start] = end
+        }
+    }
+
+    func deletePeriod(start: Date) {
+        commit {
+            $0.starts.removeAll { $0 == start }
+            $0.periodEnds.removeValue(forKey: start)
+        }
     }
 
     var symptomCounts: [(name: String, count: Int)] {
@@ -210,18 +234,38 @@ final class CycleStore {
         }
     }
 
-    func save(_ log: DayLog) {
-        logs.removeAll { Self.cal.isDate($0.date, inSameDayAs: today) }
-        logs.append(log)
-        showLog = false
-        let tags = log.moods.count + log.symptoms.count
-        showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
+    @discardableResult
+    func save(_ log: DayLog) -> Bool {
+        guard Self.cal.startOfDay(for: log.date) <= today,
+              log.pain.map({ (0...10).contains($0) }) ?? true else {
+            storageError = "Check the entry date and pain rating."
+            return false
+        }
+        if commit({ $0.save(log) }) {
+            showLog = false
+            showToast("Entry saved")
+            return true
+        }
+        return false
     }
 
+    var comparisonCycles: [ComparedCycle] {
+        SymptomComparisonEngine.cycles(starts: starts, logs: logs, asOf: .now)
+    }
+
+    @discardableResult
+    func updateLog(_ log: DayLog) -> Bool { save(log) }
+
+    @discardableResult
+    func deleteLog(id: UUID) -> Bool { commit { $0.logs.removeAll { $0.id == id } } }
+
     func deleteAllData() {
-        logs = []
-        grocery = []
-        showToast("Your data was deleted")
+        if commit({ $0 = PersonalHistory() }) {
+            grocery = []
+            reminders = []
+            messages = []
+            showToast("Your history was deleted")
+        }
     }
 
     // MARK: Nourish
@@ -273,77 +317,28 @@ final class CycleStore {
         }
     }
 
-    // MARK: Companion
-
+    // MARK: Companion integration pending
+    // TODO(AI teammate): inject agent service; expose comparisonCycles and
+    // SymptomComparisonEngine.compare as read tools. Save only validated user-confirmed logs.
+    // TODO(reminder teammate): persist opt-in reminders and schedule native notifications.
     func label(for action: ChatAction) -> String {
         switch action {
-        case .setReminder: "Set for \(fmt(Self.add(windowStart, -2)))"
-        case .notNow: "Not now"
-        case .logCramps: "Log cramps today"
-        case .seeMeals: "See more ideas"
+        case .setReminder: return "Reminders unavailable"
+        case .notNow: return "Not now"
+        case .logCramps: return "Open log"
+        case .seeMeals: return "Browse meals"
         }
     }
-
     func send(_ text: String) {
         messages.append(ChatMessage(fromUser: true, text: text))
-        Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            reply(to: text)
-        }
+        messages.append(ChatMessage(fromUser: false,
+            text: "AI assistant is not connected yet. Use + to record symptoms or Cycle to review comparisons."))
     }
-
     func perform(_ action: ChatAction, from messageID: UUID) {
-        if let i = messages.firstIndex(where: { $0.id == messageID }) { messages[i].actions = [] }
         switch action {
-        case .setReminder(let title):
-            reminders.insert(Reminder(title: title, detail: "\(fmt(Self.add(windowStart, -2))) · once", on: true), at: 0)
-            showToast("Reminder set")
-            ai("Done. You'll find it under Reminders, and you can switch it off any time.")
-        case .notNow:
-            ai("No problem.")
-        case .logCramps:
-            showLog = true
-        case .seeMeals:
-            tab = .nourish
-        }
-    }
-
-    private func ai(_ text: String, note: String? = nil, link: URL? = nil, actions: [ChatAction] = []) {
-        messages.append(ChatMessage(fromUser: false, text: text, note: note, link: link, actions: actions))
-    }
-
-    private func reply(to question: String) {
-        let q = question.lowercased()
-        let has = { (words: [String]) in words.contains { q.contains($0) } }
-
-        if has(["faint", "soak", "very heavy", "severe", "unbearable", "clot", "pass out"]) {
-            ai("That sounds like something to get checked. Please contact a GP, or call NHS 111 if you're in the UK. If you feel faint or very unwell, seek urgent care.",
-               note: "I can't assess symptoms. NHS: heavy periods", link: Self.nhsHeavyPeriods)
-        } else if has(["remind"]) {
-            var what = question
-            if let r = question.range(of: "remind me to ", options: .caseInsensitive) ?? question.range(of: "remind me ", options: .caseInsensitive) {
-                what = String(question[r.upperBound...])
-            }
-            what = what.trimmingCharacters(in: .whitespacesAndNewlines)
-            if what.isEmpty || what.lowercased() == question.lowercased() { what = "Check in with yourself" }
-            let title = what.prefix(1).uppercased() + what.dropFirst()
-            ai("Want me to remind you to \(what.lowercased())? I'd suggest \(fmt(Self.add(windowStart, -2))), two days before your likely window.",
-               actions: [.setReminder(title), .notNow])
-        } else if has(["cramp", "pain", "hurt"]) {
-            ai("Some things people find helpful for period pain: a heat pad on your tummy, a warm bath, gentle exercise like walking or yoga, and over-the-counter pain relief if it's suitable for you (check with a pharmacist).",
-               note: "Source: NHS period pain. If pain stops you doing everyday things, talk to a GP.", link: Self.nhsPeriodPain, actions: [.logCramps])
-        } else if has(["eat", "food", "hungry", "meal", "craving", "snack"]) {
-            let meal = meals(for: currentPhase).first ?? Self.meals[currentPhase]![0]
-            ai("You're in your \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb) One idea that fits your preferences: \(meal.name).",
-               note: "General nutrition ideas, not treatment.", actions: [.seeMeals])
-        } else if has(["tired", "energy", "exhaust", "sleep"]) {
-            let n = logs.filter { $0.symptoms.contains("Fatigue") }.count
-            ai("You've logged fatigue on \(n) days recently, mostly in the first days of your period. That's a pattern many people notice. Regular meals, water and an earlier night can help. If tiredness is constant or getting worse, a GP can check things like iron levels.")
-        } else if has(["when", "next period", "late"]) {
-            ai("Your next period is most likely between \(fmt(windowStart)) and \(fmt(windowEnd)). Your cycles have ranged from \(pastLengths.min()!) to \(pastLengths.max()!) days, so I give a window instead of one date.",
-               note: "Not for contraception or fertility planning.")
-        } else {
-            ai("I can help with reminders, food ideas for your cycle, self-care for period pain, or a summary of what you've logged. What would be most useful?")
+        case .logCramps: showLog = true
+        case .seeMeals: tab = .nourish
+        case .setReminder, .notNow: break
         }
     }
 }

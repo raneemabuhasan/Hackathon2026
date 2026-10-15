@@ -35,7 +35,7 @@ struct NourishView: View {
             .shadow(color: Palette.berry.opacity(0.07), radius: 12, y: 6)
             .animation(.easeOut(duration: 0.2), value: selected)
 
-            Text(selected.blurb).font(.system(size: 13.5)).foregroundStyle(Palette.inkSoft)
+            Text("Browse the meal catalog. Phase-based personalization is awaiting team integration; this selection does not identify your current biological phase.").font(.system(size: 13.5)).foregroundStyle(Palette.inkSoft)
 
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Your preferences", trailing: "filters meals")
@@ -92,10 +92,7 @@ struct NourishView: View {
         }
     }
 
-    private var title: String {
-        if selected == store.currentPhase { return "right now" }
-        return selected == .menstrual ? "your period" : "the \(selected.name.lowercased()) phase"
-    }
+    private var title: String { "your choice" }
 
     private func toggle(_ set: inout Set<String>, _ value: String) {
         if set.contains(value) { set.remove(value) } else { set.insert(value) }

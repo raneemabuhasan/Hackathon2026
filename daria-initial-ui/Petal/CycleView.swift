@@ -4,6 +4,7 @@ struct CycleView: View {
     @Environment(CycleStore.self) private var store
     @State private var monthOffset = 0
     @State private var confirmingDelete = false
+    @State private var managingPeriods = false
 
     var body: some View {
         Page {
@@ -11,11 +12,30 @@ struct CycleView: View {
                 Eyebrow(text: "Your cycle")
                 DisplayTitle(before: "Patterns, ", accent: "not", after: " promises")
             }
+            Button("Record / edit period dates") { managingPeriods = true }
+                .buttonStyle(.bordered)
             calendar
             lengths
+            historyEntries
             symptoms
+            SymptomComparisonView()
             dataCard
         }
+        .sheet(isPresented: $managingPeriods) { PeriodHistoryView().environment(store) }
+    }
+
+    private var historyEntries: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Daily entries")
+            if store.logs.isEmpty { Text("No entries yet. Tap + to record a day.") }
+            ForEach(store.logs.sorted { $0.date > $1.date }) { log in
+                DisclosureGroup(log.date.formatted(date: .abbreviated, time: .omitted)) {
+                    Text(log.symptoms.joined(separator: ", "))
+                    Text(log.note)
+                    Button("Edit entry") { store.editingLog = log; store.showLog = true }
+                }
+            }
+        }.card()
     }
 
     // MARK: Calendar
@@ -50,8 +70,7 @@ struct CycleView: View {
             }
             HStack(spacing: 14) {
                 legend(Circle().fill(Palette.accent), "Logged period")
-                legend(Circle().strokeBorder(Palette.pink, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])), "Likely period")
-                legend(Circle().fill(Palette.blush.opacity(0.4)), "Could start")
+                legend(Circle().strokeBorder(Palette.pink, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])), "Estimated start")
             }
             .font(.system(size: 11))
             .foregroundStyle(Palette.inkSoft)
@@ -91,33 +110,16 @@ struct CycleView: View {
     // MARK: Cycle lengths
 
     private var lengths: some View {
-        let values = Array(store.pastLengths.reversed())
-        let height = { (v: Int) in CGFloat(v - 20) / 14 * 90 }
-        return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "last 5 cycles")
-            HStack(alignment: .bottom, spacing: 10) {
-                ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    bar(value: v, height: height(v), label: store.starts[values.count - i].formatted(.dateTime.month(.abbreviated)), highlight: false)
-                }
-                bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Recorded cycle lengths")
+            if store.pastLengths.isEmpty {
+                Text("Record two period start dates to see a start-to-start interval.")
             }
-            .frame(height: 130, alignment: .bottom)
-            Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
-        }
-        .card()
-    }
-
-    private func bar(value: Int, height: CGFloat, label: String, highlight: Bool) -> some View {
-        VStack(spacing: 4) {
-            Text("\(value)").font(.system(size: 12, weight: .semibold)).monospacedDigit()
-            UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 4, bottomTrailingRadius: 4, topTrailingRadius: 8)
-                .fill(highlight ? Palette.accent : Palette.blush)
-                .frame(maxWidth: 30)
-                .frame(height: height)
-            Text(label).font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
-        }
-        .frame(maxWidth: .infinity)
+            ForEach(Array(store.pastLengths.enumerated()), id: \.offset) { index, length in
+                Text("Interval \(index + 1), most recent first: \(length) days")
+            }
+            Text("These are intervals between recorded starts; missing records may affect them.").font(.caption)
+        }.card()
     }
 
     // MARK: Symptoms
@@ -156,13 +158,13 @@ struct CycleView: View {
     private var dataCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Your data")
-            Text("Logs stay on this device. Nothing is shared or sold. You can erase everything at any time.")
+            Text("History is saved on this device. No cloud sync is connected.")
                 .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
             if confirmingDelete {
-                Text("This erases every log and preference on this device. It can't be undone.")
+                Text("This permanently clears your period dates, symptom history and saved preferences.")
                     .font(.system(size: 13))
                 HStack {
-                    outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
+                    outlineButton("Delete all data") { store.deleteAllData(); confirmingDelete = false }
                     Button("Keep my data") { confirmingDelete = false }
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 16).padding(.vertical, 10)
