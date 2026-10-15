@@ -122,7 +122,16 @@ struct LogSheet: View {
         .tint(Palette.accent)
         .animation(.easeOut(duration: 0.2), value: pain >= 7)
         .onAppear {
-            if store.cycleDay <= store.periodLength { flow = "Medium" }
+            if let log = store.todayLog {
+                flow = log.flow
+                moods = Set(log.moods)
+                symptoms = Set(log.symptoms)
+                pain = Double(log.pain)
+                energy = Double(log.energy)
+                note = log.note
+            } else if store.cycleDay <= store.periodLength {
+                flow = "Medium"
+            }
         }
     }
 
