@@ -239,15 +239,25 @@ struct LogSheet: View {
         VStack(spacing: 6) {
             GeometryReader { geo in
                 let step = geo.size.width / 11
-                HStack(spacing: 0) {
-                    ForEach(0...10, id: \.self) { level in
-                        let filled = level <= Int(pain)
-                        let current = level == Int(pain)
-                        Circle()
-                            .fill(Self.painColor(level).opacity(filled ? 1 : 0.25))
-                            .frame(width: current ? 26 : 16, height: current ? 26 : 16)
-                            .overlay(Circle().stroke(Palette.ink, lineWidth: current ? 2 : 0))
-                            .frame(width: step, height: 32)
+                ZStack(alignment: .leading) {
+                    // Track behind the dots, filled up to the current level.
+                    Capsule().fill(Palette.ink.opacity(0.1))
+                        .frame(width: step * 10, height: 4)
+                        .offset(x: step / 2)
+                    Capsule().fill(LinearGradient(colors: [Self.painColor(0), Self.painColor(Int(pain))], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: step * pain, height: 4)
+                        .offset(x: step / 2)
+                    HStack(spacing: 0) {
+                        ForEach(0...10, id: \.self) { level in
+                            let filled = level <= Int(pain)
+                            let current = level == Int(pain)
+                            Circle()
+                                .fill(filled ? Self.painColor(level) : Palette.surface)
+                                .overlay(Circle().stroke(current ? Palette.ink : (filled ? Color.clear : Palette.ink.opacity(0.22)),
+                                                         lineWidth: current ? 2 : 1.5))
+                                .frame(width: current ? 26 : 16, height: current ? 26 : 16)
+                                .frame(width: step, height: 32)
+                        }
                     }
                 }
                 .contentShape(Rectangle())
@@ -286,7 +296,8 @@ struct LogSheet: View {
     }
 
     private static func painColor(_ level: Int) -> Color {
-        let steps = [Palette.mist, Palette.blush, Palette.petal, Palette.pink, Palette.coral, Palette.rose, Palette.berry, Palette.plum, Palette.wine]
+        // Starts at a mid pink so the low levels are still easy to see on the pale background.
+        let steps = [Palette.petal, Palette.pink, Palette.coral, Palette.rose, Palette.berry, Palette.plum, Palette.wine]
         return steps[min(steps.count - 1, level * steps.count / 11)]
     }
 

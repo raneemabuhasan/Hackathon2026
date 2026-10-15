@@ -150,6 +150,8 @@ final class CycleStore {
     @ObservationIgnored private let db = Firestore.firestore()
     /// Created on first message so the prompt sees the loaded profile. Reset when data is deleted.
     @ObservationIgnored private var assistant: Assistant?
+    /// Cycle facts baked into the assistant's prompt; when they change, a fresh assistant is created.
+    @ObservationIgnored private var assistantFacts = ""
     private var userRef: DocumentReference { db.collection("users").document(uid) }
 
     var name: String { profile?.name ?? "" }
@@ -193,7 +195,6 @@ final class CycleStore {
                     self.loaded = true
                     self.syncNotifications()
                     self.prefetchAI()
-                    if self.profile != nil, self.messages.isEmpty { self.greet() }
                 }
             },
             userRef.collection("logs").addSnapshotListener { [weak self] snap, error in
@@ -231,11 +232,12 @@ final class CycleStore {
         listeners = []
     }
 
-    private func greet() {
-        messages = [ChatMessage(
+    /// The Companion's opening message. Computed, not stored, so it updates as soon as a log changes the prediction.
+    var greeting: ChatMessage {
+        ChatMessage(
             fromUser: false,
             text: "Hi \(name). You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
-            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")]
+            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")
     }
 
     func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
@@ -720,8 +722,12 @@ final class CycleStore {
         Task {
             defer { thinking = false }
             do {
-                let assistant = self.assistant ?? Assistant(store: self)
-                self.assistant = assistant
+                let facts = "\(cycleDay)|\(windowStart)|\(windowEnd)|\(name)"
+                if assistant == nil || facts != assistantFacts {
+                    assistant = Assistant(store: self)
+                    assistantFacts = facts
+                }
+                let assistant = self.assistant!
                 ai(try await assistant.reply(to: text), note: "AI-generated. Not medical advice.")
             } catch {
                 // No connection, billing not set up, etc.: fall back to the built-in replies.

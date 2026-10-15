@@ -69,6 +69,7 @@ struct CompanionView: View {
                 }
 
                 VStack(spacing: 10) {
+                    bubble(store.greeting)
                     ForEach(store.messages) { m in
                         bubble(m).id(m.id)
                     }
