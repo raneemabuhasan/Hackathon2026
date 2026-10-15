@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LogSheet: View {
     @Environment(CycleStore.self) private var store
     @State private var flow = "None"
