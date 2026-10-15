@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
+    @Environment(AuthModel.self) private var auth
     @State private var monthOffset = 0
     @State private var confirmingDelete = false
 
@@ -91,19 +92,25 @@ struct CycleView: View {
     // MARK: Cycle lengths
 
     private var lengths: some View {
-        let values = Array(store.pastLengths.reversed())
-        let height = { (v: Int) in CGFloat(v - 20) / 14 * 90 }
+        let cycles = Array(store.completedCycles.reversed())
+        let height = { (v: Int) in CGFloat(max(v - 16, 4)) / 18 * 90 }
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "last 5 cycles")
-            HStack(alignment: .bottom, spacing: 10) {
-                ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    bar(value: v, height: height(v), label: store.starts[values.count - i].formatted(.dateTime.month(.abbreviated)), highlight: false)
+            SectionHeader(title: "Cycle length", trailing: cycles.isEmpty ? nil : "last \(cycles.count) cycles")
+            if cycles.isEmpty {
+                Text("Log your next period and your cycle lengths will show up here.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+            } else {
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(Array(cycles.enumerated()), id: \.offset) { _, c in
+                        bar(value: c.length, height: height(c.length), label: c.start.formatted(.dateTime.month(.abbreviated)), highlight: false)
+                    }
+                    bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
                 }
-                bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
+                .frame(height: 130, alignment: .bottom)
+                Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            .frame(height: 130, alignment: .bottom)
-            Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
     }
@@ -156,10 +163,10 @@ struct CycleView: View {
     private var dataCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Your data")
-            Text("Logs stay on this device. Nothing is shared or sold. You can erase everything at any time.")
+            Text("Your logs are stored in your private account and only you can read them. Nothing is shared or sold. You can erase everything at any time.")
                 .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
             if confirmingDelete {
-                Text("This erases every log and preference on this device. It can't be undone.")
+                Text("This erases every log and preference in your account. It can't be undone.")
                     .font(.system(size: 13))
                 HStack {
                     outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
@@ -171,6 +178,20 @@ struct CycleView: View {
                 }
             } else {
                 outlineButton("Delete all my data") { confirmingDelete = true }
+            }
+            #if DEBUG
+            outlineButton("Add sample history (debug)") { store.addSampleHistory() }
+            #endif
+            Divider().overlay(Palette.line)
+            HStack {
+                Text("Signed in as \(auth.user?.email ?? store.name)")
+                    .font(.system(size: 12)).foregroundStyle(Palette.inkFaint)
+                    .lineLimit(1)
+                Spacer()
+                Button("Sign out") { auth.signOut() }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .buttonStyle(.plain)
             }
         }
         .card()

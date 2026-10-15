@@ -1,0 +1,5 @@
+.DS_Store
+xcuserdata/
+.firebase/
+firebase-debug*.log
+firestore-debug.log

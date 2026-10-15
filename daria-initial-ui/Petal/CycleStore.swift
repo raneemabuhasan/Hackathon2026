@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import FirebaseFirestore
 
 enum Tab { case today, cycle, nourish, companion }
 
@@ -44,8 +45,7 @@ enum Phase: String, CaseIterable, Identifiable {
     }
 }
 
-struct DayLog: Identifiable {
-    let id = UUID()
+struct DayLog: Identifiable, Codable {
     var date: Date
     var flow = "None"
     var moods: [String] = []
@@ -53,6 +53,18 @@ struct DayLog: Identifiable {
     var pain = 0
     var energy = 3
     var note = ""
+    /// One log per day, so the day is the Firestore document ID.
+    var id: String { CycleStore.key(date) }
+}
+
+/// users/{uid} — set during onboarding.
+struct Profile: Codable {
+    var name: String
+    var lastPeriodStart: Date
+    var cycleLength: Int
+    var periodLength: Int
+    var diets: [String] = []
+    var avoid: [String] = []
 }
 
 struct Meal: Identifiable {
@@ -64,17 +76,19 @@ struct Meal: Identifiable {
     let items: [String]
 }
 
-struct Reminder: Identifiable {
-    let id = UUID()
+struct Reminder: Identifiable, Codable {
+    var id = UUID().uuidString
     var title: String
     var detail: String
     var on: Bool
+    var created = Date()
 }
 
-struct GroceryItem: Identifiable {
-    let id = UUID()
+struct GroceryItem: Identifiable, Codable {
+    var id = UUID().uuidString
     var name: String
     var done = false
+    var created = Date()
 }
 
 enum ChatAction: Hashable {
@@ -93,30 +107,51 @@ struct ChatMessage: Identifiable {
     var actions: [ChatAction] = []
 }
 
-/// All app state for the mockup. Everything here is fictional demo data held in memory.
+/// All app state for one signed-in user, kept in sync with Firestore.
+///
+/// Layout (rules in /firestore.rules only let the owner read or write):
+///   users/{uid}                 Profile
+///   users/{uid}/logs/{yyyy-MM-dd} DayLog
+///   users/{uid}/reminders/{id}  Reminder
+///   users/{uid}/grocery/{id}    GroceryItem
+///
+/// Writes go straight to Firestore; the snapshot listeners update the arrays below
+/// (immediately for local writes, and offline thanks to Firestore's cache).
 @MainActor @Observable
 final class CycleStore {
     var tab: Tab = .today
     var showLog = false
     var toast: String?
 
+    let uid: String
     let today: Date
-    let periodLength = 5
-    let pastLengths = CycleStore.demoLengths
-    let starts: [Date]
 
-    var logs: [DayLog] = []
-    var reminders: [Reminder] = []
-    var grocery: [GroceryItem] = [GroceryItem(name: "Oat milk"), GroceryItem(name: "Ginger tea", done: true)]
-    var diets: Set<String> = ["vegetarian"]
-    var avoid: Set<String> = ["nuts"]
+    /// Nil until onboarding is done. `loaded` flips once the first profile snapshot arrives.
+    private(set) var profile: Profile?
+    private(set) var loaded = false
+    private(set) var logs: [DayLog] = []
+    private(set) var reminders: [Reminder] = []
+    private(set) var grocery: [GroceryItem] = []
     var messages: [ChatMessage] = []
 
+    @ObservationIgnored private var listeners: [ListenerRegistration] = []
+    @ObservationIgnored private let db = Firestore.firestore()
+    private var userRef: DocumentReference { db.collection("users").document(uid) }
+
+    var name: String { profile?.name ?? "" }
+    var periodLength: Int { profile?.periodLength ?? 5 }
+    var diets: Set<String> { Set(profile?.diets ?? []) }
+    var avoid: Set<String> { Set(profile?.avoid ?? []) }
+
     static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
-    static let cal = Calendar.current
-    static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
-    static func days(_ a: Date, from b: Date) -> Int {
+    nonisolated static let cal = Calendar.current
+    nonisolated static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
+    nonisolated static func days(_ a: Date, from b: Date) -> Int {
         cal.dateComponents([.day], from: cal.startOfDay(for: b), to: cal.startOfDay(for: a)).day ?? 0
+    }
+    nonisolated static func key(_ date: Date) -> String {
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
     static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping"]
@@ -126,36 +161,108 @@ final class CycleStore {
     static let nhsPeriodPain = URL(string: "https://www.nhs.uk/conditions/period-pain/")!
     static let nhsHeavyPeriods = URL(string: "https://www.nhs.uk/conditions/heavy-periods/")!
 
-    init() {
-        let t = Self.cal.startOfDay(for: .now)
-        today = t
-        var s = [Self.add(t, -13)]
-        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
-        starts = s
+    init(uid: String) {
+        self.uid = uid
+        today = Self.cal.startOfDay(for: .now)
+        listen()
+    }
 
-        for start in s.prefix(3) {
-            logs += [
-                DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]),
-                DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]),
-                DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]),
-                DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]),
-                DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]),
-            ]
-        }
-        logs.append(DayLog(date: Self.add(t, -6), symptoms: ["Headache"]))
+    // MARK: Sync
 
-        reminders = [
-            Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(windowStart, -1))) · the day before your window", on: true),
-            Reminder(title: "Evening check-in", detail: "Every day · 8:30 pm", on: true),
-            Reminder(title: "Restock pads & tampons", detail: "\(fmt(Self.add(windowStart, -4))) · once", on: false),
+    private func listen() {
+        listeners = [
+            userRef.addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let error { print("Profile listener:", error) }
+                    self.profile = try? snap?.data(as: Profile.self)
+                    self.loaded = true
+                    if self.profile != nil, self.messages.isEmpty { self.greet() }
+                }
+            },
+            userRef.collection("logs").addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Logs listener:", error) }
+                    self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
+                }
+            },
+            userRef.collection("reminders").order(by: "created", descending: true).addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Reminders listener:", error) }
+                    self?.reminders = snap?.documents.compactMap { try? $0.data(as: Reminder.self) } ?? []
+                }
+            },
+            userRef.collection("grocery").order(by: "created").addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Grocery listener:", error) }
+                    self?.grocery = snap?.documents.compactMap { try? $0.data(as: GroceryItem.self) } ?? []
+                }
+            },
         ]
+    }
+
+    /// Detach listeners; call when the user signs out.
+    func stop() {
+        listeners.forEach { $0.remove() }
+        listeners = []
+    }
+
+    private func greet() {
         messages = [ChatMessage(
             fromUser: false,
-            text: "Hi Maya. You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
+            text: "Hi \(name). You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
             note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")]
     }
 
+    /// Writes the profile plus a few default reminders the first time someone signs in.
+    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
+        let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
+                              cycleLength: cycleLength, periodLength: periodLength)
+        let batch = db.batch()
+        try? batch.setData(from: profile, forDocument: userRef)
+        let next = Self.add(profile.lastPeriodStart, cycleLength)
+        let defaults = [
+            Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(next, -3))) · before your likely window", on: true),
+            Reminder(title: "Evening check-in", detail: "Every day · 8:30 pm", on: true),
+            Reminder(title: "Restock pads & tampons", detail: "\(fmt(Self.add(next, -6))) · once", on: false),
+        ]
+        for (i, var r) in defaults.enumerated() {
+            r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
+            try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
+        }
+        batch.commit { error in if let error { print("Onboarding write failed:", error) } }
+    }
+
     // MARK: Cycle maths
+
+    /// Period start dates, most recent first: any logged flow that follows two flow-free days,
+    /// plus the onboarding answer. Starts less than 10 days apart count as one period.
+    var starts: [Date] {
+        let flowDays = Set(logs.filter { $0.flow != "None" }.map { Self.cal.startOfDay(for: $0.date) })
+        var candidates = flowDays.filter { !flowDays.contains(Self.add($0, -1)) && !flowDays.contains(Self.add($0, -2)) }
+        if let seed = profile?.lastPeriodStart { candidates.insert(Self.cal.startOfDay(for: seed)) }
+        var result: [Date] = []
+        for d in candidates.sorted() where result.last.map({ Self.days(d, from: $0) >= 10 }) ?? true {
+            result.append(d)
+        }
+        return result.isEmpty ? [today] : result.reversed()
+    }
+
+    /// Finished cycles, most recent first. Gaps outside 18–45 days are treated as missed logging.
+    var completedCycles: [(start: Date, length: Int)] {
+        let s = starts
+        return zip(s.dropFirst(), s)
+            .map { (start: $0, length: Self.days($1, from: $0)) }
+            .filter { (18...45).contains($0.length) }
+            .prefix(6)
+            .map { $0 }
+    }
+
+    /// Never empty: falls back to the cycle length given during onboarding.
+    var pastLengths: [Int] {
+        let lengths = completedCycles.map(\.length)
+        return lengths.isEmpty ? [profile?.cycleLength ?? 28] : lengths
+    }
 
     var lastStart: Date { starts[0] }
     private var mean: Double { Double(pastLengths.reduce(0, +)) / Double(pastLengths.count) }
@@ -182,7 +289,8 @@ final class CycleStore {
     var currentPhase: Phase { phase(forDay: cycleDay) }
 
     func isPeriod(_ date: Date) -> Bool {
-        date <= today && starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength }
+        date <= today && (logs.contains { $0.flow != "None" && Self.cal.isDate($0.date, inSameDayAs: date) }
+            || starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength })
     }
     func isPredicted(_ date: Date) -> Bool {
         let x = Self.days(date, from: nextStart); return x >= 0 && x < periodLength
@@ -210,19 +318,65 @@ final class CycleStore {
         }
     }
 
+    var todayLog: DayLog? { logs.first { Self.cal.isDate($0.date, inSameDayAs: today) } }
+
     func save(_ log: DayLog) {
-        logs.removeAll { Self.cal.isDate($0.date, inSameDayAs: today) }
-        logs.append(log)
+        try? userRef.collection("logs").document(log.id).setData(from: log)
         showLog = false
         let tags = log.moods.count + log.symptoms.count
         showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
     }
 
+    func setReminder(_ reminder: Reminder, on: Bool) {
+        userRef.collection("reminders").document(reminder.id).updateData(["on": on])
+    }
+
+    func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
+    func toggleAvoid(_ allergen: String) { toggle("avoid", allergen, avoid.contains(allergen)) }
+
+    private func toggle(_ field: String, _ value: String, _ present: Bool) {
+        userRef.updateData([field: present ? FieldValue.arrayRemove([value]) : FieldValue.arrayUnion([value])])
+    }
+
+    func toggleGrocery(_ item: GroceryItem) {
+        userRef.collection("grocery").document(item.id).updateData(["done": !item.done])
+    }
+
+    /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
     func deleteAllData() {
-        logs = []
-        grocery = []
+        let refs = logs.map { userRef.collection("logs").document($0.id) }
+            + reminders.map { userRef.collection("reminders").document($0.id) }
+            + grocery.map { userRef.collection("grocery").document($0.id) }
+            + [userRef]
+        // Firestore batches are capped at 500 writes.
+        for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
+            let batch = db.batch()
+            chunk.forEach { batch.deleteDocument($0) }
+            batch.commit { error in if let error { print("Delete failed:", error) } }
+        }
+        messages = []
+        tab = .today
         showToast("Your data was deleted")
     }
+
+    #if DEBUG
+    /// Writes five past cycles of made-up logs so the charts have something to show in a demo.
+    func addSampleHistory() {
+        var s = [lastStart]
+        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
+        let batch = db.batch()
+        let write = { (log: DayLog) in try? batch.setData(from: log, forDocument: self.userRef.collection("logs").document(log.id)) }
+        for start in s.dropFirst() {
+            write(DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]))
+            write(DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]))
+            write(DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]))
+            write(DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]))
+            write(DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]))
+        }
+        batch.commit { error in if let error { print("Sample history failed:", error) } }
+        showToast("Added sample history")
+    }
+    #endif
 
     // MARK: Nourish
 
@@ -262,15 +416,20 @@ final class CycleStore {
     func isOnList(_ meal: Meal) -> Bool { meal.items.allSatisfy { item in grocery.contains { $0.name == item } } }
 
     func toggleList(_ meal: Meal) {
+        let batch = db.batch()
         if isOnList(meal) {
-            grocery.removeAll { meal.items.contains($0.name) }
+            for item in grocery where meal.items.contains(item.name) {
+                batch.deleteDocument(userRef.collection("grocery").document(item.id))
+            }
             showToast("Removed from grocery list")
         } else {
-            for item in meal.items where !grocery.contains(where: { $0.name == item }) {
-                grocery.append(GroceryItem(name: item))
+            for name in meal.items where !grocery.contains(where: { $0.name == name }) {
+                let item = GroceryItem(name: name)
+                try? batch.setData(from: item, forDocument: userRef.collection("grocery").document(item.id))
             }
             showToast("Added \(meal.items.count) items to your list")
         }
+        batch.commit()
     }
 
     // MARK: Companion
@@ -296,7 +455,8 @@ final class CycleStore {
         if let i = messages.firstIndex(where: { $0.id == messageID }) { messages[i].actions = [] }
         switch action {
         case .setReminder(let title):
-            reminders.insert(Reminder(title: title, detail: "\(fmt(Self.add(windowStart, -2))) · once", on: true), at: 0)
+            let reminder = Reminder(title: title, detail: "\(fmt(Self.add(windowStart, -2))) · once", on: true)
+            try? userRef.collection("reminders").document(reminder.id).setData(from: reminder)
             showToast("Reminder set")
             ai("Done. You'll find it under Reminders, and you can switch it off any time.")
         case .notNow:

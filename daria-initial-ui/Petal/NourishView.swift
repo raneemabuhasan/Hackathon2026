@@ -7,7 +7,6 @@ struct NourishView: View {
     private var selected: Phase { phase ?? store.currentPhase }
 
     var body: some View {
-        @Bindable var store = store
         let all = CycleStore.meals[selected] ?? []
         let meals = store.meals(for: selected)
 
@@ -41,13 +40,13 @@ struct NourishView: View {
                 SectionHeader(title: "Your preferences", trailing: "filters meals")
                 FlowLayout {
                     ForEach(CycleStore.dietOptions, id: \.self) { d in
-                        Chip(label: d, selected: store.diets.contains(d), small: true) { toggle(&store.diets, d) }
+                        Chip(label: d, selected: store.diets.contains(d), small: true) { store.toggleDiet(d) }
                     }
                 }
                 Eyebrow(text: "Avoid")
                 FlowLayout {
                     ForEach(CycleStore.allergenOptions, id: \.self) { a in
-                        Chip(label: a, selected: store.avoid.contains(a), small: true) { toggle(&store.avoid, a) }
+                        Chip(label: a, selected: store.avoid.contains(a), small: true) { store.toggleAvoid(a) }
                     }
                 }
             }
@@ -69,8 +68,8 @@ struct NourishView: View {
                 if store.grocery.isEmpty {
                     Text("Add items from meal ideas.").font(.system(size: 13)).foregroundStyle(Palette.inkSoft).padding(.top, 6)
                 }
-                ForEach($store.grocery) { $item in
-                    Button { item.done.toggle() } label: {
+                ForEach(store.grocery) { item in
+                    Button { store.toggleGrocery(item) } label: {
                         HStack(spacing: 10) {
                             Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(item.done ? Palette.accent : Palette.inkFaint)
@@ -95,10 +94,6 @@ struct NourishView: View {
     private var title: String {
         if selected == store.currentPhase { return "right now" }
         return selected == .menstrual ? "your period" : "the \(selected.name.lowercased()) phase"
-    }
-
-    private func toggle(_ set: inout Set<String>, _ value: String) {
-        if set.contains(value) { set.remove(value) } else { set.insert(value) }
     }
 
     private func mealRow(_ meal: Meal) -> some View {

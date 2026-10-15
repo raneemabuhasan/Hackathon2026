@@ -8,10 +8,10 @@ struct TodayView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    DisplayTitle(before: "Hi Maya, ", accent: "be gentle", after: " today")
+                    DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
                 }
                 Spacer()
-                Text("M")
+                Text(String(store.name.prefix(1)).uppercased())
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Palette.accent)
                     .frame(width: 42, height: 42)
@@ -59,7 +59,7 @@ struct TodayView: View {
     // MARK: Prediction
 
     private var prediction: some View {
-        let daysTo = CycleStore.days(store.windowStart, from: store.today)
+        let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
         let total = Double(CycleStore.days(store.windowEnd, from: store.today) + 4)
         let pct = { (d: Date) in Double(CycleStore.days(d, from: store.today)) / total }
 
@@ -94,7 +94,9 @@ struct TodayView: View {
             }
             .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
 
-            Text("Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
+            Text(store.completedCycles.isEmpty
+                 ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
+                 : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
                 .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
