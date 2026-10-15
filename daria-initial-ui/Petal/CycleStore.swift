@@ -135,9 +135,13 @@ final class CycleStore {
     private(set) var reminders: [Reminder] = []
     private(set) var grocery: [GroceryItem] = []
     var messages: [ChatMessage] = []
+    /// True while the companion is waiting on the model.
+    private(set) var thinking = false
 
     @ObservationIgnored private var listeners: [ListenerRegistration] = []
     @ObservationIgnored private let db = Firestore.firestore()
+    /// Created on first message so the prompt sees the loaded profile. Reset when data is deleted.
+    @ObservationIgnored private var assistant: Assistant?
     private var userRef: DocumentReference { db.collection("users").document(uid) }
 
     var name: String { profile?.name ?? "" }
@@ -343,6 +347,28 @@ final class CycleStore {
         showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
     }
 
+    /// Saves a log and waits for Firestore to accept it, so the assistant only confirms real saves.
+    func write(_ log: DayLog) async throws {
+        try await set(log, at: userRef.collection("logs").document(log.id))
+    }
+
+    func addReminder(title: String, detail: String) async throws {
+        let reminder = Reminder(title: title, detail: detail, on: true)
+        try await set(reminder, at: userRef.collection("reminders").document(reminder.id))
+    }
+
+    private func set<T: Encodable>(_ value: T, at ref: DocumentReference) async throws {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            do {
+                try ref.setData(from: value) { error in
+                    if let error { done.resume(throwing: error) } else { done.resume() }
+                }
+            } catch {
+                done.resume(throwing: error)
+            }
+        }
+    }
+
     func deleteLog(_ log: DayLog) {
         userRef.collection("logs").document(log.id).delete { error in if let error { print("Delete log failed:", error) } }
         showToast("Log deleted")
@@ -376,6 +402,7 @@ final class CycleStore {
             batch.commit { error in if let error { print("Delete failed:", error) } }
         }
         messages = []
+        assistant = nil
         tab = .today
         showToast("Your data was deleted")
     }
@@ -466,10 +493,26 @@ final class CycleStore {
 
     func send(_ text: String) {
         messages.append(ChatMessage(fromUser: true, text: text))
+        // Urgent symptoms get the fixed safety reply without waiting on the model.
+        if Self.needsCare(text) { return reply(to: text) }
+        thinking = true
         Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            reply(to: text)
+            defer { thinking = false }
+            do {
+                let assistant = self.assistant ?? Assistant(store: self)
+                self.assistant = assistant
+                ai(try await assistant.reply(to: text), note: "AI-generated. Not medical advice.")
+            } catch {
+                // No connection, billing not set up, etc.: fall back to the built-in replies.
+                print("Assistant failed:", error)
+                reply(to: text)
+            }
         }
+    }
+
+    private static func needsCare(_ text: String) -> Bool {
+        let q = text.lowercased()
+        return ["faint", "soak", "very heavy", "severe", "unbearable", "clot", "pass out"].contains { q.contains($0) }
     }
 
     func perform(_ action: ChatAction, from messageID: UUID) {
@@ -497,7 +540,7 @@ final class CycleStore {
         let q = question.lowercased()
         let has = { (words: [String]) in words.contains { q.contains($0) } }
 
-        if has(["faint", "soak", "very heavy", "severe", "unbearable", "clot", "pass out"]) {
+        if Self.needsCare(question) {
             ai("That sounds like something to get checked. Please contact a GP, or call NHS 111 if you're in the UK. If you feel faint or very unwell, seek urgent care.",
                note: "I can't assess symptoms. NHS: heavy periods", link: Self.nhsHeavyPeriods)
         } else if has(["remind"]) {

@@ -41,6 +41,15 @@ struct CompanionView: View {
                     ForEach(store.messages) { m in
                         bubble(m).id(m.id)
                     }
+                    if store.thinking {
+                        Text("Thinking…")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Palette.inkSoft)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .background(Palette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 6, bottomTrailingRadius: 20, topTrailingRadius: 20))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("thinking")
+                    }
                 }
             }
             .onChange(of: store.messages.count) {
