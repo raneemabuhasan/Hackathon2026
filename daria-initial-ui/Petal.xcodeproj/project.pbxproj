@@ -27,6 +27,9 @@
 		AA0000000000000000000021 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000031 /* FirebaseFirestore */; };
 		AA0000000000000000000022 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* GoogleSignIn */; };
 		AA0000000000000000000023 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000033 /* Lottie */; };
+		AA0000000000000000000024 /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000034 /* FirebaseAI */; };
+		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
+		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +50,8 @@
 		BB000000000000000000000D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BB000000000000000000000E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		BB000000000000000000000F /* signin.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "signin.json"; sourceTree = "<group>"; };
+		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
+		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 
@@ -59,6 +64,7 @@
 				AA0000000000000000000021 /* FirebaseFirestore in Frameworks */,
 				AA0000000000000000000022 /* GoogleSignIn in Frameworks */,
 				AA0000000000000000000023 /* Lottie in Frameworks */,
+				AA0000000000000000000024 /* FirebaseAI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +88,8 @@
 				BB000000000000000000000B /* SignInView.swift */,
 				BB000000000000000000000C /* OnboardingView.swift */,
 				BB000000000000000000000D /* SettingsView.swift */,
+				BB0000000000000000000010 /* Assistant.swift */,
+				BB0000000000000000000011 /* Reminders.swift */,
 				BB000000000000000000000E /* GoogleService-Info.plist */,
 				AA0000000000000000000050 /* Animations */,
 			);
@@ -133,6 +141,7 @@
 				AA0000000000000000000031 /* FirebaseFirestore */,
 				AA0000000000000000000032 /* GoogleSignIn */,
 				AA0000000000000000000033 /* Lottie */,
+				AA0000000000000000000034 /* FirebaseAI */,
 			);
 			productName = Petal;
 			productReference = AA0000000000000000000001 /* Petal.app */;
@@ -208,6 +217,8 @@
 				CC000000000000000000000B /* SignInView.swift in Sources */,
 				CC000000000000000000000C /* OnboardingView.swift in Sources */,
 				CC000000000000000000000D /* SettingsView.swift in Sources */,
+				CC0000000000000000000010 /* Assistant.swift in Sources */,
+				CC0000000000000000000011 /* Reminders.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,8 +354,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 11.15.0;
+				kind = exactVersion;
+				version = 11.13.0;
 			};
 		};
 		AA0000000000000000000041 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
@@ -393,6 +404,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000042 /* XCRemoteSwiftPackageReference "lottie-spm" */;
 			productName = Lottie;
+		};
+		AA0000000000000000000034 /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000040 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
