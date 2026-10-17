@@ -600,9 +600,9 @@ struct CycleView: View {
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(searchExpanded ? Palette.accent : Palette.inkSoft)
+                        .foregroundStyle(Palette.accent)
                         .frame(width: 36, height: 36)
-                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+                        .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(searchExpanded ? "Hide advanced filters" : "Show advanced filters")
@@ -610,8 +610,7 @@ struct CycleView: View {
             .padding(.leading, 11)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
-            // Just darker than the month headers, without overpowering the list.
-            .background(Palette.mist.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
 
             if isHistorySearchFocused && !searchExpanded && !historySuggestions.isEmpty {
                 historySuggestionsPanel
@@ -712,10 +711,10 @@ struct CycleView: View {
                             .foregroundStyle(Palette.accent)
                     }
                 } else {
-                    // When every month is closed, show a small, filtered seven-day preview.
-                    // Opening any month hides it; closing all months brings it back.
+                    // Recent is for unfiltered browsing only; search results live under the month headings.
+                    // Opening any month hides it; clearing filters and closing months restores it.
                     let anyMonthOpen = months.contains { historyMonthIsOpen($0.date, newest: months.first?.date) }
-                    if !anyMonthOpen {
+                    if !anyMonthOpen && !historyFiltersActive {
                         VStack(alignment: .leading, spacing: 8) {
                             SectionHeader(title: "Recent", trailing: "Past 7 days")
                             if recentHistoryLogs.isEmpty {

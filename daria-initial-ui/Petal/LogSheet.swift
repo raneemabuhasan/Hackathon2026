@@ -10,6 +10,7 @@ struct LogSheet: View {
     @State private var pain = 0.0
     @State private var energy = 3.0
     @State private var note = ""
+    @State private var viewingSavedLog = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingMoods = false
     @State private var editingSymptoms = false
@@ -38,7 +39,8 @@ struct LogSheet: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        DisplayTitle(before: "How are you ", accent: "today?", size: 30)
+                        DisplayTitle(before: viewingSavedLog ? "How you " : "How did you ",
+                                     accent: viewingSavedLog ? "felt" : "feel?", size: 30)
                     }
                     Spacer()
                     Button { store.showLog = false } label: {
@@ -51,7 +53,10 @@ struct LogSheet: View {
                     .accessibilityLabel("Close")
                 }
 
-                DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                if viewingSavedLog {
+                    savedLogDetails
+                } else {
+                    DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
                     .font(.system(size: 14, weight: .semibold))
                     .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
@@ -136,7 +141,7 @@ struct LogSheet: View {
                     store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
                                       pain: Int(pain), energy: Int(energy), note: note))
                 } label: {
-                    Text("Save log")
+                    Text(store.log(for: logDate) == nil ? "Save log" : "Save changes")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -144,6 +149,7 @@ struct LogSheet: View {
                         .background(Palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                } // End editable log fields
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -173,8 +179,62 @@ struct LogSheet: View {
         .onAppear {
             logDate = store.selectedLogDate ?? store.today
             loadDraft(for: logDate)
+            // Tapping a saved row previews it. The + button still opens the editor.
+            viewingSavedLog = store.selectedLogDate != nil && store.log(for: logDate) != nil
         }
         .onDisappear { store.selectedLogDate = nil }
+    }
+
+    /// A saved row opens as a readable summary, not an editable form.
+    @ViewBuilder private var savedLogDetails: some View {
+        if let saved = store.log(for: logDate) {
+            VStack(alignment: .leading, spacing: 17) {
+                HStack {
+                    Label(logDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year()),
+                          systemImage: "calendar")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Palette.inkSoft)
+                    Spacer(minLength: 8)
+                    Button {
+                        viewingSavedLog = false
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Palette.accent)
+                    .accessibilityLabel("Edit this saved day log")
+                }
+                Divider().overlay(Palette.line)
+                readOnlyDetail("Flow", saved.flow == "None" ? "Not recorded" : saved.flow)
+                readOnlyDetail("Moods", saved.moods.isEmpty ? "None recorded" : saved.moods.joined(separator: " · "))
+                readOnlyDetail("Symptoms", saved.symptoms.isEmpty ? "None recorded" : saved.symptoms.joined(separator: " · "))
+                readOnlyDetail("Pain", "\(saved.pain) / 10")
+                readOnlyDetail("Energy", "\(saved.energy) / 5")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Note")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(saved.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                         ? "No note for this day." : saved.note)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.inkSoft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(17)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+        } else {
+            Text("This saved log is no longer available.")
+                .foregroundStyle(Palette.inkSoft)
+        }
+    }
+
+    private func readOnlyDetail(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text(value).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).
@@ -284,7 +344,7 @@ struct LogSheet: View {
                     }
                 }
             }
-            if !managing {
+            if managing {
                 Button {
                     tagEditor = TagEditRequest(symptom: symptom, originalName: nil,
                                                emoji: symptom ? "🌀" : "😊")
@@ -426,9 +486,6 @@ private struct TagEditorSheet: View {
         NavigationStack {
             Form {
                 Section(symptom ? "Symptom" : "Mood") {
-                    TextField(symptom ? "e.g. Joint pain" : "e.g. Restless", text: $name)
-                        .textInputAutocapitalization(.sentences)
-                        .onChange(of: name) { _, _ in showNameError = false }
                     Button {
                         showingEmojiPicker = true
                     } label: {
@@ -441,6 +498,9 @@ private struct TagEditorSheet: View {
                         }
                     }
                     .accessibilityLabel("Choose emoji, currently \(emoji)")
+                    TextField(symptom ? "e.g. Joint pain" : "e.g. Restless", text: $name)
+                        .textInputAutocapitalization(.sentences)
+                        .onChange(of: name) { _, _ in showNameError = false }
                 }
                 if showNameError {
                     Text("Use a unique name of 1–30 characters.")
