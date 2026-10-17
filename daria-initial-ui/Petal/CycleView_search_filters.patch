@@ -1,0 +1,140 @@
+diff --git a/daria-initial-ui/Petal/CycleView.swift b/daria-initial-ui/Petal/CycleView.swift
+--- a/daria-initial-ui/Petal/CycleView.swift
++++ b/daria-initial-ui/Petal/CycleView.swift
+@@ -13,4 +13,24 @@
+     @State private var interactionFrames: [String: CGRect] = [:]
+     @State private var logToDelete: DayLog?
++    @State private var logSearchText = ""
++    @State private var logDateRange: LogDateRange = .all
++
++    private enum LogDateRange: String, CaseIterable, Identifiable {
++        case all = "All dates"
++        case week = "Last 7 days"
++        case month = "Last 30 days"
++        case quarter = "Last 90 days"
++
++        var id: String { rawValue }
++
++        var days: Int? {
++            switch self {
++            case .all: return nil
++            case .week: return 7
++            case .month: return 30
++            case .quarter: return 90
++            }
++        }
++    }
+ 
+     var body: some View {
+@@ -394,14 +414,95 @@
+-    // MARK: Saved log history (HACK-1)
++    // MARK: Searchable symptom log history
++
++    /// Filter the full saved history before limiting the list to 20 visible rows.
++    /// Date ranges include today and use calendar days instead of hours.
++    private var filteredLogs: [DayLog] {
++        let query = logSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
++        let startDate = logDateRange.days.flatMap { days in
++            Calendar.current.date(byAdding: .day, value: 1 - days,
++                                  to: Calendar.current.startOfDay(for: store.today))
++        }
++        return store.logs.filter { log in
++            let matchesDate = startDate.map { log.date >= $0 && log.date <= store.today } ?? true
++            let matchesSearch = query.isEmpty
++                || log.symptoms.contains(where: { $0.localizedCaseInsensitiveContains(query) })
++                || log.moods.contains(where: { $0.localizedCaseInsensitiveContains(query) })
++                || log.note.localizedCaseInsensitiveContains(query)
++                || log.flow.localizedCaseInsensitiveContains(query)
++            return matchesDate && matchesSearch
++        }.sorted { $0.date > $1.date }
++    }
+ 
+     private var logHistory: some View {
+-        let recent = Array(store.logs.sorted { $0.date > $1.date }.prefix(20))
++        let matching = filteredLogs
++        let recent = Array(matching.prefix(20))
++        let hasFilters = !logSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
++            || logDateRange != .all
++
+         return VStack(alignment: .leading, spacing: 12) {
+             SectionHeader(title: "Saved day logs", trailing: "\(store.logs.count) entries")
+-            if recent.isEmpty {
++
++            HStack(spacing: 9) {
++                Image(systemName: "magnifyingglass")
++                    .foregroundStyle(Palette.inkFaint)
++                TextField("Search symptoms, moods or notes", text: $logSearchText)
++                    .font(.system(size: 13))
++                    .textInputAutocapitalization(.never)
++                    .autocorrectionDisabled()
++                    .submitLabel(.search)
++                    .accessibilityLabel("Search saved logs")
++                if !logSearchText.isEmpty {
++                    Button {
++                        logSearchText = ""
++                    } label: {
++                        Image(systemName: "xmark.circle.fill")
++                            .foregroundStyle(Palette.inkFaint)
++                    }
++                    .buttonStyle(.plain)
++                    .accessibilityLabel("Clear search")
++                }
++            }
++            .padding(12)
++            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
++
++            HStack {
++                Label("Date range", systemImage: "calendar")
++                    .font(.system(size: 13))
++                    .foregroundStyle(Palette.inkSoft)
++                Spacer()
++                Picker("Date range", selection: $logDateRange) {
++                    ForEach(LogDateRange.allCases) { range in
++                        Text(range.rawValue).tag(range)
++                    }
++                }
++                .pickerStyle(.menu)
++                .tint(Palette.accent)
++            }
++
++            if hasFilters {
++                HStack {
++                    Text("\(matching.count) matching \(matching.count == 1 ? "entry" : "entries")")
++                        .font(.system(size: 12))
++                        .foregroundStyle(Palette.inkSoft)
++                    Spacer()
++                    Button("Clear filters") {
++                        logSearchText = ""
++                        logDateRange = .all
++                    }
++                    .font(.system(size: 12, weight: .semibold))
++                    .foregroundStyle(Palette.accent)
++                }
++            }
++
++            if store.logs.isEmpty {
+                 Text("No logs yet. Tap + to record your day.")
+                     .font(.system(size: 13))
+                     .foregroundStyle(Palette.inkSoft)
++            } else if recent.isEmpty {
++                Text("No matching logs. Try a different search or date range.")
++                    .font(.system(size: 13))
++                    .foregroundStyle(Palette.inkSoft)
+             }
++
+             ForEach(recent) { log in
+                 HStack(spacing: 12) {
+                     Button {
+@@ -433,6 +534,12 @@
+                 }
+                 Divider().overlay(Palette.line)
+             }
++
++            if matching.count > recent.count {
++                Text("Showing the most recent 20 of \(matching.count) matching logs. Narrow your search to find older entries.")
++                    .font(.system(size: 12))
++                    .foregroundStyle(Palette.inkFaint)
++            }
+         }
+         .card()
+         .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
