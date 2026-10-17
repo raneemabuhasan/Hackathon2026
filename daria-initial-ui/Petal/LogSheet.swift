@@ -229,14 +229,15 @@ struct LogSheet: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+                    .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
                 }
 
                 savedTagSection("Moods", icon: "face.smiling", tags: saved.moods, symptom: false)
                 savedTagSection("Symptoms", icon: "heart.text.square", tags: saved.symptoms, symptom: true)
 
                 HStack(spacing: 10) {
-                    savedStat("Pain", icon: "waveform.path.ecg", value: "\(saved.pain) / 10")
+                    savedStat("Pain", icon: "waveform.path.ecg",
+                              value: saved.pain == 0 ? "None" : "\(saved.pain) / 10")
                     savedStat("Energy",
                               icon: energyLevels[max(0, min(energyLevels.count - 1, saved.energy - 1))].1,
                               value: "\(saved.energy) / 5")
@@ -252,7 +253,7 @@ struct LogSheet: View {
                         .foregroundStyle(Palette.inkSoft)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
-                        .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+                        .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
                 }
             }
             .padding(17)
@@ -275,7 +276,7 @@ struct LogSheet: View {
                     .foregroundStyle(Palette.inkSoft)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+                    .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
             } else {
                 LazyVGrid(columns: tileColumns, spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
@@ -290,7 +291,7 @@ struct LogSheet: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 67)
                         .padding(.horizontal, 3)
-                        .background(Palette.surface2.opacity(0.65),
+                        .background(Palette.surface2.opacity(0.32),
                                     in: RoundedRectangle(cornerRadius: 13))
                     }
                 }
@@ -310,7 +311,7 @@ struct LogSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(13)
-        .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+        .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
     }
 
     /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).

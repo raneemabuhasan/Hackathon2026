@@ -78,6 +78,7 @@ struct CycleView: View {
             symptoms
             logHistory
         }
+        .scrollDismissesKeyboard(.never)
         .coordinateSpace(name: "periodCalendarPage")
         .onPreferenceChange(PeriodInteractionBounds.self) { interactionFrames = $0 }
         // Observe taps without intercepting the calendar buttons or switches.
@@ -606,7 +607,7 @@ struct CycleView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Palette.accent)
                         .frame(width: 36, height: 36)
-                        .background(Palette.accentSoft, in: RoundedRectangle(cornerRadius: 10))
+                        .background(Palette.surface2.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(searchExpanded ? "Hide advanced filters" : "Show advanced filters")
@@ -781,7 +782,6 @@ struct CycleView: View {
             }
         }
         .card()
-        .onChange(of: historyQuery) { _, _ in monthExpansion = [:] }
         .onChange(of: historyDateRange) { _, _ in monthExpansion = [:] }
         .onChange(of: historyField) { _, _ in monthExpansion = [:] }
         .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
