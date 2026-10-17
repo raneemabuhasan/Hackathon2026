@@ -94,8 +94,18 @@ struct LogSheet: View {
                     tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
                 }
 
-                field("Pain", value: "\(Self.painWord(Int(pain))) · \(Int(pain))") {
+                field("Pain", value: "\(Self.painWord(Int(pain))) · \(Int(pain))/10") {
                     painScale
+                    // A brand-new log starts at 0; this makes that default easy to see and restore.
+                    Button {
+                        pain = 0
+                    } label: {
+                        Label("No pain (0/10)", systemImage: pain == 0 ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(pain == 0 ? Palette.accent : Palette.inkSoft)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Set pain to zero")
                     if pain >= 7 {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Pain that stops you doing everyday things deserves proper care. Consider talking to a GP or pharmacist.")
@@ -359,7 +369,7 @@ struct LogSheet: View {
                 .accessibilityLabel(managing ? "Finish editing tags" : "Edit tags")
             }
             if managing {
-                Text("Drag to reorder · Tap − to remove · Double-tap to rename or change emoji")
+                Text("Hold and drag to reorder · Tap − to remove · Double-tap to rename or change emoji")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.inkSoft)
             }
@@ -400,7 +410,7 @@ struct LogSheet: View {
                             .accessibilityLabel("Remove \(tag) from my list")
                             .offset(x: -5, y: -5)
                         }
-                        .accessibilityLabel("\(tag), drag to reorder or double tap to edit")
+                        .accessibilityLabel("\(tag), hold and drag to reorder or double tap to edit")
                 } else {
                     Button { toggle(&selected.wrappedValue, tag) } label: {
                         tile(emoji: icon, label: tag, on: on)
