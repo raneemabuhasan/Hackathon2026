@@ -446,7 +446,7 @@ struct CycleView: View {
     }
 
     private var historyFiltersActive: Bool {
-        !historyQueryText.isEmpty || historyDateRange != .all
+        !historyQueryText.isEmpty || historyDateRange != .all || historyField != .all
     }
 
     /// Apply filters to *all* saved logs. Nothing is truncated to 20 days.
@@ -487,16 +487,18 @@ struct CycleView: View {
 
     /// Suggestions use saved tag names, never the contents of private notes.
     private var historySuggestions: [String] {
+        // Suggestions follow the date filter, not every log ever recorded.
+        let relevantLogs = store.logs.filter { historyDateRange.includes($0.date, today: store.today) }
         let values: [String]
         switch historyField {
         case .all:
-            values = store.logs.flatMap { $0.symptoms + $0.moods }
+            values = relevantLogs.flatMap { $0.symptoms + $0.moods }
         case .symptoms:
-            values = store.logs.flatMap { $0.symptoms }
+            values = relevantLogs.flatMap { $0.symptoms }
         case .moods:
-            values = store.logs.flatMap { $0.moods }
+            values = relevantLogs.flatMap { $0.moods }
         case .flow:
-            values = store.logs.map(\.flow).filter { $0 != "None" }
+            values = relevantLogs.map(\.flow).filter { $0 != "None" }
         case .notes:
             return []
         }
@@ -512,9 +514,47 @@ struct CycleView: View {
         .map { $0 }
     }
 
+    /// Every month remembers its own expanded state, even while searching.
     private func historyMonthIsOpen(_ date: Date, newest: Date?) -> Bool {
-        // Show all matching months during a search, otherwise open only the latest by default.
-        monthExpansion[date] ?? (historyFiltersActive || date == newest)
+        monthExpansion[date] ?? (historyFiltersActive && date == newest)
+    }
+
+    /// A seven-calendar-day preview that respects the active search and date filters.
+    private var recentHistoryLogs: [DayLog] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: store.today)
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        return matchingHistoryLogs.filter { log in
+            let day = calendar.startOfDay(for: log.date)
+            return day >= start && day <= today
+        }
+    }
+
+    private var historySuggestionsPanel: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(historyField == .symptoms ? "Suggested symptoms" :
+                 historyField == .moods ? "Suggested moods" :
+                 historyField == .flow ? "Suggested flows" : "Suggested symptoms & moods")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.inkFaint)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(historySuggestions, id: \.self) { suggestion in
+                        Button(suggestion) {
+                            historyQuery = suggestion
+                            isHistorySearchFocused = false
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Palette.surface2, in: Capsule())
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Search logs for \(suggestion)")
+                    }
+                }
+            }
+        }
     }
 
     private func clearHistoryFilters() {
@@ -532,50 +572,65 @@ struct CycleView: View {
         return VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Saved day logs", trailing: "\(store.logs.count) entries")
 
-            // Search stays out of the way unless the user wants it.
-            HStack(spacing: 12) {
+            // The one-line search is always available. Advanced controls stay optional.
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Palette.inkFaint)
+                TextField("Search symptoms, moods or notes", text: $historyQuery)
+                    .font(.system(size: 13))
+                    .focused($isHistorySearchFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit { isHistorySearchFocused = false }
+                    .accessibilityLabel("Search saved history")
+                if !historyQuery.isEmpty {
+                    Button {
+                        historyQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Palette.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search text")
+                }
                 Button {
+                    isHistorySearchFocused = false
                     withAnimation(.easeInOut(duration: 0.2)) { searchExpanded.toggle() }
-                    isHistorySearchFocused = searchExpanded
                 } label: {
-                    Label(searchExpanded ? "Hide search" : "Search & filter", systemImage: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(searchExpanded ? Palette.accent : Palette.inkSoft)
+                        .frame(width: 36, height: 36)
+                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Search saved logs and choose date filters")
-                Spacer()
-                if historyFiltersActive {
-                    Button("Clear filters") { clearHistoryFilters() }
+                .accessibilityLabel(searchExpanded ? "Hide advanced filters" : "Show advanced filters")
+            }
+            .padding(.leading, 11)
+            .padding(.trailing, 5)
+            .padding(.vertical, 5)
+            // Just darker than the month headers, without overpowering the list.
+            .background(Palette.mist.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+
+            if isHistorySearchFocused && !searchExpanded && !historySuggestions.isEmpty {
+                historySuggestionsPanel
+            }
+
+            if historyFiltersActive {
+                HStack {
+                    Text("\(count) of \(store.logs.count) logs match")
                         .font(.system(size: 12))
-                        .foregroundStyle(Palette.inkSoft)
+                        .foregroundStyle(Palette.inkFaint)
+                    Spacer()
+                    Button("Clear filters") { clearHistoryFilters() }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
                 }
             }
 
             if searchExpanded {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(Palette.inkFaint)
-                        TextField("Search your saved logs", text: $historyQuery)
-                            .font(.system(size: 14))
-                            .focused($isHistorySearchFocused)
-                            .submitLabel(.search)
-                            .accessibilityLabel("Search saved history")
-                        if !historyQuery.isEmpty {
-                            Button {
-                                historyQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(Palette.inkFaint)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Clear search text")
-                        }
-                    }
-                    .padding(11)
-                    .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
-
                     HStack(spacing: 10) {
                         Menu {
                             ForEach(HistoryField.allCases) { field in
@@ -621,6 +676,10 @@ struct CycleView: View {
                         }
                         .accessibilityLabel("Date range: \(historyDateRange.rawValue)")
                         Spacer(minLength: 0)
+                        Button("Reset") { clearHistoryFilters() }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .accessibilityLabel("Reset to All fields and All time")
                     }
 
                     if historyField == .notes {
@@ -628,30 +687,11 @@ struct CycleView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.inkFaint)
                     } else if !historySuggestions.isEmpty {
-                        Text(historyField == .symptoms ? "Suggested symptoms" :
-                             historyField == .moods ? "Suggested moods" :
-                             historyField == .flow ? "Suggested flows" : "Suggested symptoms & moods")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.inkFaint)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 7) {
-                                ForEach(historySuggestions, id: \.self) { suggestion in
-                                    Button(suggestion) {
-                                        historyQuery = suggestion
-                                        isHistorySearchFocused = false
-                                    }
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Palette.ink)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(Palette.surface2, in: Capsule())
-                                    .buttonStyle(.plain)
-                                    .accessibilityHint("Search logs for \(suggestion)")
-                                }
-                            }
-                        }
+                        historySuggestionsPanel
                     }
                 }
+                .padding(10)
+                .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
                 .transition(.opacity)
             }
 
@@ -660,11 +700,6 @@ struct CycleView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.inkSoft)
             } else {
-                if historyFiltersActive {
-                    Text("\(count) of \(store.logs.count) logs match")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.inkFaint)
-                }
                 if months.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("No matching logs found.")
@@ -677,11 +712,37 @@ struct CycleView: View {
                             .foregroundStyle(Palette.accent)
                     }
                 } else {
+                    // When every month is closed, show a small, filtered seven-day preview.
+                    // Opening any month hides it; closing all months brings it back.
+                    let anyMonthOpen = months.contains { historyMonthIsOpen($0.date, newest: months.first?.date) }
+                    if !anyMonthOpen {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionHeader(title: "Recent", trailing: "Past 7 days")
+                            if recentHistoryLogs.isEmpty {
+                                Text("No matching logs in the past 7 days. Open a month to browse older entries.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.inkSoft)
+                            } else {
+                                ForEach(recentHistoryLogs) { log in
+                                    historyLogRow(log)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 5)
+                    }
+
+                    Text("Browse by month")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.inkFaint)
+
                     ForEach(months) { month in
                         let open = historyMonthIsOpen(month.date, newest: months.first?.date)
                         VStack(alignment: .leading, spacing: 8) {
                             Button {
-                                monthExpansion[month.date] = !open
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    monthExpansion[month.date] = !open
+                                }
+                                isHistorySearchFocused = false
                             } label: {
                                 HStack(spacing: 8) {
                                     Text(month.date.formatted(.dateTime.month(.wide).year()))
@@ -702,37 +763,7 @@ struct CycleView: View {
 
                             if open {
                                 ForEach(month.logs) { log in
-                                    HStack(spacing: 12) {
-                                        Button {
-                                            store.selectedLogDate = log.date
-                                            store.showLog = true
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(log.date.formatted(.dateTime.weekday(.abbreviated).day()))
-                                                    .font(.system(size: 14, weight: .semibold))
-                                                let details = ([log.flow != "None" ? "Flow: \(log.flow)" : ""]
-                                                    + log.symptoms + log.moods).filter { !$0.isEmpty }
-                                                Text(details.isEmpty ? (log.note.isEmpty ? "Daily check-in" : "Note saved")
-                                                     : details.joined(separator: " · "))
-                                                    .font(.system(size: 12))
-                                                    .foregroundStyle(Palette.inkSoft)
-                                                    .lineLimit(2)
-                                            }
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                        .buttonStyle(.plain)
-                                        Button {
-                                            logToDelete = log
-                                        } label: {
-                                            Image(systemName: "trash")
-                                                .font(.system(size: 15))
-                                                .foregroundStyle(Palette.accent)
-                                                .padding(10)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
-                                    }
-                                    Divider().overlay(Palette.line)
+                                    historyLogRow(log)
                                 }
                             }
                         }
@@ -741,6 +772,9 @@ struct CycleView: View {
             }
         }
         .card()
+        .onChange(of: historyQuery) { _, _ in monthExpansion = [:] }
+        .onChange(of: historyDateRange) { _, _ in monthExpansion = [:] }
+        .onChange(of: historyField) { _, _ in monthExpansion = [:] }
         .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
                             titleVisibility: .visible) {
             Button("Delete log", role: .destructive) {
@@ -750,6 +784,43 @@ struct CycleView: View {
             Button("Cancel", role: .cancel) { logToDelete = nil }
         } message: {
             Text("This entry will be removed from your symptom history.")
+        }
+    }
+
+    /// Shared row for Recent and month sections. Note text is never shown in previews.
+    private func historyLogRow(_ log: DayLog) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    store.selectedLogDate = log.date
+                    store.showLog = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(log.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                            .font(.system(size: 14, weight: .semibold))
+                        let details = ([log.flow != "None" ? "Flow: \(log.flow)" : ""]
+                            + log.symptoms + log.moods).filter { !$0.isEmpty }
+                        Text(details.isEmpty ? (log.note.isEmpty ? "Daily check-in" : "Note saved")
+                             : details.joined(separator: " · "))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.inkSoft)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    logToDelete = log
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Palette.accent)
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
+            }
+            Divider().overlay(Palette.line)
         }
     }
 }

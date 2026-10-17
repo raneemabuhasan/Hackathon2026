@@ -68,6 +68,13 @@ struct Profile: Codable {
     /// The user's own tags, shown next to the built-in ones. Optional so older profiles still decode.
     var customMoods: [String]? = nil
     var customSymptoms: [String]? = nil
+    /// Personalization stays in the Firebase user profile; old profiles can omit these keys.
+    var hiddenMoods: [String]? = nil
+    var hiddenSymptoms: [String]? = nil
+    var moodOrder: [String]? = nil
+    var symptomOrder: [String]? = nil
+    var moodEmojis: [String: String]? = nil
+    var symptomEmojis: [String: String]? = nil
 }
 
 /// One suggestion on Today's "Your plan for today" card.
@@ -463,23 +470,104 @@ final class CycleStore {
         showToast("Reminder deleted")
     }
 
-    var allMoods: [String] { Self.moodOptions + (profile?.customMoods ?? []) }
-    var allSymptoms: [String] { Self.symptomOptions + (profile?.customSymptoms ?? []) }
+    private func visibleTags(builtins: [String], custom: [String], hidden: [String], order: [String]) -> [String] {
+        var seen: Set<String> = []
+        let available = (builtins + custom).filter { seen.insert($0).inserted }
+        let visible = available.filter { !hidden.contains($0) }
+        let ordered = order.filter { visible.contains($0) }
+        return ordered + visible.filter { !ordered.contains($0) }
+    }
 
-    /// Adds a custom mood or symptom to the user's list. Returns the cleaned-up name, or nil if it's empty/too long.
+    var allMoods: [String] {
+        visibleTags(builtins: Self.moodOptions, custom: profile?.customMoods ?? [],
+                    hidden: profile?.hiddenMoods ?? [], order: profile?.moodOrder ?? [])
+    }
+    var allSymptoms: [String] {
+        visibleTags(builtins: Self.symptomOptions, custom: profile?.customSymptoms ?? [],
+                    hidden: profile?.hiddenSymptoms ?? [], order: profile?.symptomOrder ?? [])
+    }
+
+    func emojiForTag(symptom: Bool, _ tag: String) -> String? {
+        (symptom ? profile?.symptomEmojis : profile?.moodEmojis)?[tag]
+    }
+
+    /// Add, rename, or change the emoji of a mood/symptom. Existing day logs retain their historic labels.
     @discardableResult
-    func addCustom(symptom: Bool, _ name: String) -> String? {
+    func saveEditableTag(symptom: Bool, original: String?, name: String, emoji: String) -> String? {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, clean.count <= 30 else { return nil }
+        guard !clean.isEmpty, clean.count <= 30, !emoji.isEmpty else { return nil }
         let tag = clean.prefix(1).uppercased() + clean.dropFirst()
-        let existing = symptom ? allSymptoms : allMoods
-        if let match = existing.first(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) { return match }
-        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayUnion([tag])])
+        let current = symptom ? allSymptoms : allMoods
+        guard !current.contains(where: { $0 != original && $0.caseInsensitiveCompare(tag) == .orderedSame }) else { return nil }
+        let builtins = symptom ? Self.symptomOptions : Self.moodOptions
+        var custom = symptom ? (profile?.customSymptoms ?? []) : (profile?.customMoods ?? [])
+        var hidden = symptom ? (profile?.hiddenSymptoms ?? []) : (profile?.hiddenMoods ?? [])
+        var order = current
+        var emojis = symptom ? (profile?.symptomEmojis ?? [:]) : (profile?.moodEmojis ?? [:])
+
+        if let original, original != tag {
+            if builtins.contains(original) && !hidden.contains(original) {
+                hidden.append(original)
+            } else {
+                custom.removeAll { $0 == original }
+            }
+            order = order.map { $0 == original ? tag : $0 }
+            emojis.removeValue(forKey: original)
+        }
+        if !builtins.contains(tag) && !custom.contains(tag) { custom.append(tag) }
+        hidden.removeAll { $0 == tag } // Restore a previously removed built-in tag.
+        if !order.contains(tag) { order.append(tag) }
+        emojis[tag] = emoji
+
+        userRef.updateData([
+            symptom ? "customSymptoms" : "customMoods": custom,
+            symptom ? "hiddenSymptoms" : "hiddenMoods": hidden,
+            symptom ? "symptomOrder" : "moodOrder": order,
+            symptom ? "symptomEmojis" : "moodEmojis": emojis,
+        ])
         return tag
     }
 
+    /// Hiding a built-in tag doesn't erase historic entries. Custom tags are removed from the menu.
+    func removeTag(symptom: Bool, _ name: String) {
+        let builtins = symptom ? Self.symptomOptions : Self.moodOptions
+        var custom = symptom ? (profile?.customSymptoms ?? []) : (profile?.customMoods ?? [])
+        var hidden = symptom ? (profile?.hiddenSymptoms ?? []) : (profile?.hiddenMoods ?? [])
+        var order = symptom ? allSymptoms : allMoods
+        var emojis = symptom ? (profile?.symptomEmojis ?? [:]) : (profile?.moodEmojis ?? [:])
+        if builtins.contains(name) {
+            if !hidden.contains(name) { hidden.append(name) }
+        } else {
+            custom.removeAll { $0 == name }
+        }
+        order.removeAll { $0 == name }
+        emojis.removeValue(forKey: name)
+        userRef.updateData([
+            symptom ? "customSymptoms" : "customMoods": custom,
+            symptom ? "hiddenSymptoms" : "hiddenMoods": hidden,
+            symptom ? "symptomOrder" : "moodOrder": order,
+            symptom ? "symptomEmojis" : "moodEmojis": emojis,
+        ])
+    }
+
+    /// Move one visible tile before another and persist the ordering to Firebase.
+    func moveTag(symptom: Bool, from source: String, to target: String) {
+        guard source != target else { return }
+        var ordered = symptom ? allSymptoms : allMoods
+        guard let oldIndex = ordered.firstIndex(of: source), ordered.contains(target) else { return }
+        ordered.remove(at: oldIndex)
+        guard let newIndex = ordered.firstIndex(of: target) else { return }
+        ordered.insert(source, at: newIndex)
+        userRef.updateData([symptom ? "symptomOrder" : "moodOrder": ordered])
+    }
+
+    /// Keep the existing API for other code that may call it.
+    @discardableResult
+    func addCustom(symptom: Bool, _ name: String) -> String? {
+        saveEditableTag(symptom: symptom, original: nil, name: name, emoji: symptom ? "🌀" : "😊")
+    }
     func removeCustom(symptom: Bool, _ name: String) {
-        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayRemove([name])])
+        removeTag(symptom: symptom, name)
     }
 
     func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
