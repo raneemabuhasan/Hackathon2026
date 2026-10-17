@@ -185,14 +185,15 @@ struct LogSheet: View {
         .onDisappear { store.selectedLogDate = nil }
     }
 
-    /// A saved row opens as a readable summary, not an editable form.
+    /// A saved day log is a readable journal entry until the user taps Edit.
     @ViewBuilder private var savedLogDetails: some View {
         if let saved = store.log(for: logDate) {
-            VStack(alignment: .leading, spacing: 17) {
-                HStack {
-                    Label(logDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year()),
-                          systemImage: "calendar")
-                        .font(.system(size: 13, weight: .medium))
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 9) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(Palette.accent)
+                    Text(logDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Palette.inkSoft)
                     Spacer(minLength: 8)
                     Button {
@@ -205,36 +206,111 @@ struct LogSheet: View {
                     .tint(Palette.accent)
                     .accessibilityLabel("Edit this saved day log")
                 }
-                Divider().overlay(Palette.line)
-                readOnlyDetail("Flow", saved.flow == "None" ? "Not recorded" : saved.flow)
-                readOnlyDetail("Moods", saved.moods.isEmpty ? "None recorded" : saved.moods.joined(separator: " · "))
-                readOnlyDetail("Symptoms", saved.symptoms.isEmpty ? "None recorded" : saved.symptoms.joined(separator: " · "))
-                readOnlyDetail("Pain", "\(saved.pain) / 10")
-                readOnlyDetail("Energy", "\(saved.energy) / 5")
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Note")
+
+                // Flow gets the same droplet language as the log editor.
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Flow", systemImage: "drop.fill")
                         .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                    HStack(spacing: 5) {
+                        let drops = flows.first(where: { $0.0 == saved.flow })?.1 ?? 0
+                        if drops == 0 {
+                            Image(systemName: "drop")
+                                .foregroundStyle(Palette.inkFaint)
+                        } else {
+                            ForEach(0..<drops, id: \.self) { _ in
+                                Image(systemName: "drop.fill")
+                                    .foregroundStyle(Palette.accent)
+                            }
+                        }
+                        Text(saved.flow == "None" ? "Not recorded" : saved.flow)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+                }
+
+                savedTagSection("Moods", icon: "face.smiling", tags: saved.moods, symptom: false)
+                savedTagSection("Symptoms", icon: "heart.text.square", tags: saved.symptoms, symptom: true)
+
+                HStack(spacing: 10) {
+                    savedStat("Pain", icon: "waveform.path.ecg", value: "\(saved.pain) / 10")
+                    savedStat("Energy",
+                              icon: energyLevels[max(0, min(energyLevels.count - 1, saved.energy - 1))].1,
+                              value: "\(saved.energy) / 5")
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Note", systemImage: "square.and.pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
                     Text(saved.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                          ? "No note for this day." : saved.note)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.inkSoft)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
                 }
             }
             .padding(17)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
         } else {
             Text("This saved log is no longer available.")
                 .foregroundStyle(Palette.inkSoft)
         }
     }
 
-    private func readOnlyDetail(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 14, weight: .semibold))
-            Text(value).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+    private func savedTagSection(_ title: String, icon: String,
+                                 tags: [String], symptom: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+            if tags.isEmpty {
+                Text("None recorded")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkSoft)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
+            } else {
+                LazyVGrid(columns: tileColumns, spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        let icon = store.emojiForTag(symptom: symptom, tag) ?? Self.emoji[tag] ?? "✨"
+                        VStack(spacing: 5) {
+                            Text(icon).font(.system(size: 23))
+                            Text(tag)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 67)
+                        .padding(.horizontal, 3)
+                        .background(Palette.surface2.opacity(0.65),
+                                    in: RoundedRectangle(cornerRadius: 13))
+                    }
+                }
+            }
+        }
+    }
+
+    private func savedStat(_ title: String, icon: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+            Text(value)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .background(Palette.surface2.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
     }
 
     /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).

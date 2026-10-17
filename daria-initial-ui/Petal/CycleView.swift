@@ -514,9 +514,12 @@ struct CycleView: View {
         .map { $0 }
     }
 
-    /// Every month remembers its own expanded state, even while searching.
+    // Browsing expands one month at a time. Search results can keep many months open.
+    @State private var browsedHistoryMonth: Date?
+
     private func historyMonthIsOpen(_ date: Date, newest: Date?) -> Bool {
-        monthExpansion[date] ?? (historyFiltersActive && date == newest)
+        if historyQueryText.isEmpty { return browsedHistoryMonth == date }
+        return monthExpansion[date] ?? (date == newest)
     }
 
     /// A seven-calendar-day preview that respects the active search and date filters.
@@ -562,7 +565,8 @@ struct CycleView: View {
         historyField = .all
         historyDateRange = .all
         isHistorySearchFocused = false
-        monthExpansion = [:]
+        monthExpansion = [:] // Reset expanded search months.
+        browsedHistoryMonth = nil
     }
 
     private var logHistory: some View {
@@ -610,7 +614,8 @@ struct CycleView: View {
             .padding(.leading, 11)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
-            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
+            // The quick-search field is a little darker than month headers.
+            .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
 
             if isHistorySearchFocused && !searchExpanded && !historySuggestions.isEmpty {
                 historySuggestionsPanel
@@ -690,7 +695,8 @@ struct CycleView: View {
                     }
                 }
                 .padding(10)
-                .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.line))
                 .transition(.opacity)
             }
 
@@ -739,7 +745,11 @@ struct CycleView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.18)) {
-                                    monthExpansion[month.date] = !open
+                                    if historyQueryText.isEmpty {
+                                        browsedHistoryMonth = open ? nil : month.date
+                                    } else {
+                                        monthExpansion[month.date] = !open
+                                    }
                                 }
                                 isHistorySearchFocused = false
                             } label: {
