@@ -696,7 +696,7 @@ struct CycleView: View {
                     }
                 }
                 .padding(10)
-                .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.line))
                 .transition(.opacity)
             }
