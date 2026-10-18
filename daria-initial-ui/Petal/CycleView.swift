@@ -607,7 +607,7 @@ struct CycleView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Palette.accent)
                         .frame(width: 36, height: 36)
-                        .background(Palette.surface2.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
+                        .background(Palette.mist.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(searchExpanded ? "Hide advanced filters" : "Show advanced filters")
@@ -615,8 +615,8 @@ struct CycleView: View {
             .padding(.leading, 11)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
-            // The quick-search field is a little darker than month headers.
-            .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
+            // Light search field; month headings use the previous deeper search tint.
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
 
             if isHistorySearchFocused && !searchExpanded && !historySuggestions.isEmpty {
                 historySuggestionsPanel
@@ -696,7 +696,7 @@ struct CycleView: View {
                     }
                 }
                 .padding(10)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+                .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.line))
                 .transition(.opacity)
             }
@@ -766,7 +766,7 @@ struct CycleView: View {
                                 }
                                 .foregroundStyle(Palette.ink)
                                 .padding(11)
-                                .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
+                                .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint(open ? "Collapse this month" : "Expand this month")

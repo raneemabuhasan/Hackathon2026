@@ -39,7 +39,7 @@ struct LogSheet: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        DisplayTitle(before: viewingSavedLog ? "How you " : "How did you ",
+                        DisplayTitle(before: viewingSavedLog ? "How you " : "How do you ",
                                      accent: viewingSavedLog ? "felt" : "feel?", size: 30)
                     }
                     Spacer()
