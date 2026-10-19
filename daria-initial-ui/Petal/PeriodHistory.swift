@@ -75,3 +75,19 @@ struct CycleForecast {
         start.flatMap { calendar.date(byAdding: .day, value: length, to: $0) }
     }
 }
+
+/// Observed intervals between consecutive saved period starts, oldest first.
+struct RecordedCycle: Identifiable {
+    var id: Date { start }
+    let start: Date
+    let nextStart: Date
+    let days: Int
+
+    static func recent(from records: [PeriodRecord], calendar: Calendar = .current) -> [RecordedCycle] {
+        let starts = Array(Set(records.map { calendar.startOfDay(for: $0.start) })).sorted()
+        return Array(zip(starts, starts.dropFirst()).compactMap { start, next -> RecordedCycle? in
+            guard let days = calendar.dateComponents([.day], from: start, to: next).day, days > 0 else { return nil }
+            return RecordedCycle(start: start, nextStart: next, days: days)
+        }.suffix(5))
+    }
+}
