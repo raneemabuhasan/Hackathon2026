@@ -93,7 +93,10 @@ struct NourishView: View {
                             .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                             .frame(maxWidth: .infinity).padding(.vertical, 12)
                     }
-                    ForEach(meals) { meal in mealRow(meal) }
+                    // Extra space between meals so each one's tags don't run into the next title.
+                    VStack(alignment: .leading, spacing: 24) {
+                        ForEach(meals) { meal in mealRow(meal) }
+                    }
                 }
             }
             .card()
@@ -176,18 +179,6 @@ struct NourishView: View {
     private func mealRow(_ meal: Meal) -> some View {
         let added = store.isOnList(meal)
         return HStack(alignment: .center, spacing: 14) {
-            Button { openMeal = meal } label: {
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Palette.wine)
-                    .frame(width: 64, height: 64)
-                    .background(LinearGradient(colors: selected.artColors,
-                                               startPoint: .topLeading, endPoint: .bottomTrailing))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .accessibilityHidden(true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("View recipe for \(meal.name)")
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     Button { openMeal = meal } label: {

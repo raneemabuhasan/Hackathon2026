@@ -207,6 +207,16 @@ final class CycleStore {
         let day = Self.cal.startOfDay(for: date)
         return day >= start && day <= end ? start : nil
     }
+    /// The recorded period `date` falls in. One with no end yet covers its usual length,
+    /// or up to today if it has run longer.
+    func period(on date: Date) -> PeriodRecord? {
+        let day = Self.cal.startOfDay(for: date)
+        return periodHistory.records.first { record in
+            let start = Self.cal.startOfDay(for: record.start)
+            let end = record.end.map { Self.cal.startOfDay(for: $0) } ?? max(today, Self.add(start, periodLength - 1))
+            return start <= day && day <= end
+        }
+    }
     var ongoingPeriod: PeriodRecord? { periodHistory.records.first { $0.end == nil } }
     /// Also updates the profile fields every estimate reads, so Settings and the Today card agree.
     func saveBaseline(_ value: CycleBaseline, ongoing: Bool) throws {
