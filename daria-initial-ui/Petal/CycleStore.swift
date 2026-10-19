@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import FirebaseFirestore
 
 enum Tab { case today, cycle, nourish, companion }
 
@@ -44,8 +45,7 @@ enum Phase: String, CaseIterable, Identifiable {
     }
 }
 
-struct DayLog: Identifiable {
-    let id = UUID()
+struct DayLog: Identifiable, Codable {
     var date: Date
     var flow = "None"
     var moods: [String] = []
@@ -53,28 +53,50 @@ struct DayLog: Identifiable {
     var pain = 0
     var energy = 3
     var note = ""
+    /// One log per day, so the day is the Firestore document ID.
+    var id: String { CycleStore.key(date) }
 }
 
-struct Meal: Identifiable {
-    let id = UUID()
+/// users/{uid} — set during onboarding.
+struct Profile: Codable {
+    var name: String
+    var lastPeriodStart: Date
+    var cycleLength: Int
+    var periodLength: Int
+    var diets: [String] = []
+    var avoid: [String] = []
+    /// The user's own tags, shown next to the built-in ones. Optional so older profiles still decode.
+    var customMoods: [String]? = nil
+    var customSymptoms: [String]? = nil
+}
+
+/// One suggestion on Today's "Your plan for today" card.
+struct PlanItem: Codable, Hashable {
+    let icon: String
+    let title: String
+    let detail: String
+}
+
+struct Meal: Identifiable, Codable {
+    var id = UUID()
     let name: String
     let why: String
     let diets: [String]
     let allergens: [String]
+    /// Plain item names for the grocery list.
     let items: [String]
+    // Recipe details; only AI-generated meals have them.
+    var minutes: Int? = nil
+    var servings: Int? = nil
+    var ingredients: [String] = []
+    var steps: [String] = []
 }
 
-struct Reminder: Identifiable {
-    let id = UUID()
-    var title: String
-    var detail: String
-    var on: Bool
-}
-
-struct GroceryItem: Identifiable {
-    let id = UUID()
+struct GroceryItem: Identifiable, Codable {
+    var id = UUID().uuidString
     var name: String
     var done = false
+    var created = Date()
 }
 
 enum ChatAction: Hashable {
@@ -93,7 +115,16 @@ struct ChatMessage: Identifiable {
     var actions: [ChatAction] = []
 }
 
-/// All app state for the mockup. Everything here is fictional demo data held in memory.
+/// All app state for one signed-in user, kept in sync with Firestore.
+///
+/// Layout (rules in /firestore.rules only let the owner read or write):
+///   users/{uid}                 Profile
+///   users/{uid}/logs/{yyyy-MM-dd} DayLog
+///   users/{uid}/reminders/{id}  Reminder
+///   users/{uid}/grocery/{id}    GroceryItem
+///
+/// Writes go straight to Firestore; the snapshot listeners update the arrays below
+/// (immediately for local writes, and offline thanks to Firestore's cache).
 @MainActor @Observable
 final class CycleStore {
     private(set) var periodHistory = PeriodHistory()
@@ -139,25 +170,45 @@ final class CycleStore {
 
     var tab: Tab = .today
     var showLog = false
+    /// Day to open in LogSheet when editing a past entry; nil means today.
+    var selectedLogDate: Date?
     var toast: String?
 
+    let uid: String
     var today: Date
-    let periodLength = 5
-    let pastLengths = CycleStore.demoLengths
-    let starts: [Date]
 
-    var logs: [DayLog] = []
-    var reminders: [Reminder] = []
-    var grocery: [GroceryItem] = [GroceryItem(name: "Oat milk"), GroceryItem(name: "Ginger tea", done: true)]
-    var diets: Set<String> = ["vegetarian"]
-    var avoid: Set<String> = ["nuts"]
+    /// Nil until onboarding is done. `loaded` flips once the first profile snapshot arrives.
+    private(set) var profile: Profile?
+    private(set) var loaded = false
+    private(set) var logs: [DayLog] = []
+    private(set) var reminders: [Reminder] = []
+    private(set) var grocery: [GroceryItem] = []
     var messages: [ChatMessage] = []
+    /// True while the companion is waiting on the model.
+    private(set) var thinking = false
+
+    @ObservationIgnored private var listeners: [ListenerRegistration] = []
+    @ObservationIgnored private let db = Firestore.firestore()
+    /// Created on first message so the prompt sees the loaded profile. Reset when data is deleted.
+    @ObservationIgnored private var assistant: Assistant?
+    /// Cycle facts baked into the assistant's prompt; when they change, a fresh assistant is created.
+    @ObservationIgnored private var assistantFacts = ""
+    private var userRef: DocumentReference { db.collection("users").document(uid) }
+
+    var name: String { profile?.name ?? "" }
+    var periodLength: Int { profile?.periodLength ?? 5 }
+    var diets: Set<String> { Set(profile?.diets ?? []) }
+    var avoid: Set<String> { Set(profile?.avoid ?? []) }
 
     static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
-    static let cal = Calendar.current
-    static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
-    static func days(_ a: Date, from b: Date) -> Int {
+    nonisolated static let cal = Calendar.current
+    nonisolated static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
+    nonisolated static func days(_ a: Date, from b: Date) -> Int {
         cal.dateComponents([.day], from: cal.startOfDay(for: b), to: cal.startOfDay(for: a)).day ?? 0
+    }
+    nonisolated static func key(_ date: Date) -> String {
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
     static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping"]
@@ -167,44 +218,139 @@ final class CycleStore {
     static let nhsPeriodPain = URL(string: "https://www.nhs.uk/conditions/period-pain/")!
     static let nhsHeavyPeriods = URL(string: "https://www.nhs.uk/conditions/heavy-periods/")!
 
-    init() {
-        let t = Self.cal.startOfDay(for: .now)
-        today = t
-        if let data = UserDefaults.standard.data(forKey: "petal.cycleBaseline.v1") {
-            baseline = try? JSONDecoder().decode(CycleBaseline.self, from: data)
-        }
-        if let data = UserDefaults.standard.data(forKey: periodKey) {
-            do { periodHistory = try JSONDecoder().decode(PeriodHistory.self, from: data) }
-            catch { periodStorageError = "Saved period records could not be read. Your stored data has not been overwritten." }
-        }
-        var s = [Self.add(t, -13)]
-        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
-        starts = s
-        showCycleSetup = baseline == nil
+    init(uid: String) {
+        self.uid = uid
+        today = Self.cal.startOfDay(for: .now)
+        listen()
+    }
 
-        for start in s.prefix(3) {
-            logs += [
-                DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]),
-                DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]),
-                DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]),
-                DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]),
-                DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]),
-            ]
-        }
-        logs.append(DayLog(date: Self.add(t, -6), symptoms: ["Headache"]))
+    // MARK: Sync
 
-        reminders = [
-            Reminder(title: "Pack your period kit", detail: "\(fmt(Self.add(windowStart, -1))) · the day before your window", on: true),
-            Reminder(title: "Evening check-in", detail: "Every day · 8:30 pm", on: true),
-            Reminder(title: "Restock pads & tampons", detail: "\(fmt(Self.add(windowStart, -4))) · once", on: false),
+    private func listen() {
+        listeners = [
+            userRef.addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let error { print("Profile listener:", error) }
+                    self.profile = try? snap?.data(as: Profile.self)
+                    self.loaded = true
+                    self.syncNotifications()
+                    self.prefetchAI()
+                }
+            },
+            userRef.collection("logs").addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Logs listener:", error) }
+                    self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
+                    self?.syncNotifications() // predictions may have moved
+                    self?.prefetchAI()
+                }
+            },
+            userRef.collection("reminders").order(by: "created", descending: true).addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let error { print("Reminders listener:", error) }
+                    let docs = snap?.documents ?? []
+                    self.reminders = docs.compactMap { try? $0.data(as: Reminder.self) }
+                    // Reminders from before schedules existed have no "kind"; swap them for the new defaults.
+                    let legacy = docs.filter { $0.data()["kind"] == nil }.map(\.reference)
+                    if !legacy.isEmpty { self.replaceLegacyReminders(legacy, seedDefaults: legacy.count == docs.count) }
+                    self.syncNotifications()
+                }
+            },
+            userRef.collection("grocery").order(by: "created").addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Grocery listener:", error) }
+                    self?.grocery = snap?.documents.compactMap { try? $0.data(as: GroceryItem.self) } ?? []
+                }
+            },
         ]
-        messages = [ChatMessage(
+    }
+
+    /// Detach listeners; call when the user signs out.
+    func stop() {
+        listeners.forEach { $0.remove() }
+        listeners = []
+    }
+
+    /// The Companion's opening message. Computed, not stored, so it updates as soon as a log changes the prediction.
+    var greeting: ChatMessage {
+        ChatMessage(
             fromUser: false,
-            text: "Hi Maya. You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
-            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")]
+            text: "Hi \(name). You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
+            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")
+    }
+
+    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
+        userRef.updateData([
+            "name": name,
+            "lastPeriodStart": Timestamp(date: Self.cal.startOfDay(for: lastPeriodStart)),
+            "cycleLength": cycleLength,
+            "periodLength": periodLength,
+        ]) { error in if let error { print("Profile update failed:", error) } }
+        showToast("Settings saved")
+    }
+
+    /// Writes the profile plus a few default reminders the first time someone signs in.
+    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
+        let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
+                              cycleLength: cycleLength, periodLength: periodLength)
+        let batch = db.batch()
+        try? batch.setData(from: profile, forDocument: userRef)
+        addDefaultReminders(to: batch)
+        batch.commit { error in if let error { print("Onboarding write failed:", error) } }
+        ReminderNotifications.requestPermission()
+    }
+
+    private func addDefaultReminders(to batch: WriteBatch) {
+        for (i, var r) in Reminder.defaults.enumerated() {
+            r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
+            try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
+        }
+    }
+
+    private func replaceLegacyReminders(_ refs: [DocumentReference], seedDefaults: Bool) {
+        let batch = db.batch()
+        refs.forEach { batch.deleteDocument($0) }
+        if seedDefaults { addDefaultReminders(to: batch) }
+        batch.commit { error in if let error { print("Reminder migration failed:", error) } }
+    }
+
+    private func syncNotifications() {
+        guard profile != nil else { return }
+        ReminderNotifications.sync(reminders, windowStart: windowStart)
     }
 
     // MARK: Cycle maths
+
+    /// Period start dates, most recent first: any logged flow that follows two flow-free days,
+    /// plus the onboarding answer. Starts less than 10 days apart count as one period.
+    var starts: [Date] {
+        let flowDays = Set(logs.filter { $0.flow != "None" }.map { Self.cal.startOfDay(for: $0.date) })
+        var candidates = flowDays.filter { !flowDays.contains(Self.add($0, -1)) && !flowDays.contains(Self.add($0, -2)) }
+        if let seed = profile?.lastPeriodStart { candidates.insert(Self.cal.startOfDay(for: seed)) }
+        var result: [Date] = []
+        for d in candidates.sorted() where result.last.map({ Self.days(d, from: $0) >= 10 }) ?? true {
+            result.append(d)
+        }
+        return result.isEmpty ? [today] : result.reversed()
+    }
+
+    /// Finished cycles, most recent first. Gaps outside 18–45 days are treated as missed logging.
+    var completedCycles: [(start: Date, length: Int)] {
+        let s = starts
+        return zip(s.dropFirst(), s)
+            .map { (start: $0, length: Self.days($1, from: $0)) }
+            .filter { (18...45).contains($0.length) }
+            .prefix(6)
+            .map { $0 }
+    }
+
+    /// Never empty: falls back to the cycle length given during onboarding.
+    var pastLengths: [Int] {
+        let lengths = completedCycles.map(\.length)
+        return lengths.isEmpty ? [profile?.cycleLength ?? 28] : lengths
+    }
 
     var lastStart: Date { starts[0] }
     private var mean: Double { Double(pastLengths.reduce(0, +)) / Double(pastLengths.count) }
@@ -231,7 +377,8 @@ final class CycleStore {
     var currentPhase: Phase { phase(forDay: cycleDay) }
 
     func isPeriod(_ date: Date) -> Bool {
-        date <= today && starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength }
+        date <= today && (logs.contains { $0.flow != "None" && Self.cal.isDate($0.date, inSameDayAs: date) }
+            || starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength })
     }
     func isPredicted(_ date: Date) -> Bool {
         let x = Self.days(date, from: nextStart); return x >= 0 && x < periodLength
@@ -259,22 +406,140 @@ final class CycleStore {
         }
     }
 
+    func log(for date: Date) -> DayLog? {
+        logs.first { Self.cal.isDate($0.date, inSameDayAs: date) }
+    }
+
+    /// Logs are keyed by day, so saving replaces that day's entry (not necessarily today's).
     func save(_ log: DayLog) {
-        logs.removeAll { Self.cal.isDate($0.date, inSameDayAs: today) }
-        logs.append(log)
+        try? userRef.collection("logs").document(log.id).setData(from: log)
         showLog = false
+        selectedLogDate = nil
         let tags = log.moods.count + log.symptoms.count
         showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
     }
 
+    /// Saves a log and waits for Firestore to accept it, so the assistant only confirms real saves.
+    func write(_ log: DayLog) async throws {
+        try await set(log, at: userRef.collection("logs").document(log.id))
+    }
+
+    /// Saves a reminder and waits for Firestore, so the assistant only confirms real saves.
+    func addReminder(_ reminder: Reminder) async throws {
+        try await set(reminder, at: userRef.collection("reminders").document(reminder.id))
+        ReminderNotifications.requestPermission()
+    }
+
+    private func set<T: Encodable>(_ value: T, at ref: DocumentReference) async throws {
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            do {
+                try ref.setData(from: value) { error in
+                    if let error { done.resume(throwing: error) } else { done.resume() }
+                }
+            } catch {
+                done.resume(throwing: error)
+            }
+        }
+    }
+
+    func deleteLog(_ log: DayLog) {
+        userRef.collection("logs").document(log.id).delete { error in if let error { print("Delete log failed:", error) } }
+        showToast("Log deleted")
+    }
+
+    func setReminder(_ reminder: Reminder, on: Bool) {
+        userRef.collection("reminders").document(reminder.id).updateData(["on": on])
+        if on { ReminderNotifications.requestPermission() }
+    }
+
+    func saveReminder(_ reminder: Reminder) {
+        try? userRef.collection("reminders").document(reminder.id).setData(from: reminder)
+        ReminderNotifications.requestPermission()
+        showToast("Reminder saved")
+    }
+
+    func deleteReminder(_ reminder: Reminder) {
+        userRef.collection("reminders").document(reminder.id).delete()
+        showToast("Reminder deleted")
+    }
+
+    var allMoods: [String] { Self.moodOptions + (profile?.customMoods ?? []) }
+    var allSymptoms: [String] { Self.symptomOptions + (profile?.customSymptoms ?? []) }
+
+    /// Adds a custom mood or symptom to the user's list. Returns the cleaned-up name, or nil if it's empty/too long.
+    @discardableResult
+    func addCustom(symptom: Bool, _ name: String) -> String? {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean.count <= 30 else { return nil }
+        let tag = clean.prefix(1).uppercased() + clean.dropFirst()
+        let existing = symptom ? allSymptoms : allMoods
+        if let match = existing.first(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) { return match }
+        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayUnion([tag])])
+        return tag
+    }
+
+    func removeCustom(symptom: Bool, _ name: String) {
+        userRef.updateData([symptom ? "customSymptoms" : "customMoods": FieldValue.arrayRemove([name])])
+    }
+
+    func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
+    func toggleAvoid(_ allergen: String) { toggle("avoid", allergen, avoid.contains(allergen)) }
+
+    private func toggle(_ field: String, _ value: String, _ present: Bool) {
+        userRef.updateData([field: present ? FieldValue.arrayRemove([value]) : FieldValue.arrayUnion([value])])
+    }
+
+    func toggleGrocery(_ item: GroceryItem) {
+        userRef.collection("grocery").document(item.id).updateData(["done": !item.done])
+    }
+
+    /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
     func deleteAllData() {
-        logs = []
-        grocery = []
+        let refs = logs.map { userRef.collection("logs").document($0.id) }
+            + reminders.map { userRef.collection("reminders").document($0.id) }
+            + grocery.map { userRef.collection("grocery").document($0.id) }
+            + [userRef]
+        // Firestore batches are capped at 500 writes.
+        for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
+            let batch = db.batch()
+            chunk.forEach { batch.deleteDocument($0) }
+            batch.commit { error in if let error { print("Delete failed:", error) } }
+        }
+        cacheRef.getDocuments { snap, _ in
+            let batch = Firestore.firestore().batch()
+            snap?.documents.forEach { batch.deleteDocument($0.reference) }
+            batch.commit()
+        }
         periodHistory = PeriodHistory()
         UserDefaults.standard.removeObject(forKey: periodKey)
         periodStorageError = nil
+        aiMeals = [:]
+        plan = nil
+        messages = []
+        assistant = nil
+        ReminderNotifications.sync([], windowStart: windowStart)
+        tab = .today
         showToast("Your data was deleted")
     }
+
+    #if DEBUG
+    /// Writes five past cycles of made-up logs so the charts have something to show in a demo.
+    func addSampleHistory() {
+        var s = [lastStart]
+        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
+        let batch = db.batch()
+        let write = { (log: DayLog) in try? batch.setData(from: log, forDocument: self.userRef.collection("logs").document(log.id)) }
+        for start in s.dropFirst() {
+            write(DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]))
+            write(DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]))
+            write(DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]))
+            write(DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]))
+            write(DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]))
+        }
+        batch.commit { error in if let error { print("Sample history failed:", error) } }
+        showToast("Added sample history")
+    }
+    #endif
 
     // MARK: Nourish
 
@@ -311,18 +576,175 @@ final class CycleStore {
         }
     }
 
+    // MARK: AI meal ideas
+
+    /// Generated recipes for this session, keyed by phase + preferences (see mealKey).
+    private(set) var aiMeals: [String: [Meal]] = [:]
+    private(set) var mealsLoading: Set<String> = []
+    private(set) var mealsFailed: Set<String> = []
+
+    // AI results are cached in users/{uid}/cache so they show instantly next time and are only
+    // regenerated when their inputs change.
+    private var cacheRef: CollectionReference { userRef.collection("cache") }
+    private static let mealCacheDays = 7
+
+    func mealKey(_ phase: Phase) -> String {
+        "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
+    }
+
+    /// What Nourish shows: AI recipes once loaded, otherwise the built-in ideas.
+    func shownMeals(for phase: Phase) -> [Meal] { aiMeals[mealKey(phase)] ?? meals(for: phase) }
+
+    func loadMeals(for phase: Phase, refresh: Bool = false) async {
+        let key = mealKey(phase)
+        guard refresh || aiMeals[key] == nil, !mealsLoading.contains(key) else { return }
+        mealsLoading.insert(key)
+        mealsFailed.remove(key)
+        defer { mealsLoading.remove(key) }
+        let doc = cacheRef.document("meals-" + key)
+        if !refresh, let cached = try? await doc.getDocument(as: CachedMeals.self),
+           cached.created > Self.add(.now, -Self.mealCacheDays) {
+            aiMeals[key] = cached.meals.filter(fitsPreferences)
+            return
+        }
+        do {
+            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid, recentSymptoms: recentSymptoms,
+                                                      notLike: aiMeals[key]?.map(\.name) ?? [])
+            let safe = ideas.filter(fitsPreferences)
+            if safe.isEmpty { throw CancellationError() }
+            aiMeals[key] = safe
+            try? doc.setData(from: CachedMeals(meals: safe, created: .now))
+        } catch {
+            print("Meal ideas failed:", error)
+            mealsFailed.insert(key)
+        }
+    }
+
+    private struct CachedMeals: Codable {
+        let meals: [Meal]
+        let created: Date
+    }
+
+    /// Symptoms logged in the last 3 days, most frequent first.
+    var recentSymptoms: [String] {
+        let since = Self.add(today, -3)
+        var counts: [String: Int] = [:]
+        for log in logs where log.date >= since { for s in log.symptoms { counts[s, default: 0] += 1 } }
+        return counts.sorted { $0.value > $1.value }.map(\.key)
+    }
+
+    // MARK: AI plan for today
+
+    /// nil until loaded; Today shows the built-in suggestions meanwhile.
+    private(set) var plan: [PlanItem]?
+    private(set) var planLoading = false
+
+    /// Everything the plan depends on. When this text changes, the plan is regenerated.
+    var planContext: String {
+        let todayEntry = log(for: today)
+        let yesterday = log(for: Self.add(today, -1))
+        var lines = [
+            "Date: \(today.formatted(.dateTime.weekday(.wide).month(.wide).day())). Cycle day \(cycleDay), \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb)",
+            "Diet: \(diets.isEmpty ? "no restrictions" : diets.sorted().joined(separator: ", ")). Avoid: \(avoid.isEmpty ? "nothing" : avoid.sorted().joined(separator: ", ")).",
+        ]
+        if let e = todayEntry {
+            lines.append("Logged today: flow \(e.flow); moods \(e.moods.isEmpty ? "none" : e.moods.joined(separator: ", ")); symptoms \(e.symptoms.isEmpty ? "none" : e.symptoms.joined(separator: ", ")); pain \(e.pain)/10; energy \(e.energy)/5.")
+        } else {
+            lines.append("Nothing logged yet today.")
+        }
+        if let yesterday, !yesterday.symptoms.isEmpty {
+            lines.append("Yesterday's symptoms: \(yesterday.symptoms.joined(separator: ", ")).")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func loadPlan() async {
+        let context = planContext
+        guard !planLoading else { return }
+        planLoading = true
+        defer { planLoading = false }
+        let doc = cacheRef.document("plan")
+        if let cached = try? await doc.getDocument(as: CachedPlan.self), cached.context == context {
+            plan = cached.items
+            return
+        }
+        do {
+            let items = try await Assistant.dailyPlan(context: context)
+                .filter { Assistant.planIcons.contains($0.icon) && !$0.title.isEmpty }
+            guard !items.isEmpty, context == planContext else { return } // inputs changed mid-flight; the next call handles it
+            plan = Array(items.prefix(3))
+            try? doc.setData(from: CachedPlan(items: Array(items.prefix(3)), context: context))
+        } catch {
+            print("Daily plan failed:", error)
+        }
+    }
+
+    private struct CachedPlan: Codable {
+        let items: [PlanItem]
+        let context: String
+    }
+
+    /// Start AI work early so Today and Nourish are ready by the time the user looks.
+    private func prefetchAI() {
+        guard profile != nil else { return }
+        Task {
+            await loadPlan()
+            await loadMeals(for: currentPhase)
+        }
+    }
+
+    /// Second check on AI recipes: the model's own labels, then a keyword scan of the ingredients.
+    private func fitsPreferences(_ meal: Meal) -> Bool {
+        guard diets.allSatisfy(meal.diets.contains), !meal.allergens.contains(where: avoid.contains) else { return false }
+        let text = ([meal.name] + meal.ingredients + meal.items).joined(separator: " ").lowercased()
+        return !avoid.contains { allergen in
+            var scanned = text
+            for phrase in Self.allergenLookalikes[allergen] ?? [] { scanned = scanned.replacingOccurrences(of: phrase, with: " ") }
+            return (Self.allergenWords[allergen] ?? [allergen]).contains {
+                scanned.range(of: "\\b\($0)", options: .regularExpression) != nil
+            }
+        }
+    }
+
+    private static let allergenWords: [String: [String]] = [
+        "nuts": ["nut", "almond", "cashew", "walnut", "pecan", "hazelnut", "pistachio", "macadamia", "pesto", "praline", "marzipan"],
+        "dairy": ["milk", "cheese", "yogurt", "yoghurt", "butter", "cream", "parmesan", "feta", "mozzarella", "ghee", "whey", "paneer"],
+        "gluten": ["wheat", "flour", "bread", "pasta", "couscous", "barley", "rye", "spelt", "sourdough", "noodle", "soy sauce", "seitan", "bulgur", "tortilla", "oats"],
+        "soy": ["soy", "tofu", "tempeh", "edamame", "miso"],
+        "eggs": ["egg"],
+        "fish": ["fish", "salmon", "tuna", "cod", "anchov", "sardine", "mackerel", "trout", "haddock"],
+        "sesame": ["sesame", "tahini"],
+    ]
+
+    /// Phrases that contain an allergen word but aren't that allergen; removed before scanning.
+    private static let allergenLookalikes: [String: [String]] = [
+        "nuts": ["coconut", "nutmeg", "butternut", "nutritional yeast", "nut-free"],
+        "dairy": ["coconut milk", "oat milk", "almond milk", "soy milk", "rice milk", "plant milk", "plant-based milk",
+                  "coconut yogurt", "coconut yoghurt", "soy yogurt", "dairy-free", "vegan cheese", "vegan butter",
+                  "peanut butter", "almond butter", "nut butter", "cashew butter", "cocoa butter", "butternut", "coconut cream"],
+        "gluten": ["gluten-free soy sauce", "gluten-free pasta", "gluten-free bread", "gluten-free flour", "gluten-free oats",
+                   "gluten-free tortilla", "gluten-free", "buckwheat", "rice noodle", "rice flour", "corn tortilla", "almond flour", "coconut flour"],
+        "soy": ["soy-free"],
+        "eggs": ["eggplant", "egg-free"],
+    ]
+
     func isOnList(_ meal: Meal) -> Bool { meal.items.allSatisfy { item in grocery.contains { $0.name == item } } }
 
     func toggleList(_ meal: Meal) {
+        let batch = db.batch()
         if isOnList(meal) {
-            grocery.removeAll { meal.items.contains($0.name) }
+            for item in grocery where meal.items.contains(item.name) {
+                batch.deleteDocument(userRef.collection("grocery").document(item.id))
+            }
             showToast("Removed from grocery list")
         } else {
-            for item in meal.items where !grocery.contains(where: { $0.name == item }) {
-                grocery.append(GroceryItem(name: item))
+            for name in meal.items where !grocery.contains(where: { $0.name == name }) {
+                let item = GroceryItem(name: name)
+                try? batch.setData(from: item, forDocument: userRef.collection("grocery").document(item.id))
             }
             showToast("Added \(meal.items.count) items to your list")
         }
+        batch.commit()
     }
 
     // MARK: Companion
@@ -338,18 +760,37 @@ final class CycleStore {
 
     func send(_ text: String) {
         messages.append(ChatMessage(fromUser: true, text: text))
+        // Urgent symptoms get the fixed safety reply without waiting on the model.
+        if Self.needsCare(text) { return reply(to: text) }
+        thinking = true
         Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            reply(to: text)
+            defer { thinking = false }
+            do {
+                let facts = "\(cycleDay)|\(windowStart)|\(windowEnd)|\(name)"
+                if assistant == nil || facts != assistantFacts {
+                    assistant = Assistant(store: self)
+                    assistantFacts = facts
+                }
+                let assistant = self.assistant!
+                ai(try await assistant.reply(to: text), note: "AI-generated. Not medical advice.")
+            } catch {
+                // No connection, billing not set up, etc.: fall back to the built-in replies.
+                print("Assistant failed:", error)
+                reply(to: text)
+            }
         }
+    }
+
+    private static func needsCare(_ text: String) -> Bool {
+        let q = text.lowercased()
+        return ["faint", "soak", "very heavy", "severe", "unbearable", "clot", "pass out"].contains { q.contains($0) }
     }
 
     func perform(_ action: ChatAction, from messageID: UUID) {
         if let i = messages.firstIndex(where: { $0.id == messageID }) { messages[i].actions = [] }
         switch action {
         case .setReminder(let title):
-            reminders.insert(Reminder(title: title, detail: "\(fmt(Self.add(windowStart, -2))) · once", on: true), at: 0)
-            showToast("Reminder set")
+            saveReminder(Reminder(title: title, kind: .beforePeriod, hour: 9, minute: 0, daysBefore: 2))
             ai("Done. You'll find it under Reminders, and you can switch it off any time.")
         case .notNow:
             ai("No problem.")
@@ -368,7 +809,7 @@ final class CycleStore {
         let q = question.lowercased()
         let has = { (words: [String]) in words.contains { q.contains($0) } }
 
-        if has(["faint", "soak", "very heavy", "severe", "unbearable", "clot", "pass out"]) {
+        if Self.needsCare(question) {
             ai("That sounds like something to get checked. Please contact a GP, or call NHS 111 if you're in the UK. If you feel faint or very unwell, seek urgent care.",
                note: "I can't assess symptoms. NHS: heavy periods", link: Self.nhsHeavyPeriods)
         } else if has(["remind"]) {

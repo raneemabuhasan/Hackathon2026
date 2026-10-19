@@ -2,10 +2,12 @@ import SwiftUI
 
 @MainActor
 struct ContentView: View {
-    @State private var store = CycleStore()
-    @Environment(\.scenePhase) private var scenePhase
+      @Environment(CycleStore.self) private var store
+      @Environment(\.scenePhase) private var scenePhase 
 
     var body: some View {
+        @Bindable var store = store
+
         ZStack(alignment: .bottom) {
             Palette.bg.ignoresSafeArea()
 
@@ -19,7 +21,9 @@ struct ContentView: View {
             }
             .transition(.opacity)
 
+            // Stay put behind the keyboard instead of riding up over the Companion text field.
             TabBar()
+                .ignoresSafeArea(.keyboard)
         }
         .animation(.easeOut(duration: 0.2), value: store.tab)
         .overlay(alignment: .top) {
@@ -96,4 +100,3 @@ struct TabBar: View {
     }
 }
 
-#Preview { ContentView() }

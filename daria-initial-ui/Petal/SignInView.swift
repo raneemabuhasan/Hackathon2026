@@ -1,0 +1,139 @@
+import SwiftUI
+import Lottie
+
+struct SignInView: View {
+    @Environment(AuthModel.self) private var auth
+    @State private var creating = false
+    @State private var name = ""
+    @State private var email = ""
+    @State private var password = ""
+
+    private var canSubmit: Bool {
+        !email.isEmpty && password.count >= 6 && (!creating || !name.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                VStack(spacing: 6) {
+                    DisplayTitle(before: "Hi ", accent: "there!", size: 38)
+                    Text(creating ? "Let's set up your private space." : "Good to see you. Sign in to pick up where you left off.")
+                        .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 28)
+
+                LottieView(animation: .named("signin"))
+                    .looping()
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: creating ? 150 : 200)
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 14) {
+                    Button { Task { await auth.signInWithGoogle() } } label: {
+                        HStack(spacing: 10) {
+                            Text("G").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(Palette.accent)
+                            Text("Continue with Google").font(.system(size: 15, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Palette.surface, in: Capsule())
+                        .overlay(Capsule().stroke(Palette.line))
+                    }
+                    .buttonStyle(.plain)
+
+                    HStack {
+                        Rectangle().fill(Palette.line).frame(height: 1)
+                        Text("or with email").font(.system(size: 12)).foregroundStyle(Palette.inkFaint)
+                        Rectangle().fill(Palette.line).frame(height: 1)
+                    }
+
+                    if creating {
+                        field("First name", text: $name).textContentType(.givenName)
+                    }
+                    field("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    field("Password", text: $password, secure: true)
+                        .textContentType(creating ? .newPassword : .password)
+
+                    if let error = auth.error {
+                        Text(error).font(.system(size: 13)).foregroundStyle(Palette.accent)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Button(action: submit) {
+                        Group {
+                            if auth.busy { ProgressView().tint(.white) }
+                            else { Text(creating ? "Create account" : "Sign in").font(.system(size: 16, weight: .semibold)) }
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Palette.accent.opacity(canSubmit ? 1 : 0.4), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSubmit || auth.busy)
+
+                    if !creating {
+                        Button("Forgot password?") { Task { await auth.resetPassword(email: email) } }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .disabled(email.isEmpty)
+                    }
+
+                    Text("Only you can read your logs. Nothing is shared or sold.")
+                        .font(.caption).foregroundStyle(Palette.inkFaint)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 4) {
+                Text(creating ? "Already have an account?" : "Don't have an account?")
+                    .foregroundStyle(Palette.inkSoft)
+                Button(creating ? "Sign in" : "Create one") {
+                    creating.toggle()
+                    auth.error = nil
+                }
+                .fontWeight(.semibold)
+                .foregroundStyle(Palette.accent)
+            }
+            .font(.system(size: 14))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Palette.cream.opacity(0.9))
+        }
+        .background(
+            RadialGradient(colors: [Palette.blush, Palette.mist, Palette.cream], center: .top, startRadius: 0, endRadius: 520)
+                .ignoresSafeArea())
+        .animation(.easeOut(duration: 0.2), value: creating)
+    }
+
+    private func submit() {
+        Task {
+            if creating {
+                await auth.signUp(name: name.trimmingCharacters(in: .whitespaces), email: email, password: password)
+            } else {
+                await auth.signIn(email: email, password: password)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func field(_ placeholder: String, text: Binding<String>, secure: Bool = false) -> some View {
+        Group {
+            if secure { SecureField(placeholder, text: text) } else { TextField(placeholder, text: text) }
+        }
+        .font(.system(size: 15))
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Palette.line))
+    }
+}

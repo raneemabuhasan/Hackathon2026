@@ -5,12 +5,20 @@ struct CompanionView: View {
     @Environment(CycleStore.self) private var store
     @State private var draft = ""
     @FocusState private var focused: Bool
+    /// Whether the on-screen keyboard is actually showing. Focus alone isn't enough: with a hardware
+    /// keyboard (e.g. the simulator) there's no on-screen keyboard and the field would drop behind the tab bar.
+    @State private var keyboardShown = false
+    @State private var editing: ReminderSheet?
+
+    /// Which reminder the editor sheet is open for.
+    private enum ReminderSheet: Identifiable {
+        case new, edit(Reminder)
+        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
+    }
 
     private let prompts = ["When is my next period?", "Remind me to restock pads", "I have cramps", "What should I eat today?"]
 
     var body: some View {
-        @Bindable var store = store
-
         ScrollViewReader { proxy in
             Page {
                 VStack(alignment: .leading, spacing: 4) {
@@ -19,19 +27,40 @@ struct CompanionView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    SectionHeader(title: "Reminders", trailing: "opt-in")
-                    ForEach($store.reminders) { $r in
-                        Toggle(isOn: $r.on) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(r.title).font(.system(size: 14, weight: .semibold))
-                                Text(r.detail).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    SectionHeader(title: "Reminders", trailing: "tap to edit")
+                    ForEach(store.reminders) { r in
+                        HStack(spacing: 12) {
+                            Button { editing = .edit(r) } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.title).font(.system(size: 14, weight: .semibold))
+                                    Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
+                                .labelsHidden()
+                                .tint(Palette.accent)
                         }
-                        .tint(Palette.accent)
                         .padding(.vertical, 8)
                     }
+                    Button { editing = .new } label: {
+                        Label("New reminder", systemImage: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .padding(.top, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .card()
+                .sheet(item: $editing) { target in
+                    ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                        .environment(store)
+                        .presentationDetents([.large])
+                        .presentationCornerRadius(32)
+                        .presentationBackground(Palette.bg)
+                }
 
                 FlowLayout {
                     ForEach(prompts, id: \.self) { p in
@@ -40,8 +69,18 @@ struct CompanionView: View {
                 }
 
                 VStack(spacing: 10) {
+                    bubble(store.greeting)
                     ForEach(store.messages) { m in
                         bubble(m).id(m.id)
+                    }
+                    if store.thinking {
+                        Text("Thinking…")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Palette.inkSoft)
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .background(Palette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 6, bottomTrailingRadius: 20, topTrailingRadius: 20))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("thinking")
                     }
                 }
             }
@@ -70,7 +109,9 @@ struct CompanionView: View {
             .background(Palette.surface, in: Capsule())
             .shadow(color: Palette.berry.opacity(0.1), radius: 12, y: 4)
             .padding(.horizontal, 20)
-            .padding(.bottom, focused ? 8 : 92)
+            .padding(.bottom, keyboardShown ? 8 : 92)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         }
     }
 

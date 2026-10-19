@@ -3,20 +3,26 @@ import SwiftUI
 @MainActor
 struct TodayView: View {
     @Environment(CycleStore.self) private var store
+    @Environment(AuthModel.self) private var auth
+    @State private var showSettings = false
 
     var body: some View {
         Page {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    DisplayTitle(before: "Hi Maya, ", accent: "be gentle", after: " today")
+                    DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
                 }
                 Spacer()
-                Text("M")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 42, height: 42)
-                    .background(Palette.accentSoft, in: Circle())
+                Button { showSettings = true } label: {
+                    Text(String(store.name.prefix(1)).uppercased())
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 42, height: 42)
+                        .background(Palette.accentSoft, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
             }
 
             hero
@@ -25,6 +31,13 @@ struct TodayView: View {
             quickActions
             Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
             plan
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environment(store)
+                .environment(auth)
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
         }
     }
 
@@ -50,26 +63,53 @@ struct TodayView: View {
 
     // MARK: Prediction
 
-    private var prediction: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Eyebrow(text: "Estimated next period")
-            if let next = store.forecast.next() {
-                Text("\(store.fmt(CycleStore.add(next, -store.forecast.margin))) – \(store.fmt(CycleStore.add(next, store.forecast.margin)))")
-                    .font(.display(28))
-                if next < store.today {
-                    Text("The estimated date has passed. Log a period if it happened; dates are never filled in automatically.")
-                        .font(.caption)
-                }
-            } else {
-                Text("Log a start date to see an estimate.")
+       private var prediction: some View {
+        let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
+        let total = Double(CycleStore.days(store.windowEnd, from: store.today) + 4)
+        let pct = { (d: Date) in Double(CycleStore.days(d, from: store.today)) / total }
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Eyebrow(text: "Next period, likely")
+                Spacer()
+                Text("in \(daysTo)–\(daysTo + store.spread * 2) days").font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            Text(store.forecastBasis).font(.caption)
-            Text("This is an approximate window, not a guaranteed date.").font(.caption)
-            Text("Typical bleeding length: \(store.baseline?.periodDays ?? 5) days. Your actual end date is always yours to record.").font(.caption)
-            Text("Calendar-only ovulation estimate: around cycle day \(max(1, store.forecast.length - 14)). Ovulation is not confirmed; do not use this estimate for contraception.")
+            Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
+                .font(.display(30))
+                .monospacedDigit()
+
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.surface2).frame(height: 6)
+                    Capsule()
+                        .fill(LinearGradient(colors: [Palette.blush.opacity(0), Palette.pink, Palette.blush.opacity(0)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: w * (pct(store.windowEnd) - pct(store.windowStart) + 0.08), height: 14)
+                        .offset(x: w * (pct(store.windowStart) - 0.04))
+                    RoundedRectangle(cornerRadius: 2).fill(Palette.ink).frame(width: 3, height: 22)
+                }
+                .frame(height: 24)
+            }
+            .frame(height: 24)
+            HStack {
+                Text("Today")
+                Spacer()
+                Text(store.fmt(CycleStore.add(store.today, Int(total))))
+            }
+            .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
+
+            Text(store.completedCycles.isEmpty
+                 ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
+                 : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
+                .font(.caption).foregroundStyle(Palette.inkFaint)
+            // From Raneem's version: be clear this is an estimate, and never for contraception.
+            Text("This is an approximate window, not a guaranteed date. Calendar-only ovulation estimate: around cycle day \(max(1, store.average - 14)). Ovulation isn't confirmed; don't use this for contraception.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
-        }.card()
+        }
+        .card()
     }
+
 
     // MARK: Week strip
 
@@ -141,9 +181,23 @@ struct TodayView: View {
     }
 
     private var plan: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Your plan for today", trailing: "optional")
-            ForEach(planItems, id: \.title) { item in
+        let ai = store.plan
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Your plan for today").font(.system(size: 15, weight: .semibold))
+                if ai != nil {
+                    Text("AI").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Palette.accentSoft, in: Capsule())
+                }
+                Spacer()
+                if store.planLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(ai == nil ? "optional" : "from today's log").font(.caption).foregroundStyle(Palette.inkFaint)
+                }
+            }
+            ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: item.icon)
                         .font(.system(size: 17))
@@ -160,12 +214,16 @@ struct TodayView: View {
                     }
                 }
             }
+            if ai != nil {
+                Text("AI suggestions, not medical advice.").font(.caption).foregroundStyle(Palette.inkFaint)
+            }
         }
         .card()
+        .animation(.easeOut(duration: 0.25), value: ai)
+        .task(id: store.planContext) { await store.loadPlan() }
     }
 }
 
-@MainActor
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
     @State private var showEntry = false

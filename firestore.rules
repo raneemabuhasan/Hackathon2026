@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Petal stores sensitive health data. Every document lives under users/{uid}
+// and only the signed-in owner can read or write it. Everything else is denied.
+// No recursive wildcard here on purpose: any matching "allow" wins, so a catch-all
+// would let writes skip the log validation below.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Mirrors DayLog in CycleStore.swift. Document ID is the day, yyyy-MM-dd.
+    function isValidLog(log, day) {
+      return day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && log.keys().hasAll(['date', 'flow', 'moods', 'symptoms', 'pain', 'energy', 'note'])
+        && log.keys().hasOnly(['date', 'flow', 'moods', 'symptoms', 'pain', 'energy', 'note'])
+        && log.date is timestamp
+        && log.flow in ['None', 'Light', 'Medium', 'Heavy']
+        && log.moods is list && log.moods.size() <= 20
+        && log.symptoms is list && log.symptoms.size() <= 20
+        && log.pain is int && log.pain >= 0 && log.pain <= 10
+        && log.energy is int && log.energy >= 1 && log.energy <= 5
+        && log.note is string && log.note.size() <= 2000;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      match /logs/{day} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidLog(request.resource.data, day);
+      }
+
+      match /reminders/{id} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /grocery/{id} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Cached AI output (today's plan, recipes) so it shows instantly next time.
+      match /cache/{id} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+  }
+}
