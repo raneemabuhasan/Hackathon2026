@@ -54,6 +54,18 @@ struct SettingsView: View {
                     }
                 }
 
+                section("Appearance") {
+                    Text("Choose your colors")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkSoft)
+                    Text("Applied instantly and saved on this device.")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                    ForEach(AppTheme.allCases) { theme in
+                        themeOption(theme)
+                    }
+                }
+
                 section("Profile") {
                     TextField("First name", text: $name)
                         .textContentType(.givenName)
@@ -151,6 +163,42 @@ struct SettingsView: View {
             cycleLength = p.cycleLength
             periodLength = p.periodLength
         }
+    }
+
+    private func themeOption(_ theme: AppTheme) -> some View {
+        let selected = AppAppearance.shared.theme == theme
+        return Button {
+            AppAppearance.shared.theme = theme
+        } label: {
+            HStack(spacing: 12) {
+                HStack(spacing: -5) {
+                    Circle().fill(theme.previewBackground)
+                    Circle().fill(theme.previewPastel)
+                    Circle().fill(theme.previewAccent)
+                }
+                .frame(width: 66, height: 26)
+                .accessibilityHidden(true)
+                Text(theme.name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Palette.ink)
+                Spacer(minLength: 8)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? Palette.accent : Palette.inkSoft)
+                    .accessibilityHidden(true)
+            }
+            .padding(12)
+            .frame(minHeight: 52)
+            .background(selected ? Palette.surface2 : Palette.surface,
+                        in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(selected ? Palette.accent : Palette.line, lineWidth: selected ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(theme.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHint("Applies this color theme throughout Petal")
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {

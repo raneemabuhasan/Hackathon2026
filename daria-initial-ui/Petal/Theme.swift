@@ -1,4 +1,5 @@
 import SwiftUI
+import Observation
 
 extension Color {
     init(hex: UInt32, opacity: Double = 1) {
@@ -10,28 +11,84 @@ extension Color {
     }
 }
 
-/// The team palette, darkest to lightest, plus the roles the UI uses.
-enum Palette {
-    static let wine = Color(hex: 0x590D22)
-    static let plum = Color(hex: 0x800F2F)
-    static let berry = Color(hex: 0xA4133C)
-    static let rose = Color(hex: 0xC9184A)
-    static let coral = Color(hex: 0xFF4D6D)
-    static let pink = Color(hex: 0xFF758F)
-    static let petal = Color(hex: 0xFF8FA3)
-    static let blush = Color(hex: 0xFFB3C1)
-    static let mist = Color(hex: 0xFFCCD5)
-    static let cream = Color(hex: 0xFFF0F3)
+/// Curated light palettes: soft surfaces with darker, readable controls.
+enum AppTheme: String, CaseIterable, Identifiable {
+    case pink, lavender, sage, sky, peach
+    var id: String { rawValue }
 
-    static let bg = cream
+    var name: String {
+        switch self {
+        case .pink: "Petal Pink"
+        case .lavender: "Lavender"
+        case .sage: "Sage"
+        case .sky: "Sky Blue"
+        case .peach: "Peach"
+        }
+    }
+
+    // Existing shade names remain available so all screens share the selection.
+    var shades: [UInt32] {
+        switch self {
+        case .pink: [0x590D22, 0x800F2F, 0xA4133C, 0xC9184A, 0xFF4D6D,
+                     0xFF758F, 0xFF8FA3, 0xFFB3C1, 0xFFCCD5, 0xFFF0F3, 0xFFE6EC]
+        case .lavender: [0x302044, 0x493262, 0x60457D, 0x73558F, 0x977CB3,
+                         0xB29BCC, 0xC5B1DC, 0xD9C9E9, 0xE8DDF2, 0xF7F2FB, 0xEFE5F6]
+        case .sage: [0x213D32, 0x2E5142, 0x3D6653, 0x47745F, 0x7DA78C,
+                     0x9BBDA6, 0xB2CDBA, 0xCDDFD0, 0xE0EBDF, 0xF3F8F1, 0xE9F1E5]
+        case .sky: [0x20394F, 0x2B4E6A, 0x365F80, 0x416F94, 0x78A6C9,
+                    0x9EBFDC, 0xB7CFE5, 0xD0E2F0, 0xE0EDF6, 0xF2F8FC, 0xE7F1F9]
+        case .peach: [0x503126, 0x6A4130, 0x84543C, 0x986044, 0xC99170,
+                      0xDEAF90, 0xE9C3A8, 0xF2D7C3, 0xF8E5D6, 0xFFF7F0, 0xFBECE0]
+        }
+    }
+
+    var previewAccent: Color { Color(hex: shades[3]) }
+    var previewPastel: Color { Color(hex: shades[7]) }
+    var previewBackground: Color { Color(hex: shades[9]) }
+}
+
+/// Device-local appearance, observed by SwiftUI wherever palette colors are read.
+/// Kept separate from account/profile data; changing it never restarts the app state.
+@Observable
+final class AppAppearance {
+    static let shared = AppAppearance()
+    static let storageKey = "petal.appearance.theme"
+
+    @ObservationIgnored private let defaults: UserDefaults
+    var theme: AppTheme {
+        didSet { defaults.set(theme.rawValue, forKey: Self.storageKey) }
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        theme = AppTheme(rawValue: defaults.string(forKey: Self.storageKey) ?? "") ?? .pink
+    }
+}
+
+enum Palette {
+    private static func shade(_ index: Int) -> Color {
+        Color(hex: AppAppearance.shared.theme.shades[index])
+    }
+    static var wine: Color { shade(0) }
+    static var plum: Color { shade(1) }
+    static var berry: Color { shade(2) }
+    static var rose: Color { shade(3) }
+    static var coral: Color { shade(4) }
+    static var pink: Color { shade(5) }
+    static var petal: Color { shade(6) }
+    static var blush: Color { shade(7) }
+    static var mist: Color { shade(8) }
+    static var cream: Color { shade(9) }
+
+    static var bg: Color { cream }
     static let surface = Color.white
-    static let surface2 = Color(hex: 0xFFE6EC)
-    static let ink = wine
-    static let inkSoft = wine.opacity(0.66)
-    static let inkFaint = wine.opacity(0.42)
-    static let line = berry.opacity(0.12)
-    static let accent = rose
-    static let accentSoft = mist
+    static var surface2: Color { shade(10) }
+    static var ink: Color { wine }
+    static var inkSoft: Color { wine.opacity(0.72) }
+    static var inkFaint: Color { wine.opacity(0.62) }
+    static var line: Color { berry.opacity(0.18) }
+    static var accent: Color { rose }
+    static var accentSoft: Color { mist }
 }
 
 extension Font {
