@@ -46,7 +46,7 @@ struct TodayView: View {
     private var hero: some View {
         VStack(spacing: 12) {
             CycleRing()
-                .frame(width: 230, height: 230)
+                .frame(width: 270, height: 270)
             Text("Estimates adapt as you log your cycle")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
             Button("Edit cycle details") { store.showCycleSetup = true }
@@ -117,10 +117,8 @@ struct TodayView: View {
         HStack(spacing: 6) {
             ForEach(-3...3, id: \.self) { offset in
                 let d = CycleStore.add(store.today, offset)
-                let period = store.periodHistory.contains(d)
-                let predicted = store.forecast.next().map { next in
-                    d >= CycleStore.add(next, -store.forecast.margin) && d <= CycleStore.add(next, store.forecast.margin)
-                } ?? false
+                let period = store.hasPeriod(on: d) || store.expectedPeriodStart(for: d) != nil
+                let predicted = store.isPredicted(d) || store.isMaybe(d)
                 VStack(spacing: 6) {
                     Text(d.formatted(.dateTime.weekday(.narrow)))
                         .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
@@ -227,41 +225,109 @@ struct TodayView: View {
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
     @State private var showEntry = false
+    /// Day picked by dragging round the ring; nil follows today.
+    @State private var scrubDay: Int?
 
-    private var countdown: String {
-        guard let next = store.forecast.next() else { return "Next period: learning" }
-        let days = CycleStore.days(next, from: store.today)
+    private var length: Int { store.average }
+    private var day: Int { scrubDay ?? store.cycleDay }
+    private var phase: Phase { store.phase(forDay: day) }
+
+    private var status: String {
+        if let start = store.expectedPeriodStart(for: store.today) {
+            let end = CycleStore.add(start, store.periodLength - 1)
+            if end < store.today { return "Longer than your usual \(store.periodLength) days" }
+            return CycleStore.days(end, from: store.today) == 0 ? "Likely ends today" : "Likely ends around \(store.fmt(end))"
+        }
+        let days = CycleStore.days(store.nextStart, from: store.today)
         if days < 0 { return "Estimated date passed" }
-        if days == 0 { return "Estimated around today" }
+        if days == 0 { return "Next period estimated around today" }
         return "Next period in ~\(days) days"
     }
+
     var body: some View {
-        ZStack {
-            Circle().stroke(Palette.pink.opacity(0.35), lineWidth: 14).padding(10)
-            Circle().trim(from: 0, to: progress)
-                .stroke(Palette.accent, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .rotationEffect(.degrees(-90)).padding(10)
-            VStack(spacing: 10) {
-                Text(countdown).font(.system(size: 12, weight: .medium))
-                    .multilineTextAlignment(.center)
-                if let active = store.ongoingPeriod {
-                    Text("Period day \(CycleStore.days(store.today, from: active.start) + 1)")
-                        .font(.headline)
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            let radius = size / 2 - 18
+            let center = CGPoint(x: size / 2, y: size / 2)
+            ZStack {
+                ForEach(Phase.allCases) { p in
+                    let r = store.range(of: p)
+                    Circle()
+                        .trim(from: Double(r.lowerBound - 1) / Double(length), to: Double(r.upperBound) / Double(length))
+                        .stroke(p.color.opacity(p == phase ? 1 : 0.4), lineWidth: 16)
+                        .rotationEffect(.degrees(-90))
+                        .padding(18)
                 }
-                Button { showEntry = true } label: {
-                    VStack(spacing: 3) {
-                        Text(store.ongoingPeriod == nil ? "Period started" : "Period ended")
-                            .font(.system(size: 22, weight: .semibold, design: .serif))
-                        Text("tap here").font(.caption)
-                    }.foregroundStyle(Palette.ink).padding(.vertical, 8)
-                }.buttonStyle(.plain)
-            }.frame(maxWidth: 180)
+                Circle().fill(Palette.ink)
+                    .frame(width: 6, height: 6)
+                    .position(point(for: min(store.cycleDay, length), center: center, radius: radius))
+                Circle().fill(Palette.surface)
+                    .overlay(Circle().stroke(phase.color, lineWidth: 4))
+                    .frame(width: 28, height: 28)
+                    .shadow(color: Palette.ink.opacity(0.15), radius: 4, y: 2)
+                    .position(point(for: min(day, length), center: center, radius: radius))
+                    .allowsHitTesting(false)
+                // Only the band around the ring scrubs, so the centre button and page scrolling still work.
+                Circle().stroke(Color.clear, lineWidth: 48)
+                    .contentShape(Circle().stroke(lineWidth: 48))
+                    .padding(18)
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                        scrubDay = day(at: value.location, center: center)
+                    })
+                centre
+            }
+            .frame(width: size, height: size)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sensoryFeedback(.selection, trigger: scrubDay)
+        .accessibilityElement(children: .contain)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: scrubDay = min(length, day + 1)
+            case .decrement: scrubDay = max(1, day - 1)
+            @unknown default: break
+            }
         }
         .sheet(isPresented: $showEntry) { PeriodQuickEntry().environment(store) }
     }
-    private var progress: Double {
-        guard let start = store.forecast.start else { return 0 }
-        return min(1, max(0, Double(CycleStore.days(store.today, from: start) + 1) / Double(store.forecast.length)))
+
+    private var centre: some View {
+        VStack(spacing: 4) {
+            Text(scrubDay == nil ? "Today" : CycleStore.add(store.lastStart, day - 1).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+            Text("Day \(day)")
+                .font(.system(size: 30, weight: .semibold, design: .serif))
+                .monospacedDigit()
+            Text(phase.name).font(.caption.weight(.semibold)).foregroundStyle(Palette.accent)
+            if scrubDay == nil {
+                Text(status).font(.caption2).foregroundStyle(Palette.inkSoft)
+                    .multilineTextAlignment(.center)
+                Button(store.ongoingPeriod == nil ? "Period started" : "Period ended") { showEntry = true }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Palette.mist, in: Capsule())
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+            } else {
+                Button("Back to today") { scrubDay = nil }
+                    .font(.caption.weight(.semibold))
+                    .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: 170)
+    }
+
+    /// Centre of `day` on the ring, starting at 12 o'clock and running clockwise.
+    private func point(for day: Int, center: CGPoint, radius: CGFloat) -> CGPoint {
+        let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
+        return CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
+    }
+
+    private func day(at location: CGPoint, center: CGPoint) -> Int {
+        var angle = atan2(location.y - center.y, location.x - center.x) + .pi / 2
+        if angle < 0 { angle += 2 * .pi }
+        return min(length, Int(angle / (2 * .pi) * Double(length)) + 1)
     }
 }
 
@@ -316,12 +382,12 @@ struct CycleSetupView: View {
                     Text("Used as a baseline for estimates. We never infer an actual end date.").font(.caption)
                 }
                 Section("Typical bleeding length") {
-                    Stepper("\(periodDays) days", value: $periodDays, in: 1...90)
+                    Stepper("\(periodDays) days", value: $periodDays, in: 2...10)
                     Text("Your usual number of bleeding days, not a limit on your records.").font(.caption)
                 }
                 Section("Typical cycle length") {
                     Toggle("I know my usual cycle length", isOn: $knowsCycle)
-                    if knowsCycle { Stepper("\(cycleDays) days", value: $cycleDays, in: 2...365) }
+                    if knowsCycle { Stepper("\(cycleDays) days", value: $cycleDays, in: 18...45) }
                     Text("Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.").font(.caption)
                 }
                 if let error { Text(error).foregroundStyle(.red) }

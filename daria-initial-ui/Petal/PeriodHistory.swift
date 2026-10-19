@@ -8,7 +8,11 @@ struct PeriodRecord: Identifiable, Codable, Equatable {
 
 /// Date-only records shared by calendar controls and future logging integrations.
 struct PeriodHistory: Codable {
-    private(set) var records: [PeriodRecord] = []
+    private(set) var records: [PeriodRecord]
+
+    init(records: [PeriodRecord] = []) {
+        self.records = records.sorted { $0.start > $1.start }
+    }
 
     mutating func save(id: UUID? = nil, start: Date, end: Date?, today: Date = .now, calendar: Calendar = .current) throws {
         let start = calendar.startOfDay(for: start)
