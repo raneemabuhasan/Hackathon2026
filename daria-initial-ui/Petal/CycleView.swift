@@ -69,6 +69,11 @@ struct CycleView: View {
                 DisplayTitle(before: "Patterns, ", accent: "not", after: " promises")
             }
             calendar
+            // Tapping a logged day reveals a quick preview, without opening period editing.
+            if Calendar.current.isDate(selectedDate, equalTo: month, toGranularity: .month),
+               let entry = store.log(for: selectedDate) {
+                calendarLogPreview(entry)
+            }
             // The compact editor stays available under the calendar even when collapsed.
             periodControls
             Text("Cycle charts and summaries use your saved logs. Predictions are estimates.").font(.caption).foregroundStyle(Palette.inkSoft)
@@ -356,12 +361,56 @@ struct CycleView: View {
                     }
                 }
             }
-            HStack(spacing: 14) {
+            HStack(spacing: 9) {
                 legend(Rectangle().fill(Palette.pink).frame(height: 4), "Recorded period")
+                legend(Circle().fill(Color.gray.opacity(0.65)).frame(width: 6, height: 6), "Saved log")
                 legend(Circle().strokeBorder(Palette.ink, lineWidth: 2), "Today")
-            }.font(.caption).foregroundStyle(Palette.inkSoft)
+            }.font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
         }
         .card()
+    }
+
+    /// Quick peek for the tapped calendar day. Notes stay private until the full log opens.
+    private func calendarLogPreview(_ log: DayLog) -> some View {
+        let tags = log.moods + log.symptoms
+        let painLabel = log.pain == 0 ? "None" : String(log.pain)
+        let hasNote = !log.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(Palette.accent)
+                Text("Saved log · \(log.date.formatted(.dateTime.month(.abbreviated).day()))")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 8)
+                Button {
+                    store.selectedLogDate = log.date
+                    store.showLog = true
+                } label: {
+                    Label("View full log", systemImage: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("Flow: \(log.flow) · Pain: \(painLabel) · Energy: \(log.energy)/5")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.inkSoft)
+            if !tags.isEmpty {
+                Text(tags.joined(separator: " · "))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.inkSoft)
+                    .lineLimit(2)
+            } else if hasNote {
+                Text("Note saved")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.inkSoft)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Palette.line))
     }
 
     private func dayCell(_ d: Date) -> some View {
@@ -380,7 +429,6 @@ struct CycleView: View {
         let isSelected = CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
         return Button {
             selectedDate = CycleStore.cal.startOfDay(for: d)
-            showingPeriodControls = true
         } label: {
             // A stable row height prevents two-digit dates from being compressed
             // by an aspect-ratio proposal. The entire cell accepts taps.
@@ -423,7 +471,8 @@ struct CycleView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(d.formatted(date: .complete, time: .omitted) + (period ? ", recorded period" : ""))
-        .accessibilityHint("Select this date to mark a period start or end")
+        .accessibilityHint(savedLog == nil ? "Select this date to edit period dates"
+                           : "Select this date to preview its saved log or edit period dates")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
