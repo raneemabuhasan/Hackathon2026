@@ -235,10 +235,9 @@ struct TodayView: View {
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
-                        .font(.system(size: 17))
+                        .font(.system(size: 20))
                         .foregroundStyle(Palette.accent)
-                        .frame(width: 40, height: 40)
-                        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)

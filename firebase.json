@@ -9,7 +9,7 @@
     "providers": {
       "emailPassword": true,
       "googleSignIn": {
-        "oAuthBrandDisplayName": "Petal",
+        "oAuthBrandDisplayName": "Sync",
         "supportEmail": "dsdobrolinski@gmail.com"
       }
     }

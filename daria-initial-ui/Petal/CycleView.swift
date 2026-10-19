@@ -775,7 +775,10 @@ struct CycleView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
                 }
-                Divider().overlay(Palette.line)
+                // Only separate entries; nothing after the last one.
+                if log.id != recent.last?.id {
+                    Divider().overlay(Palette.line)
+                }
             }
         }
         .card()
