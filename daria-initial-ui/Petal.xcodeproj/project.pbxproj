@@ -33,7 +33,37 @@
 		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
 		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
+		AB0000000000000000000010 /* PetalWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* PetalWidget.swift */; };
+		AB0000000000000000000011 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
+		AB0000000000000000000012 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
+		AB0000000000000000000013 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
+		AB0000000000000000000014 /* PetalWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000001 /* PetalWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AB0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000015 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AB000000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB0000000000000000000006;
+			remoteInfo = PetalWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AB000000000000000000000F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AB0000000000000000000014 /* PetalWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
         FA0000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -58,6 +88,11 @@
 		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
 		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
+		AB0000000000000000000001 /* PetalWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PetalWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0000000000000000000002 /* PetalWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetalWidget.swift; sourceTree = "<group>"; };
+		AB0000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AB0000000000000000000004 /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
+		AB0000000000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +105,13 @@
 				AA0000000000000000000022 /* GoogleSignIn in Frameworks */,
 				AA0000000000000000000023 /* Lottie in Frameworks */,
 				AA0000000000000000000024 /* FirebaseAI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB0000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +140,7 @@
 				BB000000000000000000000D /* SettingsView.swift */,
 				BB0000000000000000000010 /* Assistant.swift */,
 				BB0000000000000000000011 /* Reminders.swift */,
+				AB0000000000000000000004 /* DeepLink.swift */,
 				BB000000000000000000000E /* GoogleService-Info.plist */,
 				AA0000000000000000000050 /* Animations */,
 			);
@@ -108,6 +151,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000002 /* Petal */,
+				AB0000000000000000000005 /* PetalWidget */,
 				AA0000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -116,6 +160,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* Petal.app */,
+				AB0000000000000000000001 /* PetalWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,6 +173,16 @@
 			path = Animations;
 			sourceTree = "<group>";
 		};
+		AB0000000000000000000005 /* PetalWidget */ = {
+			isa = PBXGroup;
+			children = (
+				AB0000000000000000000002 /* PetalWidget.swift */,
+				AB0000000000000000000015 /* Assets.xcassets */,
+				AB0000000000000000000003 /* Info.plist */,
+			);
+			path = PetalWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -138,10 +193,12 @@
 				AA0000000000000000000007 /* Sources */,
 				AA0000000000000000000003 /* Frameworks */,
 				AA0000000000000000000008 /* Resources */,
+				AB000000000000000000000F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AB000000000000000000000E /* PBXTargetDependency */,
 			);
 			name = Petal;
 			packageProductDependencies = (
@@ -155,6 +212,23 @@
 			productReference = AA0000000000000000000001 /* Petal.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AB0000000000000000000006 /* PetalWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB000000000000000000000A /* Build configuration list for PBXNativeTarget "PetalWidget" */;
+			buildPhases = (
+				AB0000000000000000000007 /* Sources */,
+				AB0000000000000000000008 /* Frameworks */,
+				AB0000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PetalWidget;
+			productName = PetalWidget;
+			productReference = AB0000000000000000000001 /* PetalWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -166,6 +240,9 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					AA0000000000000000000006 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					AB0000000000000000000006 = {
 						CreatedOnToolsVersion = 26.0;
 					};
 				};
@@ -190,6 +267,7 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000006 /* Petal */,
+				AB0000000000000000000006 /* PetalWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -202,6 +280,14 @@
                 FA0000000000000000000001 /* Assets.xcassets in Resources */,
 				CC000000000000000000000E /* GoogleService-Info.plist in Resources */,
 				CC000000000000000000000F /* signin.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB0000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0000000000000000000016 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,10 +316,29 @@
 				CC000000000000000000000D /* SettingsView.swift in Sources */,
 				CC0000000000000000000010 /* Assistant.swift in Sources */,
 				CC0000000000000000000011 /* Reminders.swift in Sources */,
+				AB0000000000000000000011 /* DeepLink.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB0000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0000000000000000000010 /* PetalWidget.swift in Sources */,
+				AB0000000000000000000012 /* DeepLink.swift in Sources */,
+				AB0000000000000000000013 /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AB000000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB0000000000000000000006 /* PetalWidget */;
+			targetProxy = AB000000000000000000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000012 /* Debug */ = {
@@ -339,6 +444,52 @@
 			};
 			name = Release;
 		};
+		AB000000000000000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PetalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Petal;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal.PetalWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		AB000000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PetalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Petal;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal.PetalWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -356,6 +507,15 @@
 			buildConfigurations = (
 				AA0000000000000000000012 /* Debug */,
 				AA0000000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB000000000000000000000A /* Build configuration list for PBXNativeTarget "PetalWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB000000000000000000000B /* Debug */,
+				AB000000000000000000000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

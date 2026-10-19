@@ -16,7 +16,6 @@ struct PetalApp: App {
             RootView()
                 .environment(auth)
                 .preferredColorScheme(.light)
-                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
     }
 }
@@ -25,6 +24,13 @@ struct PetalApp: App {
 struct RootView: View {
     @Environment(AuthModel.self) private var auth
     @State private var store: CycleStore?
+    /// Set by the widget's link. Held through sign-in and onboarding, then opens today's log.
+    @State private var pendingLog = false
+
+    private var canOpenLog: Bool {
+        guard pendingLog, let store else { return false }
+        return store.loaded && store.profile != nil && !store.showCycleSetup
+    }
 
     var body: some View {
         Group {
@@ -48,6 +54,15 @@ struct RootView: View {
         .onChange(of: auth.user?.uid, initial: true) { _, uid in
             store?.stop()
             store = uid.map { CycleStore(uid: $0) }
+        }
+        .onOpenURL { url in
+            if DeepLink(url) == .log { pendingLog = true } else { GIDSignIn.sharedInstance.handle(url) }
+        }
+        .onChange(of: canOpenLog, initial: true) { _, ready in
+            guard ready, let store else { return }
+            pendingLog = false
+            store.selectedLogDate = nil
+            store.showLog = true
         }
     }
 
