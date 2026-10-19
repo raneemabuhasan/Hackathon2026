@@ -18,17 +18,13 @@ struct CycleView: View {
     @State private var periodError: String?
     @State private var deletingPeriod: PeriodRecord?
     @State private var logToDelete: DayLog?
+    @State private var insightPage: Int? = 0
+    @State private var showingAllSymptoms = false
 
     var body: some View {
         Page {
-            VStack(alignment: .leading, spacing: 4) {
-
-                DisplayTitle(before: "Patterns, ", accent: "not", after: " promises")
-            }
             calendar
-            lengths
-            symptoms
-            SymptomComparisonView()
+            insights
             if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
             logHistory
         }
@@ -112,10 +108,6 @@ struct CycleView: View {
         }
     }
 
-    private var activePeriod: PeriodRecord? {
-        store.periodHistory.records.first { $0.end == nil }
-    }
-
     // Resolve the period for this date, including an already-ended record
     // so a user can correct its end without first reopening it elsewhere.
     private var periodToEnd: PeriodRecord? {
@@ -131,25 +123,21 @@ struct CycleView: View {
     }
 
     private var periodControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Eyebrow(text: selectedDate.formatted(.dateTime.weekday(.wide)))
                 Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                    .font(.headline)
+                    .font(.display(30))
                     .accessibilityAddTraits(.isHeader)
-            }
-            Text("Mark a period start or end for the selected date.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-
-            if let active = activePeriod {
-                Text("Period started \(store.fmt(active.start)). No end date recorded yet.")
-                    .font(.subheadline).foregroundStyle(Palette.accent)
+                statusPill
             }
 
             if let error = store.periodStorageError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-            VStack(spacing: 16) {
-                Toggle(startSwitchLabel, isOn: Binding(
+
+            VStack(spacing: 0) {
+                periodSwitchRow(icon: "drop.fill", title: startSwitchLabel, detail: startDetail, isOn: Binding(
                     get: { displayedStartPeriod != nil },
                     set: { enabled in
                         if enabled {
@@ -166,50 +154,134 @@ struct CycleView: View {
                             }
                         }
                     }))
-                Divider()
-                Toggle("Period ended \(selectedDayLabel)", isOn: Binding(
+                Divider().padding(.leading, 50)
+                periodSwitchRow(icon: "checkmark.circle.fill", title: "Period ended \(selectedDayLabel)", detail: endDetail, isOn: Binding(
                     get: { endingPeriod != nil },
                     set: { enabled in
-                        if enabled {
-                            if let record = periodToEnd {
-                                updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
-                            } else {
-                                periodError = "Mark a period start on this date or an earlier date first."
-                            }
+                        if enabled, let record = periodToEnd {
+                            updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
                         } else if !enabled, let record = endingPeriod {
                             updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: nil) }
                         }
                     }))
-
-            }
-            .toggleStyle(.switch)
-            .disabled(store.periodStorageError != nil || isFutureDate)
-            Button("Past periods") {
-                addingPastPeriod = PeriodRecord(start: selectedDate)
+                    .disabled(periodToEnd == nil && endingPeriod == nil)
             }
             .disabled(store.periodStorageError != nil || isFutureDate)
+            .card()
 
-            if periodToEnd == nil && endingPeriod == nil {
-                Text("Mark a start date before marking an end.").font(.caption).foregroundStyle(Palette.inkSoft)
+            if isFutureDate {
+                Label("Periods can only be recorded for today or earlier.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
             }
-            if store.periodHistory.records.isEmpty {
-                Text("No periods recorded yet.").font(.caption)
+
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Your periods",
+                              trailing: store.periodHistory.records.isEmpty ? nil : "\(store.periodHistory.records.count) recorded")
+                if store.periodHistory.records.isEmpty {
+                    Text("No periods recorded yet. Mark a start above, or add one from the past.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                }
+                ForEach(store.periodHistory.records) { record in periodRow(record) }
+                Button {
+                    addingPastPeriod = PeriodRecord(start: min(selectedDate, store.today))
+                } label: {
+                    Label("Add a past period", systemImage: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.accent)
+                .disabled(store.periodStorageError != nil)
+                .padding(.top, 4)
             }
-            ForEach(store.periodHistory.records) { record in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(record.start.formatted(date: .abbreviated, time: .omitted))
-                        Text(record.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) } ?? "Ongoing")
-                            .font(.caption).foregroundStyle(Palette.inkSoft)
-                    }
-                    Spacer()
-                    Button("Edit") { editingPeriod = record }
-                    Button(role: .destructive) { deletingPeriod = record } label: { Image(systemName: "trash") }
-                        .accessibilityLabel("Delete period starting \(store.fmt(record.start))")
+        }
+        .tint(Palette.accent)
+    }
+
+    /// What the selected day is: a recorded period day, a predicted one, or neither.
+    private var statusPill: some View {
+        let (icon, text, strong): (String, String, Bool) = {
+            if let record = displayedStartPeriod {
+                let day = CycleStore.days(selectedDate, from: record.start) + 1
+                return ("drop.fill", record.end == nil ? "Period day \(day) · ongoing" : "Period day \(day)", true)
+            }
+            if store.isPredicted(selectedDate) { return ("sparkles", "Predicted period", false) }
+            return ("circle.dashed", "No period recorded", false)
+        }()
+        return Label(text, systemImage: icon)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(strong ? Color.white : Palette.ink)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(strong ? Palette.accent : Palette.mist, in: Capsule())
+    }
+
+    private var startDetail: String {
+        if let record = displayedStartPeriod {
+            return record.end == nil ? "Ongoing. Turn off to remove this period." : "Turn off to delete this period."
+        }
+        return "Makes \(store.fmt(selectedDate)) day 1 of a period."
+    }
+
+    private var endDetail: String {
+        if endingPeriod != nil { return "Last day recorded. Turn off to mark it ongoing again." }
+        if let record = periodToEnd { return "Ends the period that started \(store.fmt(record.start))." }
+        return "Mark a start on or before this day first."
+    }
+
+    private func periodSwitchRow(icon: String, title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 36, height: 36)
+                    .background(Palette.accentSoft.opacity(0.6), in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 15, weight: .semibold))
+                    Text(detail).font(.caption).foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+        .toggleStyle(.switch)
+        .padding(.vertical, 10)
+    }
 
-        }.card().tint(Palette.accent)
+    private func periodRow(_ record: PeriodRecord) -> some View {
+        let range = record.end.map { "\(store.fmt(record.start)) – \(store.fmt($0))" } ?? "\(store.fmt(record.start)) – now"
+        let days = CycleStore.days(record.end ?? store.today, from: record.start) + 1
+        let containsSelected = displayedStartPeriod?.id == record.id
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(range).font(.system(size: 15, weight: .semibold))
+                Text(record.start.formatted(.dateTime.year())).font(.caption).foregroundStyle(Palette.inkFaint)
+            }
+            Spacer()
+            Text(record.end == nil ? "Ongoing" : "\(days) day\(days == 1 ? "" : "s")")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Palette.mist, in: Capsule())
+            Menu {
+                Button("Edit dates", systemImage: "pencil") { editingPeriod = record }
+                Button("Delete period", systemImage: "trash", role: .destructive) { deletingPeriod = record }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.inkSoft)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Options for period starting \(store.fmt(record.start))")
+        }
+        .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 12)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(containsSelected ? Palette.accent.opacity(0.5) : Palette.line, lineWidth: containsSelected ? 1.5 : 1))
     }
 
     // MARK: Calendar
@@ -280,34 +352,38 @@ struct CycleView: View {
                     pickerYear = cal.component(.year, from: month)
                     showingMonthPicker = true
                 } label: {
-                    HStack(spacing: 6) {
-                        Text(month.formatted(.dateTime.month(.wide).year()))
-                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(month.formatted(.dateTime.month(.wide))).font(.display(30))
+                        Text(month.formatted(.dateTime.year())).font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Palette.inkFaint)
+                        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.inkSoft)
                     }
-                    .font(.system(size: 15, weight: .semibold))
-                    .padding(.vertical, 10)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(month.formatted(.dateTime.month(.wide).year()))
                 .accessibilityHint("Choose a month and year")
                 Spacer()
                 circleButton("chevron.right") { monthOffset += 1 }
                     .accessibilityLabel("Next month")
             }
+            .padding(.bottom, 4)
             LazyVGrid(columns: columns, spacing: 0) {
                 ForEach(Array(["S", "M", "T", "W", "T", "F", "S"].enumerated()), id: \.offset) { _, d in
                     Text(d)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Palette.inkSoft)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.inkFaint)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
-                        .background(Palette.surface2)
                 }
                 ForEach(0..<cellCount, id: \.self) { i in
                     if i >= lead && i < lead + days {
                         dayCell(CycleStore.add(month, i - lead))
                     } else {
-                        Color.clear.frame(height: 52)
+                        Color.clear.frame(height: Self.cellHeight)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
@@ -316,19 +392,13 @@ struct CycleView: View {
             .overlay {
                 GeometryReader { geometry in
                     Path { path in
-                        path.addRect(CGRect(origin: .zero, size: geometry.size))
-                        for column in 1..<7 {
-                            let x = geometry.size.width * CGFloat(column) / 7
-                            path.move(to: CGPoint(x: x, y: 0))
-                            path.addLine(to: CGPoint(x: x, y: geometry.size.height))
-                        }
                         for row in 0..<(cellCount / 7) {
-                            let y = CGFloat(28 + row * 52)
+                            let y = 28 + CGFloat(row) * Self.cellHeight
                             path.move(to: CGPoint(x: 0, y: y))
                             path.addLine(to: CGPoint(x: geometry.size.width, y: y))
                         }
                     }
-                    .stroke(Palette.berry.opacity(0.2), lineWidth: 1)
+                    .stroke(Palette.berry.opacity(0.12), lineWidth: 1)
                 }
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -343,8 +413,10 @@ struct CycleView: View {
                 .font(.caption).foregroundStyle(Palette.inkFaint)
                 .multilineTextAlignment(.center)
         }
-        .card()
     }
+
+    /// Calendar rows are tall so the month reads as the page's main element.
+    private static let cellHeight: CGFloat = 64
 
     private func dayCell(_ d: Date) -> some View {
         let day = CycleStore.cal.startOfDay(for: d)
@@ -366,18 +438,18 @@ struct CycleView: View {
             // A stable row height prevents two-digit dates from being compressed
             // by an aspect-ratio proposal. The entire cell accepts taps.
             Text("\(CycleStore.cal.component(.day, from: day))")
-                .font(.system(size: 15, weight: isToday ? .bold : .semibold))
+                .font(.system(size: 17, weight: isToday ? .bold : .semibold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .foregroundStyle(isSelected ? Color.white : Palette.ink)
-                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
                 .background {
                     if isSelected { Circle().fill(Palette.accent) }
                     else if isToday { Circle().stroke(Palette.accent, lineWidth: 2) }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(height: Self.cellHeight)
                 .background {
                     if predicted { Rectangle().fill(Palette.mist.opacity(0.5)) }
                     else if period { Rectangle().fill(Palette.mist) }
@@ -385,7 +457,7 @@ struct CycleView: View {
                 .overlay(alignment: .topLeading) {
                     if let periodDay {
                         Text("\(periodDay)")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .monospacedDigit()
                             .foregroundStyle(Palette.inkSoft)
                             .padding(.leading, 4)
@@ -421,6 +493,73 @@ struct CycleView: View {
 
     private var recordedCycles: [RecordedCycle] {
         RecordedCycle.recent(from: store.periodHistory.records)
+    }
+
+    /// Cycle length, symptom summary and cycle comparison, swiped through one at a time.
+    private var insights: some View {
+        let current = insightPage ?? 0
+        return VStack(spacing: 10) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(0..<Self.insightCount, id: \.self) { page in
+                        Group {
+                            switch page {
+                            case 0: lengths
+                            case 1: symptoms
+                            default: SymptomComparisonView()
+                            }
+                        }
+                        // Stretch to the tallest card so all three match, without a fixed height.
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .card()
+                        .containerRelativeFrame(.horizontal)
+                        .id(page)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $insightPage)
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+
+            HStack(spacing: 14) {
+                carouselArrow("chevron.left", label: "Previous card", enabled: current > 0) { current - 1 }
+                HStack(spacing: 6) {
+                    ForEach(0..<Self.insightCount, id: \.self) { page in
+                        Capsule()
+                            .fill(page == current ? Palette.accent : Palette.accentSoft)
+                            .frame(width: page == current ? 18 : 7, height: 7)
+                    }
+                }
+                .accessibilityHidden(true)
+                carouselArrow("chevron.right", label: "Next card", enabled: current < Self.insightCount - 1) { current + 1 }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.easeOut(duration: 0.2), value: insightPage)
+        }
+    }
+
+    private static let insightCount = 3
+
+    private func carouselArrow(_ icon: String, label: String, enabled: Bool, to page: @escaping () -> Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) { insightPage = page() }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 32, height: 32)
+                .background(Palette.surface, in: Circle())
+                .overlay(Circle().stroke(Palette.line))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : 0.3)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
     }
 
     private var lengths: some View {
@@ -464,7 +603,6 @@ struct CycleView: View {
                 }
             }
         }
-        .card()
     }
 
     private var cycleDetails: some View {
@@ -530,6 +668,8 @@ struct CycleView: View {
 
     // MARK: Symptoms
 
+    private static let symptomPreviewCount = 4
+
     private var symptoms: some View {
         let counts = store.symptomCounts
         let top = Double(counts.first?.count ?? 1)
@@ -540,21 +680,59 @@ struct CycleView: View {
                     .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
             }
-            ForEach(counts, id: \.name) { item in
-                HStack(spacing: 10) {
-                    Text(item.name).font(.system(size: 13)).frame(width: 110, alignment: .leading)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Palette.surface2)
-                            Capsule().fill(Palette.pink).frame(width: geo.size.width * Double(item.count) / top)
-                        }
-                    }
-                    .frame(height: 8)
-                    Text("\(item.count)d").font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft).frame(width: 28, alignment: .trailing)
-                }
+            ForEach(counts.prefix(Self.symptomPreviewCount), id: \.name) { item in
+                symptomRow(item, top: top)
+            }
+            if counts.count > Self.symptomPreviewCount {
+                Button("See all \(counts.count) symptoms") { showingAllSymptoms = true }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
             }
         }
-        .card()
+        .sheet(isPresented: $showingAllSymptoms) { allSymptoms }
+    }
+
+    private func symptomRow(_ item: (name: String, count: Int), top: Double) -> some View {
+        HStack(spacing: 10) {
+            Text(item.name).font(.system(size: 13)).frame(width: 110, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.surface2)
+                    Capsule().fill(Palette.pink).frame(width: geo.size.width * Double(item.count) / top)
+                }
+            }
+            .frame(height: 8)
+            Text("\(item.count)d").font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft).frame(width: 28, alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.name), \(item.count) days")
+    }
+
+    private var allSymptoms: some View {
+        let counts = store.symptomCounts
+        let top = Double(counts.first?.count ?? 1)
+        return NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Days you logged each symptom in the last 60 days.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                    ForEach(counts, id: \.name) { item in symptomRow(item, top: top) }
+                }
+                .card()
+                .padding(16)
+            }
+            .background(Palette.bg)
+            .navigationTitle("Symptom summary")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingAllSymptoms = false }
+                }
+            }
+            .tint(Palette.accent)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: Saved log history (HACK-1)

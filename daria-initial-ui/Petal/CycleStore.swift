@@ -513,7 +513,7 @@ final class CycleStore {
         let since = Self.add(today, -60)
         var counts: [String: Int] = [:]
         for log in logs where log.date >= since { for s in log.symptoms { counts[s, default: 0] += 1 } }
-        return counts.sorted { $0.value > $1.value }.prefix(5).map { ($0.key, $0.value) }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { ($0.key, $0.value) }
     }
 
     func fmt(_ date: Date) -> String { date.formatted(.dateTime.month(.abbreviated).day()) }

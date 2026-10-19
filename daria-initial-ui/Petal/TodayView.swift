@@ -12,9 +12,13 @@ struct TodayView: View {
     var body: some View {
         Page {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
+                // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
+                TimelineView(.everyMinute) { context in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                        DisplayTitle(before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                     accent: store.name)
+                    }
                 }
                 Spacer()
                 Button { showSettings = true } label: {
@@ -41,6 +45,14 @@ struct TodayView: View {
                 .environment(auth)
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
+        }
+    }
+
+    static func greeting(at date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
         }
     }
 
