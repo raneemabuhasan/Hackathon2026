@@ -7,10 +7,11 @@ struct CycleView: View {
     @State private var confirmingDelete = false
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var showingPeriodControls = false
+    @State private var showingPeriodHistory = false
+    @State private var editingLoggedPeriod: LoggedPeriod?
     @State private var editingPeriod: PeriodRecord?
     @State private var periodError: String?
     @State private var deletingPeriod: PeriodRecord?
-    @State private var interactionFrames: [String: CGRect] = [:]
     @State private var logToDelete: DayLog?
     @State private var searchExpanded = false
     @State private var historyQuery = ""
@@ -68,29 +69,19 @@ struct CycleView: View {
                 DisplayTitle(before: "Patterns, ", accent: "not", after: " promises")
             }
             calendar
-                .background(interactionBounds("calendar"))
-            if showingPeriodControls {
-                periodControls
-                    .background(interactionBounds("controls"))
-            }
+            // The compact editor stays available under the calendar even when collapsed.
+            periodControls
             Text("Cycle charts and summaries use your saved logs. Predictions are estimates.").font(.caption).foregroundStyle(Palette.inkSoft)
             lengths
             symptoms
             logHistory
         }
         .scrollDismissesKeyboard(.never)
-        .coordinateSpace(name: "periodCalendarPage")
-        .onPreferenceChange(PeriodInteractionBounds.self) { interactionFrames = $0 }
-        // Observe taps without intercepting the calendar buttons or switches.
-        // Calendar taps select another day; only taps outside both regions dismiss.
-        .simultaneousGesture(SpatialTapGesture(coordinateSpace: .named("periodCalendarPage"))
-            .onEnded { event in
-                if showingPeriodControls && !interactionFrames.values.contains(where: { $0.contains(event.location) }) {
-                    showingPeriodControls = false
-                }
-            })
         .sheet(item: $editingPeriod) { record in
             PeriodEditor(record: record).environment(store)
+        }
+        .sheet(item: $editingLoggedPeriod) { period in
+            LoggedPeriodEditor(period: period).environment(store)
         }
         .alert("Could not save period", isPresented: Binding(get: { periodError != nil }, set: { if !$0 { periodError = nil } })) {
             Button("OK") { periodError = nil }
@@ -103,12 +94,6 @@ struct CycleView: View {
         }
     }
 
-    private func interactionBounds(_ region: String) -> some View {
-        GeometryReader { geometry in
-            Color.clear.preference(key: PeriodInteractionBounds.self,
-                value: [region: geometry.frame(in: .named("periodCalendarPage"))])
-        }
-    }
 
     private func performPeriodAction(_ action: () throws -> Void) {
         do {
@@ -143,9 +128,21 @@ struct CycleView: View {
     }
 
     private var loggedPeriodEndingHere: LoggedPeriod? {
-        store.loggedPeriods.first {
-            $0.end.map { Calendar.current.isDate($0, inSameDayAs: selectedDate) } ?? false
+        store.loggedPeriods.first { inferred in
+            guard let end = inferred.end else { return false }
+            if Calendar.current.isDate(end, inSameDayAs: selectedDate) { return true }
+            // The first explicit None day confirms that the LAST bleeding day was the end.
+            return store.log(for: selectedDate)?.flow == "None"
+                && Calendar.current.isDate(CycleStore.add(end, 1), inSameDayAs: selectedDate)
         }
+    }
+
+    private var endSwitchLabel: String {
+        if let saved = endingPeriod, let end = saved.end { return "Period ended " + store.fmt(end) }
+        if let logged = loggedPeriodEndingHere, let end = logged.end {
+            return "Period ended " + store.fmt(end)
+        }
+        return "Period ended " + selectedDayLabel
     }
 
     private var startSwitchLabel: String {
@@ -184,112 +181,140 @@ struct CycleView: View {
 
     private var periodControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button("Done") { showingPeriodControls = false }
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showingPeriodControls.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundStyle(Palette.accent)
+                    Text("Track your period")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer(minLength: 4)
+                    Text(selectedDate.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                    Image(systemName: showingPeriodControls ? "chevron.up" : "chevron.down")
+                        .font(.caption).foregroundStyle(Palette.accent)
+                }
             }
-            SectionHeader(title: "Track your period")
-            Text("Tap another date on the calendar above to mark your start or end. These controls stay open until you tap Done or outside.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-            if isFutureDate {
-                Text("This date is in the future. You can browse it, but mark actual period dates once they happen.")
-                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
-            }
-            if let active = activePeriod {
-                Text("Period started \(store.fmt(active.start)). No end date recorded yet.")
-                    .font(.subheadline).foregroundStyle(Palette.accent)
-            }
-            Text("Choose your actual last bleeding day. There is no fixed period length or estimated end date.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-            if let error = store.periodStorageError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
-            VStack(spacing: 16) {
-                Toggle(startSwitchLabel, isOn: Binding(
-                    get: { displayedStartPeriod != nil || loggedPeriodAtSelectedDate != nil },
-                    set: { enabled in
-                        if enabled {
-                            updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
-                        } else if let record = displayedStartPeriod {
-                            if record.end != nil {
-                                deletingPeriod = record
-                            } else {
-                                updatePeriodSwitch { try store.removePeriod(id: record.id) }
-                            }
-                        }
-                    }))
-                // Auto-detected periods are edited via their originating day logs.
-                .disabled(displayedStartPeriod == nil && loggedPeriodAtSelectedDate != nil)
-                Divider()
-                Toggle("Period ended \(selectedDayLabel)", isOn: Binding(
-                    get: { endingPeriod != nil || loggedPeriodEndingHere != nil },
-                    set: { enabled in
-                        if enabled {
-                            if let record = periodToEnd {
-                                updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
-                            } else if let inferred = loggedPeriodAtSelectedDate {
-                                updatePeriodSwitch { try store.savePeriod(start: inferred.start, end: selectedDate) }
-                            } else {
-                                periodError = "Mark a period start on this date or an earlier date first."
-                            }
-                        } else if !enabled, let record = endingPeriod {
-                            updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: nil) }
-                        }
-                    }))
-                .disabled(endingPeriod == nil && loggedPeriodEndingHere != nil)
+            .buttonStyle(.plain)
+            .accessibilityHint(showingPeriodControls ? "Collapse period controls" : "Expand period controls")
 
-            }
-            .toggleStyle(.switch)
-            .disabled(store.periodStorageError != nil || isFutureDate)
-            if loggedPeriodAtSelectedDate != nil && displayedStartPeriod == nil {
-                Text("Detected from saved flow logs. Change the day log to correct this period.")
-                    .font(.caption).foregroundStyle(Palette.inkSoft)
-            }
-            Text("Changes save automatically. Turning off a start removes that period; turning off an end marks it ongoing again.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-            if periodToEnd == nil && endingPeriod == nil && loggedPeriodAtSelectedDate == nil {
-                Text("Mark a start date before marking an end.").font(.caption).foregroundStyle(Palette.inkSoft)
-            }
-            if store.periodHistory.records.isEmpty && store.loggedPeriods.isEmpty {
-                Text("No periods recorded yet.").font(.caption)
-            }
-            ForEach(store.periodHistory.records) { record in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(record.start.formatted(date: .abbreviated, time: .omitted))
-                        Text(record.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) } ?? "Ongoing")
-                            .font(.caption).foregroundStyle(Palette.inkSoft)
+            if showingPeriodControls {
+                if isFutureDate {
+                    Text("Choose today or a previous day to record a period.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+                if let error = periodError ?? store.periodStorageError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                VStack(spacing: 12) {
+                    Toggle(startSwitchLabel, isOn: Binding(
+                        get: { displayedStartPeriod != nil || loggedPeriodAtSelectedDate != nil },
+                        set: { enabled in
+                            if let inferred = loggedPeriodAtSelectedDate, displayedStartPeriod == nil {
+                                // Let people correct detected dates instead of disabling this switch.
+                                editingLoggedPeriod = inferred
+                            } else if enabled {
+                                updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
+                            } else if let record = displayedStartPeriod {
+                                if record.end != nil {
+                                    deletingPeriod = record
+                                } else {
+                                    updatePeriodSwitch { try store.removePeriod(id: record.id) }
+                                }
+                            }
+                        }))
+                    Divider()
+                    Toggle(endSwitchLabel, isOn: Binding(
+                        get: { endingPeriod != nil || loggedPeriodEndingHere != nil },
+                        set: { enabled in
+                            if let inferred = loggedPeriodAtSelectedDate ?? loggedPeriodEndingHere,
+                               endingPeriod == nil {
+                                editingLoggedPeriod = inferred
+                            } else if enabled {
+                                if let record = periodToEnd {
+                                    updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
+                                } else {
+                                    periodError = "Mark a period start on this date or an earlier date first."
+                                }
+                            } else if let record = endingPeriod {
+                                updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: nil) }
+                            }
+                        }))
+                }
+                .toggleStyle(.switch)
+                .disabled(store.periodStorageError != nil || isFutureDate)
+
+                if let inferred = loggedPeriodAtSelectedDate ?? loggedPeriodEndingHere,
+                   displayedStartPeriod == nil {
+                    Button {
+                        editingLoggedPeriod = inferred
+                    } label: { Label("Edit dates", systemImage: "calendar.badge.clock") }
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Detected from flow logs. Calendar dates can be corrected without changing saved logs.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                } else if let manual = displayedStartPeriod ?? endingPeriod {
+                    Button { editingPeriod = manual } label: {
+                        Label("Edit dates", systemImage: "calendar.badge.clock")
                     }
-                    Spacer()
-                    Button("Edit") { editingPeriod = record }
-                    Button(role: .destructive) { deletingPeriod = record } label: { Image(systemName: "trash") }
-                        .accessibilityLabel("Delete period starting \(store.fmt(record.start))")
+                    .font(.system(size: 13, weight: .semibold))
                 }
-            }
-            ForEach(store.loggedPeriods.filter { inferred in
-                !store.periodHistory.records.contains { manual in
-                    // An unfinished manual record covers its likely immediate period window here.
-                    let manualEnd = manual.end ?? CycleStore.add(manual.start, 9)
-                    return manual.start <= inferred.visibleEnd && inferred.start <= manualEnd
-                }
-            }) { inferred in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(inferred.start.formatted(date: .abbreviated, time: .omitted))
-                        Text(inferred.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) }
-                             ?? "Flow logged through " + inferred.lastFlow.formatted(date: .abbreviated, time: .omitted))
-                            .font(.caption).foregroundStyle(Palette.inkSoft)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showingPeriodHistory.toggle() }
+                } label: {
+                    HStack {
+                        Text("Saved periods").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Image(systemName: showingPeriodHistory ? "chevron.up" : "chevron.down")
+                            .font(.caption)
                     }
-                    Spacer()
-                    Text("From logs").font(.caption).foregroundStyle(Palette.inkFaint)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.inkSoft)
+                if showingPeriodHistory {
+                    if store.periodHistory.records.isEmpty && store.loggedPeriods.isEmpty {
+                        Text("No periods recorded yet.").font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
+                    ForEach(store.periodHistory.records) { record in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(record.start.formatted(date: .abbreviated, time: .omitted))
+                                Text(record.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) } ?? "Ongoing")
+                                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                            }
+                            Spacer()
+                            Button("Edit") { editingPeriod = record }
+                            Button(role: .destructive) { deletingPeriod = record } label: {
+                                Image(systemName: "trash")
+                            }
+                            .accessibilityLabel("Delete period starting \(store.fmt(record.start))")
+                        }
+                    }
+                    ForEach(store.loggedPeriods.filter { inferred in
+                        !store.periodHistory.records.contains { manual in
+                            let manualEnd = manual.end ?? CycleStore.add(manual.start, 9)
+                            return manual.start <= inferred.visibleEnd && inferred.start <= manualEnd
+                        }
+                    }) { inferred in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(inferred.start.formatted(date: .abbreviated, time: .omitted))
+                                Text(inferred.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) }
+                                     ?? "Flow logged through " + inferred.lastFlow.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                            }
+                            Spacer()
+                            Button("Edit") { editingLoggedPeriod = inferred }
+                        }
+                    }
+                }
+                Text("Switches save calendar dates immediately. Edit dates opens Save/Cancel. Calendar corrections stay on this device.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            Text("Calendar-only period dates stay on this device. Day logs sync through your account.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-        }.card().tint(Palette.accent)
+        }
+        .card()
+        .tint(Palette.accent)
     }
 
     // MARK: Calendar
@@ -921,10 +946,60 @@ private struct PeriodEditor: View {
     }
 }
 
-// Frames stay current when the page scrolls or the controls change height.
-private struct PeriodInteractionBounds: PreferenceKey {
-    static var defaultValue: [String: CGRect] { [:] }
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+@MainActor
+private struct LoggedPeriodEditor: View {
+    @Environment(CycleStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let period: LoggedPeriod
+    @State private var start: Date
+    @State private var end: Date
+    @State private var hasEnded: Bool
+    @State private var error: String?
+
+    init(period: LoggedPeriod) {
+        self.period = period
+        _start = State(initialValue: period.start)
+        _end = State(initialValue: period.end ?? period.lastFlow)
+        _hasEnded = State(initialValue: period.end != nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Calendar dates") {
+                    DatePicker("Period started", selection: $start, in: ...store.today,
+                               displayedComponents: .date)
+                    Toggle("Period has ended", isOn: $hasEnded)
+                    if hasEnded {
+                        DatePicker("Last bleeding day", selection: $end, in: ...store.today,
+                                   displayedComponents: .date)
+                    }
+                }
+                Text("These corrections change calendar markings only. Your saved flow logs remain unchanged.")
+                    .font(.footnote).foregroundStyle(Palette.inkSoft)
+                if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+                if store.hasLoggedPeriodAdjustment(period) {
+                    Button("Reset to dates from logs") {
+                        store.resetLoggedPeriodDates(period)
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("Edit period dates")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        do {
+                            try store.saveLoggedPeriodDates(period, start: start, end: hasEnded ? end : nil)
+                            dismiss()
+                        } catch { self.error = error.localizedDescription }
+                    }
+                }
+            }
+        }
     }
 }

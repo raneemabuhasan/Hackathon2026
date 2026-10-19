@@ -59,11 +59,19 @@ struct DayLog: Identifiable, Codable {
 
 /// Periods detected from saved daily flow entries; these are derived, not extra saved records.
 struct LoggedPeriod: Identifiable {
+    /// Keeps a stable link to the log that originally started this period.
+    let sourceStart: Date
     let start: Date
     let lastFlow: Date
     let end: Date? // nil until a no-flow entry or a later, separate period confirms the end
-    var id: Date { start }
+    var id: Date { sourceStart }
     var visibleEnd: Date { end ?? lastFlow }
+}
+
+/// A calendar-only correction; it does not alter the original daily logs.
+struct LoggedPeriodAdjustment: Codable {
+    let start: Date
+    let end: Date?
 }
 
 /// users/{uid} — set during onboarding.
@@ -146,6 +154,8 @@ final class CycleStore {
     private(set) var periodHistory = PeriodHistory()
     var periodStorageError: String?
     private let periodKey = "petal.periodHistory.v1"
+    private let periodAdjustmentKey = "petal.loggedPeriodAdjustments.v1"
+    private(set) var loggedPeriodAdjustments: [String: LoggedPeriodAdjustment] = [:]
 
     func savePeriod(id: UUID? = nil, start: Date, end: Date?) throws {
         var next = periodHistory
@@ -245,6 +255,10 @@ final class CycleStore {
         if let data = UserDefaults.standard.data(forKey: "petal.cycleBaseline.v1"),
            let stored = try? JSONDecoder().decode(CycleBaseline.self, from: data) {
             baseline = stored
+        }
+        if let data = UserDefaults.standard.data(forKey: periodAdjustmentKey),
+           let stored = try? JSONDecoder().decode([String: LoggedPeriodAdjustment].self, from: data) {
+            loggedPeriodAdjustments = stored
         }
         listen()
     }
@@ -436,14 +450,14 @@ final class CycleStore {
                     // A no-flow check-in shortly after bleeding closes the intervening days.
                     // Don't infer weeks of bleeding from a much later check-in.
                     let end = (1...7).contains(gap) ? Self.add(day, -1) : lastFlow
-                    periods.append(LoggedPeriod(start: start, lastFlow: lastFlow, end: end))
+                    periods.append(LoggedPeriod(sourceStart: start, start: start, lastFlow: lastFlow, end: end))
                 }
                 start = nil
                 lastFlow = nil
             } else {
                 if let previousStart = start, let lastFlow,
                    Self.days(day, from: lastFlow) >= 10 {
-                    periods.append(LoggedPeriod(start: previousStart, lastFlow: lastFlow, end: lastFlow))
+                    periods.append(LoggedPeriod(sourceStart: previousStart, start: previousStart, lastFlow: lastFlow, end: lastFlow))
                     start = nil
                 }
                 if start == nil { start = day }
@@ -451,9 +465,52 @@ final class CycleStore {
             }
         }
         if let start, let lastFlow {
-            periods.append(LoggedPeriod(start: start, lastFlow: lastFlow, end: nil))
+            periods.append(LoggedPeriod(sourceStart: start, start: start, lastFlow: lastFlow, end: nil))
         }
-        return periods
+        return periods.map { raw in
+            guard let correction = loggedPeriodAdjustments[Self.key(raw.sourceStart)] else { return raw }
+            return LoggedPeriod(sourceStart: raw.sourceStart, start: correction.start,
+                                lastFlow: raw.lastFlow, end: correction.end)
+        }
+    }
+
+    /// Save a user's explicit calendar correction, taking priority over inferred dates.
+    func saveLoggedPeriodDates(_ period: LoggedPeriod, start: Date, end: Date?) throws {
+        let start = Self.cal.startOfDay(for: start)
+        let end = end.map { Self.cal.startOfDay(for: $0) }
+        let visibleEnd = end ?? Self.cal.startOfDay(for: period.lastFlow)
+        guard start <= today, end.map({ $0 <= today }) ?? true else { throw PeriodHistory.Validation.future }
+        guard visibleEnd >= start else { throw PeriodHistory.Validation.order }
+        guard loggedPeriods.contains(where: { $0.sourceStart == period.sourceStart }) else {
+            throw PeriodHistory.Validation.missing
+        }
+        // A correction must not overlap a different manually recorded or inferred period.
+        let overlapsManual = periodHistory.records.contains { other in
+            let otherEnd = other.end ?? Self.add(other.start, 9)
+            return start <= otherEnd && other.start <= visibleEnd
+        }
+        let overlapsInferred = loggedPeriods.contains { other in
+            other.sourceStart != period.sourceStart && start <= other.visibleEnd && other.start <= visibleEnd
+        }
+        guard !overlapsManual && !overlapsInferred else { throw PeriodHistory.Validation.overlap }
+
+        var updated = loggedPeriodAdjustments
+        updated[Self.key(period.sourceStart)] = LoggedPeriodAdjustment(start: start, end: end)
+        let data = try JSONEncoder().encode(updated)
+        UserDefaults.standard.set(data, forKey: periodAdjustmentKey)
+        loggedPeriodAdjustments = updated
+    }
+
+    func resetLoggedPeriodDates(_ period: LoggedPeriod) {
+        var updated = loggedPeriodAdjustments
+        updated.removeValue(forKey: Self.key(period.sourceStart))
+        guard let data = try? JSONEncoder().encode(updated) else { return }
+        UserDefaults.standard.set(data, forKey: periodAdjustmentKey)
+        loggedPeriodAdjustments = updated
+    }
+
+    func hasLoggedPeriodAdjustment(_ period: LoggedPeriod) -> Bool {
+        loggedPeriodAdjustments[Self.key(period.sourceStart)] != nil
     }
 
     func loggedPeriod(on date: Date) -> LoggedPeriod? {
@@ -465,6 +522,8 @@ final class CycleStore {
     func isRecordedPeriod(_ date: Date) -> Bool {
         let day = Self.cal.startOfDay(for: date)
         if periodHistory.contains(day) { return true }
+        // If the user corrected the calendar dates, that explicit choice wins.
+        if let period = loggedPeriod(on: day), hasLoggedPeriodAdjustment(period) { return true }
         if let entry = log(for: day), entry.flow == "None" { return false }
         return loggedPeriod(on: day) != nil
     }
@@ -473,7 +532,11 @@ final class CycleStore {
     /// without silently writing a daily log or assuming a specific intensity permanently.
     func flowForLog(on date: Date, saved: String? = nil) -> String {
         let stored = saved ?? log(for: date)?.flow ?? "None"
-        return stored == "None" && periodHistory.contains(date) ? "Light" : stored
+        if stored != "None" { return stored }
+        // Offer (but do not save) Light for calendar-marked days, including corrected dates.
+        let noSavedEntry = saved == nil && log(for: date) == nil
+        return periodHistory.contains(date) || (noSavedEntry && loggedPeriod(on: date) != nil)
+            ? "Light" : "None"
     }
 
     func fmt(_ date: Date) -> String { date.formatted(.dateTime.month(.abbreviated).day()) }
@@ -692,6 +755,8 @@ final class CycleStore {
         }
         periodHistory = PeriodHistory()
         UserDefaults.standard.removeObject(forKey: periodKey)
+        UserDefaults.standard.removeObject(forKey: periodAdjustmentKey)
+        loggedPeriodAdjustments = [:]
         periodStorageError = nil
         aiMeals = [:]
         plan = nil
