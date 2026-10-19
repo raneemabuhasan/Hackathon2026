@@ -234,6 +234,7 @@ final class CycleStore {
     var showLog = false
     /// Day to open in LogSheet when editing a past entry; nil means today.
     var selectedLogDate: Date?
+    var selectedCalendarDate: Date?
     var toast: String?
 
     let uid: String
@@ -243,6 +244,10 @@ final class CycleStore {
     private(set) var profile: Profile?
     private(set) var loaded = false
     private(set) var logs: [DayLog] = []
+    private(set) var logsLoaded = false
+    private(set) var logsError: String?
+    private(set) var logWritePending = false
+    private(set) var logWriteError: String?
     private(set) var reminders: [Reminder] = []
     private(set) var grocery: [GroceryItem] = []
     var messages: [ChatMessage] = []
@@ -255,6 +260,8 @@ final class CycleStore {
     @ObservationIgnored private var assistant: Assistant?
     /// Cycle facts baked into the assistant's prompt; when they change, a fresh assistant is created.
     @ObservationIgnored private var assistantFacts = ""
+    private var historyRevision = 0
+    private func invalidateComparisonConversation() { historyRevision += 1 }
     private var userRef: DocumentReference { db.collection("users").document(uid) }
 
     var name: String { profile?.name ?? "" }
@@ -295,6 +302,7 @@ final class CycleStore {
                     guard let self else { return }
                     if let error { print("Profile listener:", error) }
                     self.profile = try? snap?.data(as: Profile.self)
+                    self.invalidateComparisonConversation()
                     self.loaded = true
                     self.syncNotifications()
                     self.prefetchAI()
@@ -302,16 +310,29 @@ final class CycleStore {
             },
             userRef.collection("logs").addSnapshotListener { [weak self] snap, error in
                 MainActor.assumeIsolated {
-                    if let error { print("Logs listener:", error) }
-                    self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
-                    self?.syncNotifications() // predictions may have moved
-                    self?.prefetchAI()
+                    guard let self else { return }
+                    self.logsLoaded = true
+                    if let error {
+                        self.logsError = "Could not load symptom history: \(error.localizedDescription)"
+                        return
+                    }
+                    do {
+                        self.logs = try (snap?.documents ?? []).map { try $0.data(as: DayLog.self) }
+                        self.logsError = nil
+                    } catch {
+                        self.logsError = "Some saved entries could not be read. Comparison is unavailable until history can be loaded."
+                        return
+                    }
+                    self.invalidateComparisonConversation()
+                    self.syncNotifications() // predictions may have moved
+                    self.prefetchAI()
                 }
             },
             periodsRef.addSnapshotListener { [weak self] snap, error in
                 MainActor.assumeIsolated {
                     if let error { print("Periods listener:", error) }
                     self?.periodHistory = PeriodHistory(records: snap?.documents.compactMap { try? $0.data(as: PeriodRecord.self) } ?? [])
+                    self?.invalidateComparisonConversation()
                     self?.syncNotifications() // predictions may have moved
                     self?.prefetchAI()
                 }
@@ -479,6 +500,15 @@ final class CycleStore {
         !isPredicted(date) && date >= windowStart && date <= Self.add(windowEnd, periodLength - 1)
     }
 
+    var comparisonCycles: [ComparedCycle] {
+        let confirmed = periodHistory.records.map(\.start)
+        let entries = logs.map {
+            ComparisonEntry.databaseEntry(id: $0.id, date: $0.date, symptoms: $0.symptoms,
+                pain: $0.pain, note: $0.note)
+        }
+        return SymptomComparisonEngine.cycles(starts: confirmed, logs: entries, asOf: today)
+    }
+
     var symptomCounts: [(name: String, count: Int)] {
         let since = Self.add(today, -60)
         var counts: [String: Int] = [:]
@@ -504,16 +534,29 @@ final class CycleStore {
 
     /// Logs are keyed by day, so saving replaces that day's entry (not necessarily today's).
     func save(_ log: DayLog) {
-        try? userRef.collection("logs").document(log.id).setData(from: log)
-        if log.flow != "None" { recordFlow(on: log.date) }
-        showLog = false
-        selectedLogDate = nil
-        let tags = log.moods.count + log.symptoms.count
-        showToast("Saved · \(tags == 0 ? "no" : "\(tags)") tags logged")
+        guard !logWritePending else { return }
+        logWritePending = true
+        logWriteError = nil
+        Task {
+            defer { logWritePending = false }
+            do {
+                try await write(log)
+                showLog = false
+                selectedLogDate = nil
+                showToast("Entry saved")
+            } catch {
+                logWriteError = "Entry was not saved: \(error.localizedDescription)"
+            }
+        }
     }
 
     /// Saves a log and waits for Firestore to accept it, so the assistant only confirms real saves.
     func write(_ log: DayLog) async throws {
+        guard Self.cal.startOfDay(for: log.date) <= today, (0...10).contains(log.pain), (1...5).contains(log.energy),
+              log.symptoms.count <= 20, log.moods.count <= 20, log.note.count <= 2000 else {
+            throw NSError(domain: "PetalLog", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Check date, ratings, at most 20 tags per category, and note length (2000 characters)."])
+        }
         try await set(log, at: userRef.collection("logs").document(log.id))
         if log.flow != "None" { recordFlow(on: log.date) }
     }
@@ -537,8 +580,13 @@ final class CycleStore {
     }
 
     func deleteLog(_ log: DayLog) {
-        userRef.collection("logs").document(log.id).delete { error in if let error { print("Delete log failed:", error) } }
-        showToast("Log deleted")
+        logWriteError = nil
+        userRef.collection("logs").document(log.id).delete { [weak self] error in
+            Task { @MainActor in
+                if let error { self?.logWriteError = "Entry was not deleted: \(error.localizedDescription)" }
+                else { self?.showToast("Entry deleted") }
+            }
+        }
     }
 
     func setReminder(_ reminder: Reminder, on: Bool) {
@@ -850,7 +898,7 @@ final class CycleStore {
         Task {
             defer { thinking = false }
             do {
-                let facts = "\(cycleDay)|\(windowStart)|\(windowEnd)|\(name)"
+                let facts = "\(cycleDay)|\(windowStart)|\(windowEnd)|\(name)|\(historyRevision)"
                 if assistant == nil || facts != assistantFacts {
                     assistant = Assistant(store: self)
                     assistantFacts = facts

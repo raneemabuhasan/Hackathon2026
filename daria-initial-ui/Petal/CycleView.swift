@@ -9,8 +9,9 @@ struct CycleView: View {
     @State private var showingMonthPicker = false
     @State private var pickerMonth = 1
     @State private var pickerYear = 2026
-    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
-    @State private var hasSelectedDate = false
+    /// Shared with the + button, so a new log goes on the day picked here.
+    private var selectedDate: Date { store.selectedCalendarDate ?? store.today }
+    private var hasSelectedDate: Bool { store.selectedCalendarDate != nil }
     @State private var showingPeriodControls = false
     @State private var editingPeriod: PeriodRecord?
     @State private var addingPastPeriod: PeriodRecord?
@@ -27,6 +28,8 @@ struct CycleView: View {
             calendar
             lengths
             symptoms
+            SymptomComparisonView()
+            if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
             logHistory
         }
         .sheet(isPresented: $showingPeriodControls) {
@@ -357,8 +360,7 @@ struct CycleView: View {
         let isToday = CycleStore.cal.isDate(day, inSameDayAs: store.today)
         let isSelected = hasSelectedDate && CycleStore.cal.isDate(day, inSameDayAs: selectedDate)
         return Button {
-            selectedDate = day
-            hasSelectedDate = true
+            store.selectedCalendarDate = day
             showingPeriodControls = true
         } label: {
             // A stable row height prevents two-digit dates from being compressed

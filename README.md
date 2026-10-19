@@ -33,3 +33,17 @@ xcodebuild -project daria-initial-ui/Petal.xcodeproj -scheme Petal -sdk iphonesi
 ```
 
 The simulator build checks compilation; manually exercise the tabs and logging flow after launch.
+
+## Calendar and onboarding checks
+
+- Finish onboarding with a known period start. Cycle must show that start without
+  entering it again; no end date is inferred.
+- Profiles without `periodRecords` use their onboarding start as the initial
+  calendar record. An explicitly saved empty history stays empty after reload.
+- Edit or delete that calendar record, then relaunch. Comparison must use the
+  saved history without adding the old onboarding date back.
+- Select a past date in Cycle and press +. Log date must match the selection and
+  load any existing entry for that day. On other tabs, + opens today's log.
+- Select a future calendar date. The + button is disabled for that date.
+- Change the most recent period start in Settings. Cycle and comparison must
+  reflect the corrected date; invalid or overlapping dates must show an error.

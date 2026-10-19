@@ -47,6 +47,9 @@ struct LogSheet: View {
                     .font(.system(size: 14, weight: .semibold))
                     .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
+                if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
+                if store.logWritePending { ProgressView("Saving entry") }
+
                 field("Flow") {
                     HStack(spacing: 8) {
                         ForEach(flows, id: \.0) { name, drops in
@@ -136,6 +139,7 @@ struct LogSheet: View {
                         .background(Palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(store.logWritePending)
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)

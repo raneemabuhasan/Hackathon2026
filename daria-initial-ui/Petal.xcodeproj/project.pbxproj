@@ -31,7 +31,8 @@
 		CC000000000000000000000F /* signin.json in Resources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000F /* signin.json */; };
 		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
 		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
-		DD0000000000000000000001 /* PeriodHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000002 /* PeriodHistory.swift */; };
+		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
+		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,7 +56,8 @@
 		BB000000000000000000000F /* signin.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = signin.json; sourceTree = "<group>"; };
 		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
-		DD0000000000000000000002 /* PeriodHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
+		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
+		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,8 @@
 		AA0000000000000000000002 /* Petal */ = {
 			isa = PBXGroup;
 			children = (
+				EF0000000000000000000001 /* SymptomComparison.swift */,
+				EF0000000000000000000002 /* SymptomComparisonView.swift */,
                 FA0000000000000000000002 /* Assets.xcassets */,
 				DD0000000000000000000002 /* PeriodHistory.swift */,
 				BB0000000000000000000001 /* CompanionView.swift */,
@@ -208,6 +212,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */,
+				EE0000000000000000000001 /* SymptomComparison.swift in Sources */,
 				DD0000000000000000000001 /* PeriodHistory.swift in Sources */,
 				CC0000000000000000000001 /* CompanionView.swift in Sources */,
 				CC0000000000000000000002 /* ContentView.swift in Sources */,

@@ -66,8 +66,12 @@ final class Assistant {
         - You are not a doctor. Don't diagnose, and don't claim that foods, supplements or habits treat \
         symptoms or balance hormones. For severe pain, very heavy bleeding, fainting or anything worrying, \
         suggest contacting a GP or doctor (or NHS 111 in the UK); in an emergency, urgent care.
-        - Answer questions about the user's past only from get_logs or get_cycle_summary. Never guess or \
+        - Answer questions about the user's past only from get_logs, get_cycle_summary or compare_cycles. Never guess or \
         invent past entries. If nothing is logged, say so.
+        - For cross-cycle symptom patterns, call compare_cycles on every new request. Use its confirmed
+        start dates, recorded-day counts and dated evidence. Never infer absence from missing logs,
+        worsening from more recorded days, or symptom-specific severity from overall daily pain.
+        Default zero pain in legacy records is unspecified for comparisons. An ongoing cycle is incomplete.
         - Only save what the user asks you to record, using log_day. Turn relative dates ("yesterday", \
         "on Monday") into YYYY-MM-DD using today's date. Never log future dates.
         - Put the user's own words about strength or detail (e.g. "strong") in description. You may ask \
@@ -105,6 +109,15 @@ final class Assistant {
             ]
         ),
         FunctionDeclaration(
+            name: "compare_cycles",
+            description: "Compare recorded symptoms in two cycles using confirmed period starts. Returns dated evidence and IDs. Defaults to the latest two starts. Missing logs are not symptom absence.",
+            parameters: [
+                "first_start": .string(description: "Exact recorded cycle start YYYY-MM-DD. Supply both starts or neither."),
+                "second_start": .string(description: "A different recorded cycle start YYYY-MM-DD."),
+            ],
+            optionalParameters: ["first_start", "second_start"]
+        ),
+        FunctionDeclaration(
             name: "get_cycle_summary",
             description: "Cycle day, phase, predicted next-period window, recent cycle lengths and the most common logged symptoms.",
             parameters: ["days": .integer(description: "How many days back to count symptoms. Defaults to 60.")],
@@ -138,6 +151,7 @@ final class Assistant {
         case "log_day": return await logDay(args, store)
         case "get_logs": return getLogs(args, store)
         case "get_cycle_summary": return cycleSummary(args, store)
+        case "compare_cycles": return compareCycles(args, store)
         case "add_reminder": return await addReminder(args, store)
         case "get_meal_ideas": return mealIdeas(args, store)
         default: return Self.failure("Unknown tool \(call.name).")
@@ -201,6 +215,65 @@ final class Assistant {
             .filter { $0.date >= from && $0.date < CycleStore.add(to, 1) }
             .sorted { $0.date < $1.date }
         return ["ok": .bool(true), "count": .number(Double(logs.count)), "logs": .array(logs.map { .object(Self.json($0)) })]
+    }
+
+    private func compareCycles(_ args: JSONObject, _ store: CycleStore) -> JSONObject {
+        guard store.logsLoaded, store.logsError == nil else {
+            return Self.failure(store.logsError ?? "Symptom history is still loading. Try again shortly.")
+        }
+        let cycles = store.comparisonCycles
+        let available = cycles.map { JSONValue.string(Self.dayFormatter.string(from: $0.start)) }
+        guard cycles.count >= 2 else {
+            return ["ok": .bool(false), "error": .string("Record at least two period starts to compare."),
+                    "availableStarts": .array(available)]
+        }
+        let firstText = args.string("first_start"), secondText = args.string("second_start")
+        let first: ComparedCycle, second: ComparedCycle
+        if firstText == nil && secondText == nil {
+            first = cycles[cycles.count - 2]
+            second = cycles[cycles.count - 1]
+        } else {
+            guard let firstText, let secondText,
+                  let a = cycles.first(where: { Self.dayFormatter.string(from: $0.start) == firstText }),
+                  let b = cycles.first(where: { Self.dayFormatter.string(from: $0.start) == secondText }) else {
+                return ["ok": .bool(false), "error": .string("Choose two exact dates from availableStarts."),
+                        "availableStarts": .array(available)]
+            }
+            first = a; second = b
+        }
+        guard let result = SymptomComparisonEngine.compare(first, second) else {
+            return Self.failure("Choose two different cycle starts.")
+        }
+        func entryJSON(_ entry: ComparisonEntry) -> JSONValue {
+            var value: JSONObject = [
+                "id": .string(entry.id),
+                "date": .string(Self.dayFormatter.string(from: entry.date)),
+                "symptoms": .array(entry.symptoms.map(JSONValue.string)),
+                "note": .string(entry.note),
+            ]
+            if let pain = entry.pain { value["positiveOverallPain"] = .number(Double(pain)) }
+            return .object(value)
+        }
+        var response: JSONObject = [
+            "ok": .bool(true),
+            "earlierStart": .string(Self.dayFormatter.string(from: result.earlier.start)),
+            "laterStart": .string(Self.dayFormatter.string(from: result.later.start)),
+            "laterCycleOngoing": .bool(result.later.isOngoing),
+            "asOf": .string(Self.dayFormatter.string(from: store.today)),
+            "availableStarts": .array(available),
+            "caveat": .string("Whole cycles, not only bleeding days. Counts are unique recorded days. Missing entries do not mean absence. More recorded days do not establish worsening. Legacy default zero pain is excluded; positive pain is overall daily pain, not symptom severity."),
+            "observations": .array(result.observations.map { observation in .object([
+                "symptom": .string(observation.symptom),
+                "cyclesReported": .number(Double(observation.cyclesReported)),
+                "earlierRecordedDays": .number(Double(observation.earlierDays)),
+                "laterRecordedDays": .number(Double(observation.laterDays)),
+                "evidence": .array(observation.evidence.map(entryJSON)),
+            ]) }),
+            "allSelectedEntries": .array((result.earlier.logs + result.later.logs).map(entryJSON)),
+        ]
+        if let pain = result.earlierPeakPain { response["earlierPeakPositiveDailyPain"] = .number(Double(pain)) }
+        if let pain = result.laterPeakPain { response["laterPeakPositiveDailyPain"] = .number(Double(pain)) }
+        return response
     }
 
     private func cycleSummary(_ args: JSONObject, _ store: CycleStore) -> JSONObject {

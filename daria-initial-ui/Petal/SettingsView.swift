@@ -19,7 +19,7 @@ struct SettingsView: View {
     private var changed: Bool {
         guard let p = store.profile else { return false }
         return trimmedName != p.name || cycleLength != p.cycleLength || periodLength != p.periodLength
-            || !CycleStore.cal.isDate(lastStart, inSameDayAs: p.lastPeriodStart)
+            || !CycleStore.cal.isDate(lastStart, inSameDayAs: store.periodHistory.records.map(\.start).max() ?? p.lastPeriodStart)
     }
 
     var body: some View {
@@ -143,7 +143,7 @@ struct SettingsView: View {
             auth.error = nil
             guard let p = store.profile else { return }
             name = p.name
-            lastStart = p.lastPeriodStart
+            lastStart = store.periodHistory.records.map(\.start).max() ?? p.lastPeriodStart
             cycleLength = p.cycleLength
             periodLength = p.periodLength
         }
