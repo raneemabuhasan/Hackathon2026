@@ -93,11 +93,15 @@ struct Chip: View {
     let label: String
     let selected: Bool
     var small = false
+    var icon: AnyView? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(label)
+            HStack(spacing: 5) {
+                if let icon { icon.frame(width: 14, height: 14).accessibilityHidden(true) }
+                Text(label)
+            }
                 .font(.system(size: small ? 12 : 13, weight: .medium))
                 .padding(.horizontal, small ? 11 : 14)
                 .padding(.vertical, small ? 6 : 9)
