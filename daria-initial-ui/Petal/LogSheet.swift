@@ -94,7 +94,8 @@ struct LogSheet: View {
                     tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
                 }
 
-                    field("Pain", value: pain == 0 ? "None" : "\(Self.painWord(Int(pain))) · \(Int(pain))") {                    painScale
+                field("Pain", value: pain == 0 ? "None" : "\(Self.painWord(Int(pain))) · \(Int(pain))") {
+                    painScale
                     if pain >= 7 {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Pain that stops you doing everyday things deserves proper care. Consider talking to a GP or pharmacist.")
@@ -166,11 +167,17 @@ struct LogSheet: View {
                                                           original: request.originalName,
                                                           name: name, emoji: emoji) else { return false }
                 if request.symptom {
-                    if let previous = request.originalName { symptoms.remove(previous) }
-                    symptoms.insert(updated)
+                    if let previous = request.originalName {
+                        if symptoms.remove(previous) != nil { symptoms.insert(updated) }
+                    } else {
+                        symptoms.insert(updated)
+                    }
                 } else {
-                    if let previous = request.originalName { moods.remove(previous) }
-                    moods.insert(updated)
+                    if let previous = request.originalName {
+                        if moods.remove(previous) != nil { moods.insert(updated) }
+                    } else {
+                        moods.insert(updated)
+                    }
                 }
                 return true
             }

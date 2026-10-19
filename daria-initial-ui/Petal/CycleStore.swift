@@ -395,7 +395,7 @@ final class CycleStore {
     }
 
     var symptomCounts: [(name: String, count: Int)] {
-        let since = Self.add(today, -60)
+        let since = Self.add(today, -59)
         var counts: [String: Int] = [:]
         for log in logs where log.date >= since { for s in log.symptoms { counts[s, default: 0] += 1 } }
         return counts.sorted { lhs, rhs in
