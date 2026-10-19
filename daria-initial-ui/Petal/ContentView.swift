@@ -21,9 +21,9 @@ struct ContentView: View {
             }
             .transition(.opacity)
 
-            // Stay put behind the keyboard instead of riding up over the Companion text field.
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             TabBar()
-                .ignoresSafeArea(.keyboard)
         }
         .animation(.easeOut(duration: 0.2), value: store.tab)
         .overlay(alignment: .top) {
