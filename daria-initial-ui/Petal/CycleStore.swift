@@ -365,15 +365,36 @@ final class CycleStore {
     var windowEnd: Date { Self.add(nextStart, spread) }
     var cycleDay: Int { Self.days(today, from: lastStart) + 1 }
 
-    func range(of phase: Phase) -> ClosedRange<Int> {
+    /// A phase can be absent when the cycle is too short for the usual offsets.
+    /// Clamp derived boundaries only; never rewrite the user's saved lengths.
+    nonisolated static func phaseRange(of phase: Phase, cycleLength: Int, periodLength: Int) -> ClosedRange<Int>? {
+        let length = max(1, cycleLength)
+        let bleedingEnd = min(length, max(1, periodLength))
+        let follicularEnd = max(bleedingEnd, length - min(length, 16))
+        let midEnd = max(follicularEnd, length - min(length, 12))
+
         switch phase {
-        case .menstrual: 1...periodLength
-        case .follicular: (periodLength + 1)...(average - 16)
-        case .mid: (average - 15)...(average - 12)
-        case .luteal: (average - 11)...average
+        case .menstrual:
+            return 1...bleedingEnd
+        case .follicular:
+            guard follicularEnd > bleedingEnd else { return nil }
+            return (bleedingEnd + 1)...follicularEnd
+        case .mid:
+            guard midEnd > follicularEnd else { return nil }
+            return (follicularEnd + 1)...midEnd
+        case .luteal:
+            guard length > midEnd else { return nil }
+            return (midEnd + 1)...length
         }
     }
-    func phase(forDay day: Int) -> Phase { Phase.allCases.first { range(of: $0).contains(day) } ?? .luteal }
+
+    func range(of phase: Phase) -> ClosedRange<Int>? {
+        Self.phaseRange(of: phase, cycleLength: average, periodLength: periodLength)
+    }
+
+    func phase(forDay day: Int) -> Phase {
+        Phase.allCases.first { range(of: $0)?.contains(day) == true } ?? .luteal
+    }
     var currentPhase: Phase { phase(forDay: cycleDay) }
 
     func isPeriod(_ date: Date) -> Bool {
@@ -491,6 +512,18 @@ final class CycleStore {
 
     func toggleGrocery(_ item: GroceryItem) {
         userRef.collection("grocery").document(item.id).updateData(["done": !item.done])
+    }
+
+    /// Clears only the grocery items currently shown, including checked items.
+    /// Snapshot listeners update the list and each meal's Added state.
+    func clearGroceryList() async throws {
+        let refs = grocery.map { userRef.collection("grocery").document($0.id) }
+        for offset in stride(from: 0, to: refs.count, by: 450) {
+            let batch = db.batch()
+            refs[offset..<min(offset + 450, refs.count)].forEach { batch.deleteDocument($0) }
+            try await batch.commit()
+        }
+        showToast("Grocery list cleared")
     }
 
     /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
