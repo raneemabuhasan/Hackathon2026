@@ -98,16 +98,26 @@ struct Chip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: small ? 10 : 11, weight: .bold))
+                        .accessibilityHidden(true)
+                }
                 if let icon { icon.frame(width: 14, height: 14).accessibilityHidden(true) }
                 Text(label)
+                    .font(small ? .caption : .subheadline)
+                    .fontWeight(.medium)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-                .font(.system(size: small ? 12 : 13, weight: .medium))
-                .padding(.horizontal, small ? 11 : 14)
-                .padding(.vertical, small ? 6 : 9)
-                .foregroundStyle(selected ? Color.white : Palette.ink)
-                .background(selected ? Palette.accent : Palette.surface, in: Capsule())
-                .overlay(Capsule().stroke(selected ? Color.clear : Palette.line))
+            .padding(.horizontal, small ? 11 : 14)
+            .padding(.vertical, small ? 6 : 9)
+            .foregroundStyle(selected ? Color.white : Palette.ink)
+            .background(selected ? Palette.accent : Palette.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? Palette.accent : Palette.berry.opacity(0.3)))
+            // Keep the visual pill compact while making the whole control easy to tap.
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .animation(.easeOut(duration: 0.15), value: selected)
