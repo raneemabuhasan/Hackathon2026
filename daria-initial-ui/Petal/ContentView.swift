@@ -21,9 +21,9 @@ struct ContentView: View {
             }
             .transition(.opacity)
 
-            // Stay put behind the keyboard instead of riding up over the Companion text field.
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             TabBar()
-                .ignoresSafeArea(.keyboard)
         }
         .animation(.easeOut(duration: 0.2), value: store.tab)
         .overlay(alignment: .top) {
@@ -64,8 +64,12 @@ struct TabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             item(.today, "Today", "circle.circle")
-            item(.cycle, "Cycle", "calendar")
-            Button { store.showLog = true } label: {
+            item(.cycle, "Calendar", "calendar")
+            Button {
+                store.showingLogPreview = false
+                store.selectedLogDate = store.tab == .cycle ? store.selectedCalendarDate ?? store.today : nil
+                store.showLog = true
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
@@ -74,7 +78,8 @@ struct TabBar: View {
                     .shadow(color: Palette.rose.opacity(0.4), radius: 10, y: 6)
             }
             .frame(maxWidth: .infinity)
-            .accessibilityLabel("Log today")
+            .accessibilityLabel(store.tab == .cycle ? "Log selected date" : "Log today")
+            .disabled(store.tab == .cycle && (store.selectedCalendarDate ?? store.today) > store.today)
             item(.nourish, "Nourish", "leaf")
             item(.companion, "Companion", "sparkles")
         }
@@ -90,7 +95,9 @@ struct TabBar: View {
         let selected = store.tab == tab
         return Button { store.tab = tab } label: {
             VStack(spacing: 3) {
+                // Symbols differ in height; a fixed slot keeps every label on the same line.
                 Image(systemName: icon).font(.system(size: 19, weight: selected ? .semibold : .regular))
+                    .frame(height: 24)
                 Text(title).font(.system(size: 10, weight: .semibold))
             }
             .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)

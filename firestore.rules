@@ -40,6 +40,16 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
 
+      // Mirrors PeriodRecord in PeriodHistory.swift. Document ID is the record's UUID.
+      match /periods/{id} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['id', 'start', 'end'])
+          && request.resource.data.id == id
+          && request.resource.data.start is timestamp
+          && (!('end' in request.resource.data) || request.resource.data.end == null || request.resource.data.end is timestamp);
+      }
+
       // Cached AI output (today's plan, recipes) so it shows instantly next time.
       match /cache/{id} {
         allow read, write: if isOwner(uid);

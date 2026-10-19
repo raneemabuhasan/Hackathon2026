@@ -60,6 +60,9 @@ struct LogSheet: View {
                     .font(.system(size: 14, weight: .semibold))
                     .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
+                if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
+                if store.logWritePending { ProgressView("Saving entry") }
+
                 field("Flow") {
                     HStack(spacing: 8) {
                         ForEach(flows, id: \.0) { name, drops in
@@ -149,6 +152,7 @@ struct LogSheet: View {
                         .background(Palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(store.logWritePending)
                 } // End editable log fields
             }
             .padding(.horizontal, 20)
@@ -186,9 +190,9 @@ struct LogSheet: View {
             logDate = store.selectedLogDate ?? store.today
             loadDraft(for: logDate)
             // Tapping a saved row previews it. The + button still opens the editor.
-            viewingSavedLog = store.selectedLogDate != nil && store.log(for: logDate) != nil
+            viewingSavedLog = store.showingLogPreview && store.log(for: logDate) != nil
         }
-        .onDisappear { store.selectedLogDate = nil }
+        .onDisappear { store.selectedLogDate = nil; store.showingLogPreview = false }
     }
 
     /// A saved day log is a readable journal entry until the user taps Edit.

@@ -49,18 +49,35 @@ final class AuthModel {
     // MARK: Google
 
     func signInWithGoogle() async {
-        await run {
-            guard let clientID = FirebaseApp.app()?.options.clientID else { throw AuthError.missingClientID }
-            guard let root = UIApplication.shared.connectedScenes
-                .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first
-            else { return }
-            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        await run { _ = try await Auth.auth().signIn(with: try await googleCredential()) }
+    }
 
-            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: root)
-            guard let idToken = result.user.idToken?.tokenString else { throw AuthError.missingToken }
-            let credential = GoogleAuthProvider.credential(withIDToken: idToken,
-                                                           accessToken: result.user.accessToken.tokenString)
-            _ = try await Auth.auth().signIn(with: credential)
+    private func googleCredential() async throws -> AuthCredential {
+        guard let clientID = FirebaseApp.app()?.options.clientID else { throw AuthError.missingClientID }
+        guard let root = UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first
+        else { throw AuthError.noWindow }
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: root)
+        guard let idToken = result.user.idToken?.tokenString else { throw AuthError.missingToken }
+        return GoogleAuthProvider.credential(withIDToken: idToken, accessToken: result.user.accessToken.tokenString)
+    }
+
+    // MARK: Delete account
+
+    /// Erases the user's data, then the sign-in itself. Firebase only deletes an account after a
+    /// recent sign-in, so Google users confirm with Google first; that way nothing is half-deleted.
+    func deleteAccount(_ store: CycleStore) async {
+        await run {
+            guard let user = Auth.auth().currentUser else { return }
+            if user.providerData.contains(where: { $0.providerID == GoogleAuthProviderID }) {
+                try await user.reauthenticate(with: try await googleCredential())
+            }
+            try await store.deleteAllData()
+            store.stop()
+            try await user.delete()
+            GIDSignIn.sharedInstance.signOut()
         }
     }
 
@@ -93,16 +110,18 @@ final class AuthModel {
         case .wrongPassword, .invalidCredential, .userNotFound: return "Email or password is incorrect."
         case .networkError: return "Couldn't reach the server. Check your connection."
         case .accountExistsWithDifferentCredential: return "This email is already linked to another sign-in method."
+        case .requiresRecentLogin: return "Your data was deleted. To remove the account too, sign out, sign back in and delete it again."
         default: return error.localizedDescription
         }
     }
 
     enum AuthError: LocalizedError {
-        case missingClientID, missingToken
+        case missingClientID, missingToken, noWindow
         var errorDescription: String? {
             switch self {
             case .missingClientID: "Google sign-in isn't configured (no CLIENT_ID in GoogleService-Info.plist)."
             case .missingToken: "Google didn't return a sign-in token. Please try again."
+            case .noWindow: "Couldn't show Google sign-in. Please try again."
             }
         }
     }

@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var cycleLength = 28
     @State private var periodLength = 5
     @State private var confirmingDelete = false
+    @State private var confirmingAccountDelete = false
+    @State private var confirmingSignOut = false
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -18,7 +20,7 @@ struct SettingsView: View {
     private var changed: Bool {
         guard let p = store.profile else { return false }
         return trimmedName != p.name || cycleLength != p.cycleLength || periodLength != p.periodLength
-            || !CycleStore.cal.isDate(lastStart, inSameDayAs: p.lastPeriodStart)
+            || !CycleStore.cal.isDate(lastStart, inSameDayAs: store.periodHistory.records.map(\.start).max() ?? p.lastPeriodStart)
     }
 
     var body: some View {
@@ -37,20 +39,10 @@ struct SettingsView: View {
                     .accessibilityLabel("Close")
                 }
 
-                HStack(spacing: 14) {
-                    Group {
-                        if trimmedName.isEmpty { Image(systemName: "person.fill") }
-                        else { Text(String(trimmedName.prefix(1)).uppercased()) }
-                    }
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 64, height: 64)
-                        .background(Palette.accentSoft, in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(trimmedName.isEmpty ? "You" : trimmedName).font(.display(28))
-                        if let email = auth.user?.email {
-                            Text(email).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-                        }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(trimmedName.isEmpty ? "You" : trimmedName).font(.display(28))
+                    if let email = auth.user?.email {
+                        Text(email).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     }
                 }
 
@@ -101,8 +93,7 @@ struct SettingsView: View {
                             Divider().overlay(Palette.line)
                         }
                         row("Sign out", icon: "rectangle.portrait.and.arrow.right") {
-                            dismiss()
-                            auth.signOut()
+                            confirmingSignOut = true
                         }
                     }
                 }
@@ -111,26 +102,11 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Your logs are stored in your private account and only you can read them. Nothing is shared or sold.")
                             .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-                        if confirmingDelete {
-                            Text("This erases every log and preference in your account. It can't be undone.")
-                                .font(.system(size: 13))
-                            HStack {
-                                outlineButton("Erase everything") {
-                                    dismiss()
-                                    store.deleteAllData()
-                                }
-                                Button("Keep my data") { confirmingDelete = false }
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .padding(.horizontal, 16).padding(.vertical, 10)
-                                    .background(Palette.surface2, in: Capsule())
-                                    .buttonStyle(.plain)
-                            }
-                        } else {
-                            outlineButton("Delete all my data") { confirmingDelete = true }
+                        outlineButton("Delete all my data") { confirmingDelete = true }
+                        outlineButton("Delete account") { confirmingAccountDelete = true }
+                        if let message = auth.error {
+                            Text(message).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                         }
-                        #if DEBUG
-                        outlineButton("Add sample history (debug)") { store.addSampleHistory() }
-                        #endif
                     }
                 }
             }
@@ -142,12 +118,41 @@ struct SettingsView: View {
         .scrollDismissesKeyboard(.interactively)
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
-        .animation(.easeOut(duration: 0.2), value: confirmingDelete)
+        .alert("Are you sure you want to sign out?", isPresented: $confirmingSignOut) {
+            Button("Sign out", role: .destructive) {
+                dismiss()
+                auth.signOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your data stays saved in your account. Sign back in any time to pick up where you left off.")
+        }
+        .alert("Are you sure you want to delete all your data?", isPresented: $confirmingDelete) {
+            Button("Delete my data", role: .destructive) {
+                Task {
+                    do {
+                        try await store.deleteAllData()
+                        dismiss()
+                    } catch { store.showToast("Couldn't delete your data: \(error.localizedDescription)") }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This erases every log, period, reminder and preference in your account. Your account stays so you can start fresh. This can't be undone.")
+        }
+        .alert("Are you sure you want to delete your account?", isPresented: $confirmingAccountDelete) {
+            Button("Delete account", role: .destructive) {
+                Task { await auth.deleteAccount(store) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This erases all your data and your sign-in. Google users will be asked to confirm with Google. This can't be undone.")
+        }
         .onAppear {
             auth.error = nil
             guard let p = store.profile else { return }
             name = p.name
-            lastStart = p.lastPeriodStart
+            lastStart = store.periodHistory.records.map(\.start).max() ?? p.lastPeriodStart
             cycleLength = p.cycleLength
             periodLength = p.periodLength
         }
