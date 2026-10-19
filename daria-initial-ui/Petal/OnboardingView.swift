@@ -18,7 +18,7 @@ struct OnboardingView: View {
                 VStack(spacing: 6) {
                     DisplayTitle(before: "Tell us about ", accent: "your cycle", size: 32)
                         .multilineTextAlignment(.center)
-                    Text("Rough answers are fine. Petal learns from what you log and gets more accurate over time.")
+                    Text("Rough answers are fine. Sync learns from what you log and gets more accurate over time.")
                         .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
                         .multilineTextAlignment(.center)
                 }

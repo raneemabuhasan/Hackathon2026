@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var periodLength = 5
     @State private var confirmingDelete = false
     @State private var confirmingAccountDelete = false
+    @State private var confirmingSignOut = false
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -92,8 +93,7 @@ struct SettingsView: View {
                             Divider().overlay(Palette.line)
                         }
                         row("Sign out", icon: "rectangle.portrait.and.arrow.right") {
-                            dismiss()
-                            auth.signOut()
+                            confirmingSignOut = true
                         }
                     }
                 }
@@ -118,6 +118,15 @@ struct SettingsView: View {
         .scrollDismissesKeyboard(.interactively)
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
+        .alert("Are you sure you want to sign out?", isPresented: $confirmingSignOut) {
+            Button("Sign out", role: .destructive) {
+                dismiss()
+                auth.signOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your data stays saved in your account. Sign back in any time to pick up where you left off.")
+        }
         .alert("Are you sure you want to delete all your data?", isPresented: $confirmingDelete) {
             Button("Delete my data", role: .destructive) {
                 Task {

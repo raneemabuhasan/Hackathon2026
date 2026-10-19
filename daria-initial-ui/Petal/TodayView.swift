@@ -12,9 +12,13 @@ struct TodayView: View {
     var body: some View {
         Page {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
+                // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
+                TimelineView(.everyMinute) { context in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                        DisplayTitle(before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                     accent: store.name)
+                    }
                 }
                 Spacer()
                 Button { showSettings = true } label: {
@@ -41,6 +45,14 @@ struct TodayView: View {
                 .environment(auth)
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
+        }
+    }
+
+    static func greeting(at date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
         }
     }
 
@@ -223,10 +235,9 @@ struct TodayView: View {
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
-                        .font(.system(size: 17))
+                        .font(.system(size: 20))
                         .foregroundStyle(Palette.accent)
-                        .frame(width: 40, height: 40)
-                        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)

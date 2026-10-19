@@ -52,7 +52,7 @@ struct RootView: View {
     }
 
     private var splash: some View {
-        Text("Petal")
+        Text("Sync")
             .font(.display(44))
             .italic()
             .foregroundStyle(Palette.accent)
