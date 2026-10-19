@@ -219,6 +219,7 @@ struct LogSheet: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Palette.ink)
                     HStack(spacing: 5) {
+                        let manualWithoutSavedFlow = saved.flow == "None" && store.periodHistory.contains(logDate)
                         let drops = flows.first(where: { $0.0 == saved.flow })?.1 ?? 0
                         if drops == 0 {
                             Image(systemName: "drop")
@@ -229,7 +230,8 @@ struct LogSheet: View {
                                     .foregroundStyle(Palette.accent)
                             }
                         }
-                        Text(saved.flow == "None" ? "Not recorded" : saved.flow)
+                        Text(manualWithoutSavedFlow ? "Period marked · choose flow" :
+                             saved.flow == "None" ? "Not recorded" : saved.flow)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Palette.inkSoft)
                     }
@@ -323,14 +325,14 @@ struct LogSheet: View {
     /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).
     private func loadDraft(for date: Date) {
         if let saved = store.log(for: date) {
-            flow = saved.flow
+            flow = store.flowForLog(on: date, saved: saved.flow)
             moods = Set(saved.moods)
             symptoms = Set(saved.symptoms)
             pain = Double(saved.pain)
             energy = Double(saved.energy)
             note = saved.note
         } else {
-            flow = "None"
+            flow = store.flowForLog(on: date)
             moods = []
             symptoms = []
             pain = 0

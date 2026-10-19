@@ -65,8 +65,11 @@ struct TodayView: View {
 
        private var prediction: some View {
         let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
-        let total = Double(CycleStore.days(store.windowEnd, from: store.today) + 4)
-        let pct = { (d: Date) in Double(CycleStore.days(d, from: store.today)) / total }
+        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
+        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
+        let pct = { (d: Date) in
+            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
+        }
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -117,7 +120,7 @@ struct TodayView: View {
         HStack(spacing: 6) {
             ForEach(-3...3, id: \.self) { offset in
                 let d = CycleStore.add(store.today, offset)
-                let period = store.periodHistory.contains(d)
+                let period = store.isRecordedPeriod(d)
                 let predicted = store.forecast.next().map { next in
                     d >= CycleStore.add(next, -store.forecast.margin) && d <= CycleStore.add(next, store.forecast.margin)
                 } ?? false

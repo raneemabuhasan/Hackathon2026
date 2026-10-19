@@ -57,6 +57,15 @@ struct DayLog: Identifiable, Codable {
     var id: String { CycleStore.key(date) }
 }
 
+/// Periods detected from saved daily flow entries; these are derived, not extra saved records.
+struct LoggedPeriod: Identifiable {
+    let start: Date
+    let lastFlow: Date
+    let end: Date? // nil until a no-flow entry or a later, separate period confirms the end
+    var id: Date { start }
+    var visibleEnd: Date { end ?? lastFlow }
+}
+
 /// users/{uid} — set during onboarding.
 struct Profile: Codable {
     var name: String
@@ -228,6 +237,15 @@ final class CycleStore {
     init(uid: String) {
         self.uid = uid
         today = Self.cal.startOfDay(for: .now)
+        // Calendar dates are stored on-device; restore them when the app relaunches.
+        if let data = UserDefaults.standard.data(forKey: periodKey),
+           let stored = try? JSONDecoder().decode(PeriodHistory.self, from: data) {
+            periodHistory = stored
+        }
+        if let data = UserDefaults.standard.data(forKey: "petal.cycleBaseline.v1"),
+           let stored = try? JSONDecoder().decode(CycleBaseline.self, from: data) {
+            baseline = stored
+        }
         listen()
     }
 
@@ -404,6 +422,60 @@ final class CycleStore {
         }.prefix(5).map { ($0.key, $0.value) }
     }
 
+    /// Logged flow starts a period; an explicit no-flow day ends it on the prior day.
+    /// Missing log days alone do not close it. A new flow after 10+ days starts another.
+    var loggedPeriods: [LoggedPeriod] {
+        var periods: [LoggedPeriod] = []
+        var start: Date?
+        var lastFlow: Date?
+        for log in logs.sorted(by: { $0.date < $1.date }) {
+            let day = Self.cal.startOfDay(for: log.date)
+            if log.flow == "None" {
+                if let start, let lastFlow {
+                    let gap = Self.days(day, from: lastFlow)
+                    // A no-flow check-in shortly after bleeding closes the intervening days.
+                    // Don't infer weeks of bleeding from a much later check-in.
+                    let end = (1...7).contains(gap) ? Self.add(day, -1) : lastFlow
+                    periods.append(LoggedPeriod(start: start, lastFlow: lastFlow, end: end))
+                }
+                start = nil
+                lastFlow = nil
+            } else {
+                if let previousStart = start, let lastFlow,
+                   Self.days(day, from: lastFlow) >= 10 {
+                    periods.append(LoggedPeriod(start: previousStart, lastFlow: lastFlow, end: lastFlow))
+                    start = nil
+                }
+                if start == nil { start = day }
+                lastFlow = day
+            }
+        }
+        if let start, let lastFlow {
+            periods.append(LoggedPeriod(start: start, lastFlow: lastFlow, end: nil))
+        }
+        return periods
+    }
+
+    func loggedPeriod(on date: Date) -> LoggedPeriod? {
+        let day = Self.cal.startOfDay(for: date)
+        return loggedPeriods.first { day >= $0.start && day <= $0.visibleEnd }
+    }
+
+    /// Explicit calendar dates take priority; no-flow entries otherwise block inferred flow.
+    func isRecordedPeriod(_ date: Date) -> Bool {
+        let day = Self.cal.startOfDay(for: date)
+        if periodHistory.contains(day) { return true }
+        if let entry = log(for: day), entry.flow == "None" { return false }
+        return loggedPeriod(on: day) != nil
+    }
+
+    /// Marking a period start in the calendar offers Light as an editable initial flow,
+    /// without silently writing a daily log or assuming a specific intensity permanently.
+    func flowForLog(on date: Date, saved: String? = nil) -> String {
+        let stored = saved ?? log(for: date)?.flow ?? "None"
+        return stored == "None" && periodHistory.contains(date) ? "Light" : stored
+    }
+
     func fmt(_ date: Date) -> String { date.formatted(.dateTime.month(.abbreviated).day()) }
 
     // MARK: Actions
@@ -422,6 +494,23 @@ final class CycleStore {
 
     /// Logs are keyed by day, so saving replaces that day's entry (not necessarily today's).
     func save(_ log: DayLog) {
+        // An explicit no-flow entry also ends any overlapping manually opened period.
+        if log.flow == "None" {
+            let day = Self.cal.startOfDay(for: log.date)
+            if let record = periodHistory.records.first(where: {
+                $0.start <= day && ($0.end.map { day <= $0 } ?? true)
+            }) {
+                var updated = periodHistory
+                do {
+                    if Self.cal.isDate(record.start, inSameDayAs: day) {
+                        updated.remove(id: record.id)
+                    } else {
+                        try updated.save(id: record.id, start: record.start, end: Self.add(day, -1))
+                    }
+                    try persistPeriods(updated)
+                } catch { periodStorageError = error.localizedDescription }
+            }
+        }
         try? userRef.collection("logs").document(log.id).setData(from: log)
         showLog = false
         selectedLogDate = nil

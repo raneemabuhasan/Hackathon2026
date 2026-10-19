@@ -73,7 +73,7 @@ struct CycleView: View {
                 periodControls
                     .background(interactionBounds("controls"))
             }
-            Text("Demo insights below use fictional cycle and symptom data, not your saved periods.").font(.caption).foregroundStyle(Palette.inkSoft)
+            Text("Cycle charts and summaries use your saved logs. Predictions are estimates.").font(.caption).foregroundStyle(Palette.inkSoft)
             lengths
             symptoms
             logHistory
@@ -138,9 +138,22 @@ struct CycleView: View {
         }
     }
 
+    private var loggedPeriodAtSelectedDate: LoggedPeriod? {
+        store.loggedPeriod(on: selectedDate)
+    }
+
+    private var loggedPeriodEndingHere: LoggedPeriod? {
+        store.loggedPeriods.first {
+            $0.end.map { Calendar.current.isDate($0, inSameDayAs: selectedDate) } ?? false
+        }
+    }
+
     private var startSwitchLabel: String {
         if let record = displayedStartPeriod {
             return "Period started on " + store.fmt(record.start)
+        }
+        if let inferred = loggedPeriodAtSelectedDate {
+            return "Period started on " + store.fmt(inferred.start)
         }
         return "Period started " + selectedDayLabel
     }
@@ -196,7 +209,7 @@ struct CycleView: View {
             }
             VStack(spacing: 16) {
                 Toggle(startSwitchLabel, isOn: Binding(
-                    get: { displayedStartPeriod != nil },
+                    get: { displayedStartPeriod != nil || loggedPeriodAtSelectedDate != nil },
                     set: { enabled in
                         if enabled {
                             updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
@@ -208,13 +221,17 @@ struct CycleView: View {
                             }
                         }
                     }))
+                // Auto-detected periods are edited via their originating day logs.
+                .disabled(displayedStartPeriod == nil && loggedPeriodAtSelectedDate != nil)
                 Divider()
                 Toggle("Period ended \(selectedDayLabel)", isOn: Binding(
-                    get: { endingPeriod != nil },
+                    get: { endingPeriod != nil || loggedPeriodEndingHere != nil },
                     set: { enabled in
                         if enabled {
                             if let record = periodToEnd {
                                 updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
+                            } else if let inferred = loggedPeriodAtSelectedDate {
+                                updatePeriodSwitch { try store.savePeriod(start: inferred.start, end: selectedDate) }
                             } else {
                                 periodError = "Mark a period start on this date or an earlier date first."
                             }
@@ -222,16 +239,21 @@ struct CycleView: View {
                             updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: nil) }
                         }
                     }))
+                .disabled(endingPeriod == nil && loggedPeriodEndingHere != nil)
 
             }
             .toggleStyle(.switch)
             .disabled(store.periodStorageError != nil || isFutureDate)
+            if loggedPeriodAtSelectedDate != nil && displayedStartPeriod == nil {
+                Text("Detected from saved flow logs. Change the day log to correct this period.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+            }
             Text("Changes save automatically. Turning off a start removes that period; turning off an end marks it ongoing again.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
-            if periodToEnd == nil && endingPeriod == nil {
+            if periodToEnd == nil && endingPeriod == nil && loggedPeriodAtSelectedDate == nil {
                 Text("Mark a start date before marking an end.").font(.caption).foregroundStyle(Palette.inkSoft)
             }
-            if store.periodHistory.records.isEmpty {
+            if store.periodHistory.records.isEmpty && store.loggedPeriods.isEmpty {
                 Text("No periods recorded yet.").font(.caption)
             }
             ForEach(store.periodHistory.records) { record in
@@ -247,7 +269,25 @@ struct CycleView: View {
                         .accessibilityLabel("Delete period starting \(store.fmt(record.start))")
                 }
             }
-            Text("Period dates are saved on this device. Other screens still use demo data.")
+            ForEach(store.loggedPeriods.filter { inferred in
+                !store.periodHistory.records.contains { manual in
+                    // An unfinished manual record covers its likely immediate period window here.
+                    let manualEnd = manual.end ?? CycleStore.add(manual.start, 9)
+                    return manual.start <= inferred.visibleEnd && inferred.start <= manualEnd
+                }
+            }) { inferred in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(inferred.start.formatted(date: .abbreviated, time: .omitted))
+                        Text(inferred.end.map { "Through " + $0.formatted(date: .abbreviated, time: .omitted) }
+                             ?? "Flow logged through " + inferred.lastFlow.formatted(date: .abbreviated, time: .omitted))
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
+                    Spacer()
+                    Text("From logs").font(.caption).foregroundStyle(Palette.inkFaint)
+                }
+            }
+            Text("Calendar-only period dates stay on this device. Day logs sync through your account.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
         }.card().tint(Palette.accent)
     }
@@ -300,13 +340,17 @@ struct CycleView: View {
     }
 
     private func dayCell(_ d: Date) -> some View {
-        let period = store.periodHistory.contains(d)
-        let completed = store.periodHistory.records.first { record in
-            guard let end = record.end else { return false }
-            return d >= CycleStore.cal.startOfDay(for: record.start) && d <= CycleStore.cal.startOfDay(for: end)
+        let savedLog = store.log(for: d)
+        let period = store.isRecordedPeriod(d)
+        let manuallyRecorded = store.periodHistory.records.first { record in
+            d >= CycleStore.cal.startOfDay(for: record.start)
+                && d <= CycleStore.cal.startOfDay(for: record.end ?? record.start)
         }
-        let isStart = completed.map { CycleStore.cal.isDate(d, inSameDayAs: $0.start) } ?? false
-        let isEnd = completed?.end.map { CycleStore.cal.isDate(d, inSameDayAs: $0) } ?? false
+        let fromLog = store.loggedPeriod(on: d)
+        let isStart = (manuallyRecorded.map { CycleStore.cal.isDate(d, inSameDayAs: $0.start) } ?? false)
+            || (fromLog.map { CycleStore.cal.isDate(d, inSameDayAs: $0.start) } ?? false)
+        let isEnd = (manuallyRecorded?.end.map { CycleStore.cal.isDate(d, inSameDayAs: $0) } ?? false)
+            || (fromLog?.end.map { CycleStore.cal.isDate(d, inSameDayAs: $0) } ?? false)
         let isToday = CycleStore.cal.isDate(d, inSameDayAs: store.today)
         let isSelected = CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
         return Button {
@@ -324,15 +368,15 @@ struct CycleView: View {
                 .frame(height: 52)
                 .foregroundStyle(Palette.ink)
                 .overlay(alignment: .bottom) {
-                    if completed != nil {
+                    if period {
                         Rectangle().fill(Palette.pink)
                             .frame(height: 4)
                             .padding(.leading, isStart ? 8 : 0)
                             .padding(.trailing, isEnd ? 8 : 0)
                             .padding(.bottom, 3)
                             .allowsHitTesting(false)
-                    } else if period {
-                        Circle().fill(Palette.accent)
+                    } else if savedLog != nil {
+                        Circle().fill(Color.gray.opacity(0.65))
                             .frame(width: 5, height: 5)
                             .padding(.bottom, 3)
                             .allowsHitTesting(false)
@@ -807,7 +851,9 @@ struct CycleView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(log.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                             .font(.system(size: 14, weight: .semibold))
-                        let details = ([log.flow != "None" ? "Flow: \(log.flow)" : ""]
+                        let periodMarked = store.periodHistory.contains(log.date)
+                        let details = ([log.flow != "None" ? "Flow: \(log.flow)" :
+                                        (periodMarked ? "Period marked" : "")]
                             + log.symptoms + log.moods).filter { !$0.isEmpty }
                         Text(details.isEmpty ? (log.note.isEmpty ? "Daily check-in" : "Note saved")
                              : details.joined(separator: " · "))
