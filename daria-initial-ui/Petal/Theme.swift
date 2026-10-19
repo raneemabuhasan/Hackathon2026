@@ -93,6 +93,7 @@ struct Chip: View {
     let label: String
     let selected: Bool
     var small = false
+    var icon: AnyView? = nil
     let action: () -> Void
 
     var body: some View {
@@ -103,6 +104,7 @@ struct Chip: View {
                         .font(.system(size: small ? 10 : 11, weight: .bold))
                         .accessibilityHidden(true)
                 }
+                if let icon { icon.frame(width: 14, height: 14).accessibilityHidden(true) }
                 Text(label)
                     .font(small ? .caption : .subheadline)
                     .fontWeight(.medium)
@@ -118,8 +120,6 @@ struct Chip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.easeOut(duration: 0.15), value: selected)
     }
 }

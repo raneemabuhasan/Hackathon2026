@@ -5,6 +5,7 @@ struct TodayView: View {
     @Environment(CycleStore.self) private var store
     @Environment(AuthModel.self) private var auth
     @State private var showSettings = false
+    @State private var showPeriodEntry = false
 
     var body: some View {
         Page {
@@ -44,21 +45,38 @@ struct TodayView: View {
     // MARK: Cycle ring
 
     private var hero: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 26) {
             CycleRing()
-                .frame(width: 270, height: 270)
-            Text("Estimates adapt as you log your cycle")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-            Button("Edit cycle details") { store.showCycleSetup = true }
-                .font(.caption)
+            VStack(spacing: 16) {
+                Button {
+                    showPeriodEntry = true
+                } label: {
+                    Text(store.ongoingPeriod == nil ? "Period started" : "Period ended")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Palette.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
 
+                Button("Edit cycle details") { store.showCycleSetup = true }
+                    .font(.system(size: 11, weight: .medium))
+                    .tint(Palette.inkSoft)
+                    .frame(minHeight: 44)
+            }
         }
-        .padding(.vertical, 22)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
         .background(
-            RadialGradient(colors: [Palette.blush, Palette.mist, Palette.cream],
-                           center: .top, startRadius: 0, endRadius: 380),
+            LinearGradient(colors: [Color(hex: 0xF7BAC9), Palette.mist, Palette.cream],
+                           startPoint: .top, endPoint: .bottom),
             in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .sheet(isPresented: $showPeriodEntry) {
+            PeriodQuickEntry().environment(store)
+        }
     }
 
     // MARK: Prediction
@@ -180,7 +198,7 @@ struct TodayView: View {
 
     private var plan: some View {
         let ai = store.plan
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text("Your plan for today").font(.system(size: 15, weight: .semibold))
                 if ai != nil {
@@ -196,13 +214,13 @@ struct TodayView: View {
                 }
             }
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
                         .font(.system(size: 17))
                         .foregroundStyle(Palette.accent)
                         .frame(width: 40, height: 40)
                         .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                         if item.nhs {
@@ -222,112 +240,135 @@ struct TodayView: View {
     }
 }
 
+/// A 28-day exploration control. Selection never writes to the recorded cycle.
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
-    @State private var showEntry = false
-    /// Day picked by dragging round the ring; nil follows today.
-    @State private var scrubDay: Int?
+    @State private var previewDay: Int?
 
-    private var length: Int { store.average }
-    private var day: Int { scrubDay ?? store.cycleDay }
-    private var phase: Phase { store.phase(forDay: day) }
+    private let cycleLength = 28
 
-    private var status: String {
-        if let start = store.expectedPeriodStart(for: store.today) {
-            let end = CycleStore.add(start, store.periodLength - 1)
-            if end < store.today { return "Longer than your usual \(store.periodLength) days" }
-            return CycleStore.days(end, from: store.today) == 0 ? "Likely ends today" : "Likely ends around \(store.fmt(end))"
+    private var actualDay: Int {
+        min(28, max(1, store.cycleDay))
+    }
+
+    private var selectedDay: Int { previewDay ?? actualDay }
+
+    // Fixed preview ranges avoid changing the user's own cycle estimates.
+    private func days(for phase: Phase) -> ClosedRange<Int> {
+        switch phase {
+        case .menstrual: 1...5
+        case .follicular: 6...12
+        case .mid: 13...16
+        case .luteal: 17...28
         }
-        let days = CycleStore.days(store.nextStart, from: store.today)
-        if days < 0 { return "Estimated date passed" }
-        if days == 0 { return "Next period estimated around today" }
-        return "Next period in ~\(days) days"
+    }
+
+    private var selectedPhase: Phase {
+        Phase.allCases.first { days(for: $0).contains(selectedDay) } ?? .luteal
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let size = min(geo.size.width, geo.size.height)
-            let radius = size / 2 - 18
-            let center = CGPoint(x: size / 2, y: size / 2)
-            ZStack {
-                ForEach(Phase.allCases) { p in
-                    let r = store.range(of: p)
-                    Circle()
-                        .trim(from: Double(r.lowerBound - 1) / Double(length), to: Double(r.upperBound) / Double(length))
-                        .stroke(p.color.opacity(p == phase ? 1 : 0.4), lineWidth: 16)
-                        .rotationEffect(.degrees(-90))
-                        .padding(18)
-                }
-                Circle().fill(Palette.ink)
-                    .frame(width: 6, height: 6)
-                    .position(point(for: min(store.cycleDay, length), center: center, radius: radius))
-                Circle().fill(Palette.surface)
-                    .overlay(Circle().stroke(phase.color, lineWidth: 4))
-                    .frame(width: 28, height: 28)
-                    .shadow(color: Palette.ink.opacity(0.15), radius: 4, y: 2)
-                    .position(point(for: min(day, length), center: center, radius: radius))
+        VStack(spacing: 16) {
+            GeometryReader { geometry in
+                let size = min(geometry.size.width, geometry.size.height)
+                let radius = size / 2 - 16
+                let angle = (Double(selectedDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
+
+                ZStack {
+                    ForEach(Phase.allCases) { phase in
+                        let range = days(for: phase)
+                        Circle()
+                            .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
+                                  to: Double(range.upperBound) / Double(cycleLength) - 0.012)
+                            .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
+                                                                  lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .padding(16)
+                    }
+
+                    VStack(spacing: 4) {
+                        Eyebrow(text: "Cycle day")
+                        Text("\(selectedDay)")
+                            .font(.display(68)).monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text("of about 28 days")
+                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    }
                     .allowsHitTesting(false)
-                // Only the band around the ring scrubs, so the centre button and page scrolling still work.
-                Circle().stroke(Color.clear, lineWidth: 48)
-                    .contentShape(Circle().stroke(lineWidth: 48))
-                    .padding(18)
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                        scrubDay = day(at: value.location, center: center)
-                    })
-                centre
+
+                    ZStack {
+                        Circle().fill(.clear)
+                        Circle()
+                            .fill(.white)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
+                            .frame(width: 28, height: 28)
+                            .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
+                    }
+                    .frame(width: 48, height: 48)
+                    .contentShape(Circle())
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cyclePreviewRing"))
+                        .onChanged { value in selectDay(at: value.location, size: size) })
+                    .position(x: size / 2 + radius * cos(angle),
+                              y: size / 2 + radius * sin(angle))
+                }
+                .frame(width: size, height: size)
+                .coordinateSpace(name: "cyclePreviewRing")
             }
-            .frame(width: size, height: size)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .sensoryFeedback(.selection, trigger: scrubDay)
-        .accessibilityElement(children: .contain)
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: scrubDay = min(length, day + 1)
-            case .decrement: scrubDay = max(1, day - 1)
-            @unknown default: break
+            .frame(width: 230, height: 230)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Cycle day preview")
+            .accessibilityValue("Day \(selectedDay) of 28, \(selectedPhase.name) phase")
+            .accessibilityHint("Adjust to explore a day without changing your saved cycle")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: previewDay = min(28, selectedDay + 1)
+                case .decrement: previewDay = max(1, selectedDay - 1)
+                @unknown default: break
+                }
+            }
+
+            HStack(spacing: 6) {
+                Circle().fill(selectedPhase.color).frame(width: 8, height: 8)
+                Text("\(selectedPhase.name) phase")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Palette.surface.opacity(0.8), in: Capsule())
+
+            ViewThatFits(in: .horizontal) {
+                legend(spacing: 12)
+                legend(spacing: 5)
+            }
+
+            if previewDay != nil {
+                Button("Preview · Back to today") { previewDay = nil }
+                    .font(.system(size: 11, weight: .medium))
+                    .tint(Palette.inkSoft)
             }
         }
-        .sheet(isPresented: $showEntry) { PeriodQuickEntry().environment(store) }
     }
 
-    private var centre: some View {
-        VStack(spacing: 4) {
-            Text(scrubDay == nil ? "Today" : CycleStore.add(store.lastStart, day - 1).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-            Text("Day \(day)")
-                .font(.system(size: 30, weight: .semibold, design: .serif))
-                .monospacedDigit()
-            Text(phase.name).font(.caption.weight(.semibold)).foregroundStyle(Palette.accent)
-            if scrubDay == nil {
-                Text(status).font(.caption2).foregroundStyle(Palette.inkSoft)
-                    .multilineTextAlignment(.center)
-                Button(store.ongoingPeriod == nil ? "Period started" : "Period ended") { showEntry = true }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(Palette.mist, in: Capsule())
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-            } else {
-                Button("Back to today") { scrubDay = nil }
-                    .font(.caption.weight(.semibold))
-                    .padding(.top, 4)
+    private func legend(spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            ForEach(Phase.allCases) { phase in
+                HStack(spacing: 4) {
+                    Circle().fill(phase.color).frame(width: 6, height: 6)
+                    Text(phase.name)
+                        .font(.system(size: 10, weight: phase == selectedPhase ? .bold : .regular))
+                }
+                .foregroundStyle(phase == selectedPhase ? Palette.ink : Palette.inkSoft)
             }
         }
-        .frame(maxWidth: 170)
     }
 
-    /// Centre of `day` on the ring, starting at 12 o'clock and running clockwise.
-    private func point(for day: Int, center: CGPoint, radius: CGFloat) -> CGPoint {
-        let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
-        return CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
-    }
-
-    private func day(at location: CGPoint, center: CGPoint) -> Int {
-        var angle = atan2(location.y - center.y, location.x - center.x) + .pi / 2
-        if angle < 0 { angle += 2 * .pi }
-        return min(length, Int(angle / (2 * .pi) * Double(length)) + 1)
+    private func selectDay(at point: CGPoint, size: CGFloat) {
+        let x = point.x - size / 2
+        let y = point.y - size / 2
+        guard hypot(x, y) > 20 else { return }
+        let fullTurn = 2 * Double.pi
+        let angle = (atan2(Double(y), Double(x)) + Double.pi / 2 + fullTurn)
+            .truncatingRemainder(dividingBy: fullTurn)
+        previewDay = min(28, max(1, Int(angle / fullTurn * Double(cycleLength)) + 1))
     }
 }
 
