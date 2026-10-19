@@ -64,7 +64,7 @@ struct TabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             item(.today, "Today", "circle.circle")
-            item(.cycle, "Cycle", "calendar")
+            item(.cycle, "Calendar", "calendar")
             Button { store.showLog = true } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .semibold))
