@@ -1,9 +1,13 @@
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
-    @State private var store = CycleStore()
+      @Environment(CycleStore.self) private var store
+      @Environment(\.scenePhase) private var scenePhase 
 
     var body: some View {
+        @Bindable var store = store
+
         ZStack(alignment: .bottom) {
             Palette.bg.ignoresSafeArea()
 
@@ -17,7 +21,9 @@ struct ContentView: View {
             }
             .transition(.opacity)
 
+            // Stay put behind the keyboard instead of riding up over the Companion text field.
             TabBar()
+                .ignoresSafeArea(.keyboard)
         }
         .animation(.easeOut(duration: 0.2), value: store.tab)
         .overlay(alignment: .top) {
@@ -39,22 +45,19 @@ struct ContentView: View {
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
         }
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { store.referenceDate = $0 }
-        .onChange(of: store.showLog) { _, showing in
-            if !showing { store.editingLog = nil }
-        }
-        .safeAreaInset(edge: .top) {
-            if let error = store.storageError {
-                Text(error).font(.caption).padding(10).frame(maxWidth: .infinity)
-                    .background(Palette.surface2)
-            }
-        }
         .environment(store)
+        .fullScreenCover(isPresented: $store.showCycleSetup) {
+            CycleSetupView().environment(store)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.today = Calendar.current.startOfDay(for: Date()) }
+        }
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
     }
 }
 
+@MainActor
 struct TabBar: View {
     @Environment(CycleStore.self) private var store
 
@@ -97,4 +100,3 @@ struct TabBar: View {
     }
 }
 
-#Preview { ContentView() }

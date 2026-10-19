@@ -7,10 +7,8 @@ let package = Package(
     products: [.library(name: "PetalComparison", targets: ["PetalComparison"])],
     targets: [
         .target(name: "PetalComparison", path: "Petal",
-                exclude: ["CompanionView.swift", "ContentView.swift", "CycleStore.swift", "CycleView.swift",
-                          "LogSheet.swift", "NourishView.swift", "PetalApp.swift", "Theme.swift",
-                          "TodayView.swift", "SymptomComparisonView.swift", "PeriodHistoryView.swift"],
-                sources: ["SymptomComparison.swift", "PersonalHistory.swift", "CyclePrediction.swift"]),
+                exclude: ["Animations", "Assistant.swift", "AuthModel.swift", "CompanionView.swift", "ContentView.swift", "CycleStore.swift", "CycleView.swift", "GoogleService-Info.plist", "LogSheet.swift", "NourishView.swift", "OnboardingView.swift", "PeriodHistory.swift", "PetalApp.swift", "README_VALEN.txt", "Reminders.swift", "SettingsView.swift", "SignInView.swift", "SymptomComparisonView.swift", "Theme.swift", "TodayView.swift"],
+                sources: ["SymptomComparison.swift"]),
         .testTarget(name: "PetalComparisonTests", dependencies: ["PetalComparison"],
                     path: "ComparisonTests")
     ]

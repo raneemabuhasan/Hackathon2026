@@ -1,22 +1,25 @@
 import Foundation
 
-struct DayLog: Identifiable, Codable {
-    var id = UUID()
+/// Snapshot of an existing database entry. No separate symptom store or document is created.
+struct ComparisonEntry: Identifiable, Codable {
+    var id = UUID().uuidString
     var date: Date
-    var flow = "None"
-    var moods: [String] = []
     var symptoms: [String] = []
-    // Overall daily pain, NOT the severity of each selected symptom.
     var pain: Int? = nil
-    var energy = 3
     var note = ""
+
+    static func databaseEntry(id: String, date: Date, symptoms: [String], pain: Int, note: String) -> ComparisonEntry {
+        // Current database schema cannot distinguish default zero from an explicit zero.
+        ComparisonEntry(id: id, date: date, symptoms: symptoms,
+                        pain: (1...10).contains(pain) ? pain : nil, note: note)
+    }
 }
 
 struct ComparedCycle: Identifiable, Codable {
     var id: Date { start }
     let start: Date
     let nextStart: Date?
-    let logs: [DayLog]
+    let logs: [ComparisonEntry]
     var isOngoing: Bool { nextStart == nil }
 }
 
@@ -26,7 +29,7 @@ struct SymptomObservation: Identifiable, Codable {
     let cyclesReported: Int
     let earlierDays: Int
     let laterDays: Int
-    let evidence: [DayLog]
+    let evidence: [ComparisonEntry]
 }
 
 struct CycleComparison: Codable {
@@ -35,14 +38,14 @@ struct CycleComparison: Codable {
     let observations: [SymptomObservation]
     var earlierPeakPain: Int? { peakPain(earlier.logs) }
     var laterPeakPain: Int? { peakPain(later.logs) }
-    private func peakPain(_ logs: [DayLog]) -> Int? {
+    private func peakPain(_ logs: [ComparisonEntry]) -> Int? {
         logs.compactMap(\.pain).filter { (0...10).contains($0) }.max()
     }
 }
 
 /// Pure comparison tool. No storage, network, AI inference, or medical thresholds.
 enum SymptomComparisonEngine {
-    static func cycles(starts: [Date], logs: [DayLog], asOf: Date,
+    static func cycles(starts: [Date], logs: [ComparisonEntry], asOf: Date,
                        calendar: Calendar = .current) -> [ComparedCycle] {
         let today = calendar.startOfDay(for: asOf)
         let dates = Set(starts.map { calendar.startOfDay(for: $0) })
@@ -52,7 +55,7 @@ enum SymptomComparisonEngine {
             let entries = logs.filter {
                 let day = calendar.startOfDay(for: $0.date)
                 return day >= start && day <= today && (next.map { day < $0 } ?? true)
-            }.sorted { $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date < $1.date }
+            }.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
             return ComparedCycle(start: start, nextStart: next, logs: entries)
         }
     }
@@ -66,7 +69,7 @@ enum SymptomComparisonEngine {
         let observations = names.map { name in
             let a = earlier.logs.filter { $0.symptoms.contains(name) }
             let b = later.logs.filter { $0.symptoms.contains(name) }
-            let countDays: ([DayLog]) -> Int = { entries in
+            let countDays: ([ComparisonEntry]) -> Int = { entries in
                 Set(entries.map { calendar.startOfDay(for: $0.date) }).count
             }
             return SymptomObservation(symptom: name,

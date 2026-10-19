@@ -1,138 +1,88 @@
 import SwiftUI
 
+@MainActor
 struct SymptomComparisonView: View {
     @Environment(CycleStore.self) private var store
     @State private var first: Date?
     @State private var second: Date?
-    @State private var editing: DayLog?
 
     private var cycles: [ComparedCycle] { Array(store.comparisonCycles.reversed()) }
     private var comparison: CycleComparison? {
         guard cycles.count >= 2 else { return nil }
-        let a = cycles.first(where: { $0.start == first }) ?? cycles[0]
-        let b = cycles.first(where: { $0.start == second }) ?? cycles[1]
+        let a = cycles.first { $0.start == first } ?? cycles[0]
+        let b = cycles.first { $0.start == second } ?? cycles[1]
         return SymptomComparisonEngine.compare(a, b)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeader(title: "Compare cycles")
-            Text("Counts describe recorded days; missing entries do not mean symptoms were absent.")
+            Text("Uses saved period starts and your onboarding start, not starts inferred from missing flow entries. Counts are recorded days, not symptom episodes.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
-            if cycles.count < 2 {
-                Text("Add at least two period start dates to compare cycles.")
+            if !store.logsLoaded {
+                ProgressView("Loading symptom history")
+            } else if let error = store.logsError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            } else if cycles.count < 2 {
+                Text("Record at least two period starts on the calendar to compare.")
             } else {
                 selector("First cycle", selection: $first, fallback: cycles[0].start)
                 selector("Second cycle", selection: $second, fallback: cycles[1].start)
                 if let result = comparison {
+                    Text("Earlier: \(label(result.earlier)) / Later: \(label(result.later))").font(.caption)
                     if result.later.isOngoing {
-                        Text("The later cycle is ongoing. Its counts are only up to today.").font(.caption)
+                        Text("The later cycle has no following start recorded. Counts are up to today.").font(.caption)
                     }
-                    Text("Earlier / Later").font(.caption).foregroundStyle(Palette.inkSoft)
-                    if result.observations.isEmpty {
-                        Text("No symptoms recorded in these cycles. There is not enough evidence to identify a pattern.")
-                    }
+                    Text("Missing entries do not mean symptoms were absent. More recorded days do not establish worsening symptoms.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                    if result.observations.isEmpty { Text("No symptoms recorded in the selected cycles.") }
                     ForEach(result.observations) { observation in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(observation.symptom).font(.headline)
                             Text("Recorded days: \(observation.earlierDays) / \(observation.laterDays)")
-                            Text(observation.cyclesReported == 2
-                                 ? "Reported in both selected cycles."
-                                 : "Reported in one selected cycle; the other has no entry for this symptom.")
+                            Text("Reported in \(observation.cyclesReported) of the 2 selected cycles.")
                                 .font(.caption).foregroundStyle(Palette.inkSoft)
                             DisclosureGroup("Supporting entries (\(observation.evidence.count))") {
-                                ForEach(observation.evidence) { entry in
-                                    evidence(entry)
-                                }
+                                ForEach(observation.evidence) { entry in evidence(entry) }
                             }
-                        }
-                        .padding(.vertical, 8)
+                        }.padding(.vertical, 6)
                         Divider()
                     }
-                    Text("Highest reported overall daily pain (0–10)").font(.subheadline.bold())
-                    Text("Earlier: \(rating(result.earlierPeakPain)) · Later: \(rating(result.laterPeakPain))")
-                    Text("This is a daily pain rating, not a severity rating for each symptom. More recorded days do not establish worsening symptoms.")
+                    Text("Highest positive overall daily pain rating").font(.subheadline.bold())
+                    Text("Earlier: \(rating(result.earlierPeakPain)) / Later: \(rating(result.laterPeakPain))")
+                    Text("Older logs use 0 for both the default and a zero rating, so zeros are excluded. This is overall daily pain, not severity for each symptom.")
                         .font(.caption).foregroundStyle(Palette.inkSoft)
                     DisclosureGroup("All selected entries / pain evidence") {
                         ForEach(result.earlier.logs + result.later.logs) { entry in evidence(entry) }
                     }
-                } else {
-                    Text("Choose two different cycles.")
-                }
+                } else { Text("Choose two different cycles.") }
             }
-        }
-        .font(.system(size: 13))
-        .card()
-        .sheet(item: $editing) { entry in
-            ComparisonEntryEditor(entry: entry).environment(store)
-        }
+        }.font(.system(size: 13)).card()
     }
 
-    private func rating(_ value: Int?) -> String { value.map { "\($0)/10" } ?? "Not reported" }
+    private func rating(_ value: Int?) -> String { value.map { "\($0)/10" } ?? "No positive rating recorded" }
     private func label(_ cycle: ComparedCycle) -> String {
-        cycle.start.formatted(date: .abbreviated, time: .omitted) + (cycle.isOngoing ? " (ongoing)" : "")
+        cycle.start.formatted(date: .abbreviated, time: .omitted)
     }
     private func selector(_ title: String, selection: Binding<Date?>, fallback: Date) -> some View {
-        Picker(title, selection: Binding<Date>(get: { cycles.contains { $0.start == selection.wrappedValue } ? (selection.wrappedValue ?? fallback) : fallback },
-                                              set: { selection.wrappedValue = $0 })) {
+        Picker(title, selection: Binding<Date>(get: {
+            cycles.contains { $0.start == selection.wrappedValue } ? (selection.wrappedValue ?? fallback) : fallback
+        }, set: { selection.wrappedValue = $0 })) {
             ForEach(cycles) { cycle in Text(label(cycle)).tag(cycle.start) }
-        }
-        .pickerStyle(.menu)
+        }.pickerStyle(.menu)
     }
-    private func evidence(_ entry: DayLog) -> some View {
-        Button { editing = entry } label: {
+    private func evidence(_ entry: ComparisonEntry) -> some View {
+        Button {
+            store.selectedLogDate = entry.date
+            store.showLog = true
+        } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.date.formatted(date: .abbreviated, time: .omitted)).bold()
                 Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
                 Text("Overall daily pain: \(rating(entry.pain))")
                 if !entry.note.isEmpty { Text(entry.note) }
-                Text("Review / edit entry").foregroundStyle(Palette.accent)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                Text("Review / edit saved entry").foregroundStyle(Palette.accent)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
         }.buttonStyle(.plain)
-    }
-}
-
-private struct ComparisonEntryEditor: View {
-    @Environment(CycleStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State var entry: DayLog
-    @State private var confirmingDelete = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if let error = store.storageError { Text(error) }
-                Section("Recorded date") { Text(entry.date.formatted(date: .complete, time: .omitted)) }
-                Section("Symptoms") {
-                    ForEach(Array(Set(CycleStore.symptomOptions + entry.symptoms)).sorted(), id: \.self) { name in
-                        Toggle(name, isOn: Binding(get: { entry.symptoms.contains(name) }, set: { selected in
-                            entry.symptoms.removeAll { $0 == name }
-                            if selected { entry.symptoms.append(name) }
-                        }))
-                    }
-                }
-                Section("Overall daily pain") {
-                    Toggle("Include a rating", isOn: Binding(get: { entry.pain != nil },
-                        set: { entry.pain = $0 ? 0 : nil }))
-                    if entry.pain != nil {
-                        Stepper("\(entry.pain ?? 0)/10", value: Binding(get: { entry.pain ?? 0 },
-                            set: { entry.pain = $0 }), in: 0...10)
-                    }
-                }
-                Section("Note") { TextField("Note", text: $entry.note, axis: .vertical) }
-                Button("Delete entry", role: .destructive) { confirmingDelete = true }
-            }
-            .navigationTitle("Review entry")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { if store.updateLog(entry) { dismiss() } }
-                }
-            }
-            .confirmationDialog("Delete this entry?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("Delete entry", role: .destructive) { if store.deleteLog(id: entry.id) { dismiss() } }
-            }
-        }
     }
 }
