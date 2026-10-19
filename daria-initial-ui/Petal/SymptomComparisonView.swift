@@ -17,7 +17,7 @@ struct SymptomComparisonView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeader(title: "Compare cycles")
-            Text("Uses saved period starts and your onboarding start, not starts inferred from missing flow entries. Counts are recorded days, not symptom episodes.")
+            Text("Uses saved period starts. Counts are recorded days, not symptom episodes.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
             if !store.logsLoaded {
                 ProgressView("Loading symptom history")

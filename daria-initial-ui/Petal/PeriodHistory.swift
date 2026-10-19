@@ -10,6 +10,11 @@ struct PeriodRecord: Identifiable, Codable, Equatable {
 struct PeriodHistory: Codable {
     private(set) var records: [PeriodRecord] = []
 
+    static func restoring(records: [PeriodRecord]?, onboardingStart: Date,
+                          calendar: Calendar = .current) -> PeriodHistory {
+        PeriodHistory(records: records ?? [PeriodRecord(start: calendar.startOfDay(for: onboardingStart), end: nil)])
+    }
+
     mutating func save(id: UUID? = nil, start: Date, end: Date?, today: Date = .now, calendar: Calendar = .current) throws {
         let start = calendar.startOfDay(for: start)
         let end = end.map { calendar.startOfDay(for: $0) }

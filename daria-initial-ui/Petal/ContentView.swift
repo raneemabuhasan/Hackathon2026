@@ -65,7 +65,10 @@ struct TabBar: View {
         HStack(spacing: 0) {
             item(.today, "Today", "circle.circle")
             item(.cycle, "Cycle", "calendar")
-            Button { store.showLog = true } label: {
+            Button {
+                store.selectedLogDate = store.tab == .cycle ? store.selectedCalendarDate ?? store.today : nil
+                store.showLog = true
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
@@ -74,7 +77,8 @@ struct TabBar: View {
                     .shadow(color: Palette.rose.opacity(0.4), radius: 10, y: 6)
             }
             .frame(maxWidth: .infinity)
-            .accessibilityLabel("Log today")
+            .accessibilityLabel(store.tab == .cycle ? "Log selected date" : "Log today")
+            .disabled(store.tab == .cycle && (store.selectedCalendarDate ?? store.today) > store.today)
             item(.nourish, "Nourish", "leaf")
             item(.companion, "Companion", "sparkles")
         }

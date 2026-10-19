@@ -191,6 +191,7 @@ final class CycleStore {
     var showLog = false
     /// Day to open in LogSheet when editing a past entry; nil means today.
     var selectedLogDate: Date?
+    var selectedCalendarDate: Date?
     var toast: String?
 
     let uid: String
@@ -258,10 +259,12 @@ final class CycleStore {
                     guard let self else { return }
                     if let error { print("Profile listener:", error) }
                     self.profile = try? snap?.data(as: Profile.self)
-                    self.periodHistory = PeriodHistory(records: self.profile?.periodRecords ?? [])
+                    self.periodHistory = self.profile.map {
+                        PeriodHistory.restoring(records: $0.periodRecords, onboardingStart: $0.lastPeriodStart)
+                    } ?? PeriodHistory()
                     self.invalidateComparisonConversation()
                     self.baseline = self.profile.map {
-                        CycleBaseline(lastStart: $0.lastPeriodStart, periodDays: $0.periodLength, cycleDays: $0.cycleLength)
+                        CycleBaseline(lastStart: nil, periodDays: $0.periodLength, cycleDays: $0.cycleLength)
                     }
                     self.loaded = true
                     self.syncNotifications()
@@ -324,19 +327,37 @@ final class CycleStore {
     }
 
     func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
-        userRef.updateData([
-            "name": name,
-            "lastPeriodStart": Timestamp(date: Self.cal.startOfDay(for: lastPeriodStart)),
-            "cycleLength": cycleLength,
-            "periodLength": periodLength,
-        ]) { error in if let error { print("Profile update failed:", error) } }
-        showToast("Settings saved")
+        guard let profile else { return }
+        var history = periodHistory
+        let start = Self.cal.startOfDay(for: lastPeriodStart)
+        do {
+            let existing = history.records.max { $0.start < $1.start }
+            if !Self.cal.isDate(start, inSameDayAs: existing?.start ?? profile.lastPeriodStart) {
+                try history.save(id: existing?.id, start: start, end: existing?.end)
+            }
+            var fields: [String: Any] = [
+                "name": name,
+                "lastPeriodStart": Timestamp(date: start),
+                "cycleLength": cycleLength,
+                "periodLength": periodLength,
+            ]
+            fields["periodRecords"] = try Firestore.Encoder().encode(PeriodFields(periodRecords: history.records))["periodRecords"]
+            userRef.updateData(fields) { [weak self] error in
+                Task { @MainActor in
+                    self?.showToast(error.map { "Could not save settings: \($0.localizedDescription)" } ?? "Settings saved")
+                }
+            }
+        } catch {
+            showToast("Could not save settings: \(error.localizedDescription)")
+        }
     }
 
     /// Writes the profile plus a few default reminders the first time someone signs in.
     func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
-        let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
-                              cycleLength: cycleLength, periodLength: periodLength)
+        let start = Self.cal.startOfDay(for: lastPeriodStart)
+        let profile = Profile(name: name, lastPeriodStart: start,
+                              cycleLength: cycleLength, periodLength: periodLength,
+                              periodRecords: [PeriodRecord(start: start, end: nil)])
         let batch = db.batch()
         try? batch.setData(from: profile, forDocument: userRef)
         addDefaultReminders(to: batch)
@@ -370,7 +391,7 @@ final class CycleStore {
     var starts: [Date] {
         let flowDays = Set(logs.filter { $0.flow != "None" }.map { Self.cal.startOfDay(for: $0.date) })
         var candidates = flowDays.filter { !flowDays.contains(Self.add($0, -1)) && !flowDays.contains(Self.add($0, -2)) }
-        if let seed = profile?.lastPeriodStart { candidates.insert(Self.cal.startOfDay(for: seed)) }
+        candidates.formUnion(periodHistory.records.map { Self.cal.startOfDay(for: $0.start) })
         var result: [Date] = []
         for d in candidates.sorted() where result.last.map({ Self.days(d, from: $0) >= 10 }) ?? true {
             result.append(d)
@@ -430,8 +451,7 @@ final class CycleStore {
     }
 
     var comparisonCycles: [ComparedCycle] {
-        var confirmed = periodHistory.records.map(\.start)
-        if let start = profile?.lastPeriodStart { confirmed.append(start) }
+        let confirmed = periodHistory.records.map(\.start)
         let entries = logs.map {
             ComparisonEntry.databaseEntry(id: $0.id, date: $0.date, symptoms: $0.symptoms,
                 pain: $0.pain, note: $0.note)

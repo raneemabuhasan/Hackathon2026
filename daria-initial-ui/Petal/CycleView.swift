@@ -5,7 +5,9 @@ struct CycleView: View {
     @Environment(CycleStore.self) private var store
     @State private var monthOffset = 0
     @State private var confirmingDelete = false
-    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    private var selectedDate: Date {
+        store.selectedCalendarDate ?? store.today
+    }
     @State private var showingPeriodControls = false
     @State private var editingPeriod: PeriodRecord?
     @State private var periodError: String?
@@ -263,7 +265,7 @@ struct CycleView: View {
         let isToday = CycleStore.cal.isDate(d, inSameDayAs: store.today)
         let isSelected = CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
         return Button {
-            selectedDate = CycleStore.cal.startOfDay(for: d)
+            store.selectedCalendarDate = CycleStore.cal.startOfDay(for: d)
             showingPeriodControls = true
         } label: {
             // A stable row height prevents two-digit dates from being compressed
