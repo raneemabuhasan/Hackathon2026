@@ -3,42 +3,59 @@ import SwiftUI
 @MainActor
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
+    @State private var showingCycleDetails = false
+    @State private var selectedCycleStart: Date?
     @State private var monthOffset = 0
-    @State private var confirmingDelete = false
+    @State private var showingMonthPicker = false
+    @State private var pickerMonth = 1
+    @State private var pickerYear = 2026
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var hasSelectedDate = false
     @State private var showingPeriodControls = false
     @State private var editingPeriod: PeriodRecord?
+    @State private var addingPastPeriod: PeriodRecord?
     @State private var periodError: String?
     @State private var deletingPeriod: PeriodRecord?
-    @State private var interactionFrames: [String: CGRect] = [:]
 
     var body: some View {
         Page {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: "Your cycle")
+
                 DisplayTitle(before: "Patterns, ", accent: "not", after: " promises")
             }
             calendar
-                .background(interactionBounds("calendar"))
-            if showingPeriodControls {
-                periodControls
-                    .background(interactionBounds("controls"))
-            }
-            Text("Demo insights below use fictional cycle and symptom data, not your saved periods.").font(.caption).foregroundStyle(Palette.inkSoft)
             lengths
             symptoms
-            dataCard
         }
-        .coordinateSpace(name: "periodCalendarPage")
-        .onPreferenceChange(PeriodInteractionBounds.self) { interactionFrames = $0 }
-        // Observe taps without intercepting the calendar buttons or switches.
-        // Calendar taps select another day; only taps outside both regions dismiss.
-        .simultaneousGesture(SpatialTapGesture(coordinateSpace: .named("periodCalendarPage"))
-            .onEnded { event in
-                if showingPeriodControls && !interactionFrames.values.contains(where: { $0.contains(event.location) }) {
-                    showingPeriodControls = false
+        .sheet(isPresented: $showingPeriodControls) {
+            periodControlsSheet
+        }
+        .sheet(isPresented: $showingCycleDetails) {
+            cycleDetails
+        }
+        .sheet(isPresented: $showingMonthPicker) {
+            monthPicker
+        }
+    }
+
+    private var periodControlsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                periodControls.padding(16)
+            }
+            .background(Palette.bg)
+            .navigationTitle("Track your period")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingPeriodControls = false }
                 }
-            })
+            }
+        }
+        .presentationDetents([.large])
+        .sheet(item: $addingPastPeriod) { draft in
+            PastPeriodEditor(start: draft.start).environment(store)
+        }
         .sheet(item: $editingPeriod) { record in
             PeriodEditor(record: record).environment(store)
         }
@@ -50,13 +67,6 @@ struct CycleView: View {
                 if let record = deletingPeriod { performPeriodAction { try store.removePeriod(id: record.id) } }
                 deletingPeriod = nil
             }
-        }
-    }
-
-    private func interactionBounds(_ region: String) -> some View {
-        GeometryReader { geometry in
-            Color.clear.preference(key: PeriodInteractionBounds.self,
-                value: [region: geometry.frame(in: .named("periodCalendarPage"))])
         }
     }
 
@@ -72,10 +82,6 @@ struct CycleView: View {
 
     private var selectedDayLabel: String {
         Calendar.current.isDateInToday(selectedDate) ? "today" : "on " + store.fmt(selectedDate)
-    }
-
-    private var startingPeriod: PeriodRecord? {
-        store.periodHistory.records.first { Calendar.current.isDate($0.start, inSameDayAs: selectedDate) }
     }
 
     // Keep the saved start visible while choosing an ongoing period's end,
@@ -125,22 +131,15 @@ struct CycleView: View {
                 Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button("Done") { showingPeriodControls = false }
             }
-            SectionHeader(title: "Track your period")
-            Text("Tap another date on the calendar above to mark your start or end. These controls stay open until you tap Done or outside.")
+            Text("Mark a period start or end for the selected date.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
-            if isFutureDate {
-                Text("This date is in the future. You can browse it, but mark actual period dates once they happen.")
-                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
-            }
+
             if let active = activePeriod {
                 Text("Period started \(store.fmt(active.start)). No end date recorded yet.")
                     .font(.subheadline).foregroundStyle(Palette.accent)
             }
-            Text("Choose your actual last bleeding day. There is no fixed period length or estimated end date.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
+
             if let error = store.periodStorageError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
@@ -149,7 +148,11 @@ struct CycleView: View {
                     get: { displayedStartPeriod != nil },
                     set: { enabled in
                         if enabled {
-                            updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
+                            if store.periodHistory.records.contains(where: { $0.start > selectedDate }) {
+                                addingPastPeriod = PeriodRecord(start: selectedDate)
+                            } else {
+                                updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
+                            }
                         } else if let record = displayedStartPeriod {
                             if record.end != nil {
                                 deletingPeriod = record
@@ -176,8 +179,11 @@ struct CycleView: View {
             }
             .toggleStyle(.switch)
             .disabled(store.periodStorageError != nil || isFutureDate)
-            Text("Changes save automatically. Turning off a start removes that period; turning off an end marks it ongoing again.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
+            Button("Past periods") {
+                addingPastPeriod = PeriodRecord(start: selectedDate)
+            }
+            .disabled(store.periodStorageError != nil || isFutureDate)
+
             if periodToEnd == nil && endingPeriod == nil {
                 Text("Mark a start date before marking an end.").font(.caption).foregroundStyle(Palette.inkSoft)
             }
@@ -197,12 +203,54 @@ struct CycleView: View {
                         .accessibilityLabel("Delete period starting \(store.fmt(record.start))")
                 }
             }
-            Text("Period dates are saved on this device. Other screens still use demo data.")
-                .font(.caption).foregroundStyle(Palette.inkSoft)
+
         }.card().tint(Palette.accent)
     }
 
     // MARK: Calendar
+
+    private var monthPicker: some View {
+        let currentYear = CycleStore.cal.component(.year, from: store.today)
+        let displayedYear = CycleStore.cal.component(.year, from: month)
+        let years = min(currentYear - 100, displayedYear)...max(currentYear + 100, displayedYear)
+
+        return VStack(spacing: 12) {
+            HStack {
+                Button("Cancel") { showingMonthPicker = false }
+                Spacer()
+                Text("Choose month").font(.headline)
+                Spacer()
+                Button("Go") {
+                    let current = CycleStore.cal.dateComponents([.year, .month], from: store.today)
+                    monthOffset = (pickerYear - current.year!) * 12 + pickerMonth - current.month!
+                    showingPeriodControls = false
+                    showingMonthPicker = false
+                }
+                .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+
+            HStack(spacing: 0) {
+                Picker("Month", selection: $pickerMonth) {
+                    ForEach(1...12, id: \.self) { value in
+                        Text(CycleStore.cal.monthSymbols[value - 1]).tag(value)
+                    }
+                }
+                Picker("Year", selection: $pickerYear) {
+                    ForEach(years, id: \.self) { value in
+                        Text(String(value)).tag(value)
+                    }
+                }
+            }
+            .pickerStyle(.wheel)
+            .sensoryFeedback(.selection, trigger: pickerMonth)
+            .sensoryFeedback(.selection, trigger: pickerYear)
+        }
+        .padding(.top, 24)
+        .tint(Palette.accent)
+        .presentationDetents([.height(300)])
+        .presentationDragIndicator(.visible)
+    }
 
     private var month: Date {
         let comps = CycleStore.cal.dateComponents([.year, .month], from: store.today)
@@ -212,7 +260,7 @@ struct CycleView: View {
 
     private var calendar: some View {
         let cal = CycleStore.cal
-        let lead = (cal.component(.weekday, from: month) + 5) % 7 // Monday-first
+        let lead = cal.component(.weekday, from: month) - 1 // Sunday-first
         let days = cal.range(of: .day, in: .month, for: month)!.count
         let cellCount = ((lead + days + 6) / 7) * 7
         let columns = Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0), count: 7)
@@ -222,14 +270,33 @@ struct CycleView: View {
                 circleButton("chevron.left") { monthOffset -= 1 }
                     .accessibilityLabel("Previous month")
                 Spacer()
-                Text(month.formatted(.dateTime.month(.wide).year())).font(.system(size: 15, weight: .semibold))
+                Button {
+                    pickerMonth = cal.component(.month, from: month)
+                    pickerYear = cal.component(.year, from: month)
+                    showingMonthPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(month.formatted(.dateTime.month(.wide).year()))
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Choose a month and year")
                 Spacer()
                 circleButton("chevron.right") { monthOffset += 1 }
                     .accessibilityLabel("Next month")
             }
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { _, d in
-                    Text(d).font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
+            LazyVGrid(columns: columns, spacing: 0) {
+                ForEach(Array(["S", "M", "T", "W", "T", "F", "S"].enumerated()), id: \.offset) { _, d in
+                    Text(d)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.inkSoft)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Palette.surface2)
                 }
                 ForEach(0..<cellCount, id: \.self) { i in
                     if i >= lead && i < lead + days {
@@ -241,9 +308,28 @@ struct CycleView: View {
                     }
                 }
             }
+            .overlay {
+                GeometryReader { geometry in
+                    Path { path in
+                        path.addRect(CGRect(origin: .zero, size: geometry.size))
+                        for column in 1..<7 {
+                            let x = geometry.size.width * CGFloat(column) / 7
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                        }
+                        for row in 0..<(cellCount / 7) {
+                            let y = CGFloat(28 + row * 52)
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                        }
+                    }
+                    .stroke(Palette.berry.opacity(0.2), lineWidth: 1)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             HStack(spacing: 14) {
-                legend(Rectangle().fill(Palette.pink).frame(height: 4), "Recorded period")
-                legend(Circle().strokeBorder(Palette.ink, lineWidth: 2), "Today")
+                legend(Rectangle().fill(Palette.pink).frame(height: 4), "Period")
             }.font(.caption).foregroundStyle(Palette.inkSoft)
         }
         .card()
@@ -251,16 +337,21 @@ struct CycleView: View {
 
     private func dayCell(_ d: Date) -> some View {
         let period = store.periodHistory.contains(d)
+        let isPeriodStart = store.periodHistory.records.contains {
+            CycleStore.cal.isDate(d, inSameDayAs: $0.start)
+        }
         let completed = store.periodHistory.records.first { record in
             guard let end = record.end else { return false }
             return d >= CycleStore.cal.startOfDay(for: record.start) && d <= CycleStore.cal.startOfDay(for: end)
         }
-        let isStart = completed.map { CycleStore.cal.isDate(d, inSameDayAs: $0.start) } ?? false
-        let isEnd = completed?.end.map { CycleStore.cal.isDate(d, inSameDayAs: $0) } ?? false
-        let isToday = CycleStore.cal.isDate(d, inSameDayAs: store.today)
-        let isSelected = CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
+        let periodDay = completed.flatMap {
+            CycleStore.cal.dateComponents([.day], from: CycleStore.cal.startOfDay(for: $0.start),
+                                         to: CycleStore.cal.startOfDay(for: d)).day.map { $0 + 1 }
+        } ?? (isPeriodStart ? 1 : nil)
+        let isSelected = hasSelectedDate && CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
         return Button {
             selectedDate = CycleStore.cal.startOfDay(for: d)
+            hasSelectedDate = true
             showingPeriodControls = true
         } label: {
             // A stable row height prevents two-digit dates from being compressed
@@ -273,38 +364,47 @@ struct CycleView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
                 .foregroundStyle(Palette.ink)
+                .background {
+                    if isSelected {
+                        Rectangle().fill(Palette.blush)
+                    }
+                }
+                .overlay(alignment: .top) {
+                    if let periodDay {
+                        HStack(spacing: 3) {
+                            Text("\(periodDay)")
+                                .font(.system(size: 9, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(Palette.inkSoft)
+                                .fixedSize()
+                            if completed != nil {
+                                Rectangle().fill(Palette.pink)
+                                    .frame(height: 4)
+                            } else {
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .padding(.leading, 5)
+                        .padding(.trailing, 3)
+                        .padding(.top, 2)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
                 .overlay(alignment: .bottom) {
-                    if completed != nil {
-                        Rectangle().fill(Palette.pink)
-                            .frame(height: 4)
-                            .padding(.leading, isStart ? 8 : 0)
-                            .padding(.trailing, isEnd ? 8 : 0)
-                            .padding(.bottom, 3)
-                            .allowsHitTesting(false)
-                    } else if period {
+                    if completed == nil && period {
                         Circle().fill(Palette.accent)
                             .frame(width: 5, height: 5)
                             .padding(.bottom, 3)
                             .allowsHitTesting(false)
                     }
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Palette.accent, lineWidth: 2)
-                        .opacity(isSelected ? 1 : 0)
-                        .allowsHitTesting(false)
-                }
-                .overlay {
-                    Circle().strokeBorder(Palette.ink, lineWidth: 2)
-                        .padding(4)
-                        .opacity(isToday ? 1 : 0)
-                        .allowsHitTesting(false)
-                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(d.formatted(date: .complete, time: .omitted) + (period ? ", recorded period" : ""))
-        .accessibilityHint("Select this date to mark a period start or end")
+        .accessibilityLabel(d.formatted(date: .complete, time: .omitted) + (period ? ", recorded period" : "")
+                            + (periodDay.map { ", period day \($0)" } ?? ""))
+        .accessibilityHint("Opens period start and end controls for this date")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -323,22 +423,101 @@ struct CycleView: View {
 
     // MARK: Cycle lengths
 
+    private var recordedCycles: [RecordedCycle] {
+        RecordedCycle.recent(from: store.periodHistory.records)
+    }
+
     private var lengths: some View {
-        let values = Array(store.pastLengths.reversed())
-        let height = { (v: Int) in CGFloat(v - 20) / 14 * 90 }
+        let cycles = recordedCycles
+        let average = cycles.isEmpty ? 0 : Int((Double(cycles.reduce(0) { $0 + $1.days }) / Double(cycles.count)).rounded())
+        let maximum = max(cycles.map(\.days).max() ?? 1, 1)
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "last 5 cycles")
-            HStack(alignment: .bottom, spacing: 10) {
-                ForEach(Array(values.enumerated()), id: \.offset) { i, v in
-                    bar(value: v, height: height(v), label: store.starts[values.count - i].formatted(.dateTime.month(.abbreviated)), highlight: false)
+            SectionHeader(title: "Cycle length", trailing: "saved periods")
+            if cycles.isEmpty {
+                Text("Save at least two period start dates to see your first cycle length.")
+                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
+                Text("Cycle length is the number of days between consecutive period starts.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+            } else {
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(cycles) { cycle in
+                        Button {
+                            selectedCycleStart = cycle.start
+                            showingCycleDetails = true
+                        } label: {
+                            bar(value: cycle.days, height: CGFloat(cycle.days) / CGFloat(maximum) * 90,
+                                label: cycle.start.formatted(.dateTime.month(.abbreviated).day()), highlight: false)
+                                .frame(maxWidth: .infinity, minHeight: 130, alignment: .bottom)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Cycle starting \(cycle.start.formatted(date: .abbreviated, time: .omitted)), \(cycle.days) days")
+                        .accessibilityHint("Shows the saved dates used to calculate this cycle")
+                    }
+                    Button {
+                        selectedCycleStart = nil
+                        showingCycleDetails = true
+                    } label: {
+                        bar(value: average, height: CGFloat(average) / CGFloat(maximum) * 90, label: "Avg", highlight: true)
+                            .frame(maxWidth: .infinity, minHeight: 130, alignment: .bottom)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Average \(average) days")
+                    .accessibilityHint("Shows the cycles included in the average")
                 }
-                bar(value: store.average, height: height(store.average), label: "Avg", highlight: true)
             }
-            .frame(height: 130, alignment: .bottom)
-            Text("Your cycles vary by about \(store.pastLengths.max()! - store.pastLengths.min()!) days, which is common. If they start varying by more than 7–9 days, it may be worth mentioning to a doctor.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
+    }
+
+    private var cycleDetails: some View {
+        let cycles = recordedCycles
+        return NavigationStack {
+            List {
+                if let start = selectedCycleStart, let cycle = cycles.first(where: { $0.start == start }) {
+                    Section("Recorded cycle") {
+                        LabeledContent("Cycle length", value: "\(cycle.days) days")
+                        LabeledContent("Period started", value: cycle.start.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Next period started", value: cycle.nextStart.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    Section {
+                        Text("\(cycle.days) calendar days between these two saved starts. The next start belongs to the next cycle. This measures cycle length, not the number of bleeding days.")
+                    }
+                } else if selectedCycleStart == nil, !cycles.isEmpty {
+                    let total = cycles.reduce(0) { $0 + $1.days }
+                    let average = Int((Double(total) / Double(cycles.count)).rounded())
+                    Section("Average cycle length") {
+                        LabeledContent("Rounded average", value: "\(average) days")
+
+                    }
+                    Section("Included cycles") {
+                        ForEach(cycles) { cycle in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("\(cycle.days) days").font(.headline)
+                                Text("\(cycle.start.formatted(date: .abbreviated, time: .omitted)) → \(cycle.nextStart.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
+                            }
+                        }
+                    }
+                } else {
+                    Text("This cycle is no longer available. Save at least two period starts to see cycle details.")
+                }
+                Section {
+                    Text("Calculated from period dates saved on this device. Missing starts can make intervals longer.")
+                }
+            }
+            .navigationTitle(selectedCycleStart == nil ? "Cycle average" : "Cycle details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingCycleDetails = false }
+                }
+            }
+            .tint(Palette.accent)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func bar(value: Int, height: CGFloat, label: String, highlight: Bool) -> some View {
@@ -378,45 +557,57 @@ struct CycleView: View {
                     Text("\(item.count)d").font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft).frame(width: 28, alignment: .trailing)
                 }
             }
-            Text("A personal record you can bring to an appointment. Petal doesn't interpret symptoms.")
-                .font(.caption).foregroundStyle(Palette.inkFaint)
         }
         .card()
     }
 
-    // MARK: Data
+}
 
-    private var dataCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Your data")
-            Text("Logs stay on this device. Nothing is shared or sold. You can erase everything at any time.")
-                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-            if confirmingDelete {
-                Text("This erases every log and preference on this device. It can't be undone.")
-                    .font(.system(size: 13))
-                HStack {
-                    outlineButton("Erase everything") { store.deleteAllData(); confirmingDelete = false }
-                    Button("Keep my data") { confirmingDelete = false }
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(Palette.surface2, in: Capsule())
-                        .buttonStyle(.plain)
+@MainActor
+private struct PastPeriodEditor: View {
+    @Environment(CycleStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State var start: Date
+    @State private var end: Date?
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("Period started", selection: $start, in: ...Date(), displayedComponents: .date)
+                        .onChange(of: start) { _, newStart in
+                            if let end, end < newStart { self.end = nil }
+                        }
+                    if end != nil {
+                        DatePicker("Last bleeding day", selection: Binding(
+                            get: { end ?? start }, set: { end = $0 }),
+                            in: start...max(start, Date()), displayedComponents: .date)
+                    } else {
+                        Button("Choose last bleeding day") { end = start }
+                    }
+                } footer: {
+                    Text("Enter both dates for the period you missed. Nothing is saved until you tap Save. Use your actual last bleeding day, including the same day for a one-day period.")
                 }
-            } else {
-                outlineButton("Delete all my data") { confirmingDelete = true }
+                if let error { Text(error).foregroundStyle(.red) }
             }
+            .navigationTitle("Add past period")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let end else { return }
+                        do {
+                            try store.savePeriod(start: start, end: end)
+                            dismiss()
+                        } catch { self.error = error.localizedDescription }
+                    }
+                    .disabled(end == nil || store.periodStorageError != nil)
+                }
+            }
+            .tint(Palette.accent)
         }
-        .card()
-        .animation(.easeOut(duration: 0.2), value: confirmingDelete)
-    }
-
-    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-            .buttonStyle(.plain)
     }
 }
 
@@ -458,13 +649,5 @@ private struct PeriodEditor: View {
                 }
             }
         }
-    }
-}
-
-// Frames stay current when the page scrolls or the controls change height.
-private struct PeriodInteractionBounds: PreferenceKey {
-    static var defaultValue: [String: CGRect] { [:] }
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }

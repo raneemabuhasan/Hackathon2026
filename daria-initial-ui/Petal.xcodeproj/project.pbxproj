@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DD0000000000000000000001 = {isa = PBXBuildFile; fileRef = DD0000000000000000000002; };
 		CC0000000000000000000001 /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* CompanionView.swift */; };
 		CC0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ContentView.swift */; };
 		CC0000000000000000000003 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* CycleStore.swift */; };
@@ -17,10 +16,11 @@
 		CC0000000000000000000007 /* PetalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* PetalApp.swift */; };
 		CC0000000000000000000008 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
 		CC0000000000000000000009 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* TodayView.swift */; };
+		DD0000000000000000000001 /* PeriodHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000002 /* PeriodHistory.swift */; };
+		DE0000000000000000000001 /* DataManagementSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0000000000000000000002 /* DataManagementSection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		DD0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
 		AA0000000000000000000001 /* Petal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Petal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -31,8 +31,9 @@
 		BB0000000000000000000007 /* PetalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetalApp.swift; sourceTree = "<group>"; };
 		BB0000000000000000000008 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BB0000000000000000000009 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		DD0000000000000000000002 /* PeriodHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
+		DE0000000000000000000002 /* DataManagementSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0000000000000000000003 /* Frameworks */ = {
@@ -48,7 +49,8 @@
 		AA0000000000000000000002 /* Petal */ = {
 			isa = PBXGroup;
 			children = (
-				DD0000000000000000000002,
+				DE0000000000000000000002 /* DataManagementSection.swift */,
+				DD0000000000000000000002 /* PeriodHistory.swift */,
 				BB0000000000000000000001 /* CompanionView.swift */,
 				BB0000000000000000000002 /* ContentView.swift */,
 				BB0000000000000000000003 /* CycleStore.swift */,
@@ -116,6 +118,7 @@
 				};
 			};
 			buildConfigurationList = AA0000000000000000000011 /* Build configuration list for PBXProject "Petal" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -123,7 +126,6 @@
 				Base,
 			);
 			mainGroup = AA0000000000000000000004;
-			compatibilityVersion = "Xcode 14.0";
 			productRefGroup = AA0000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -148,7 +150,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DD0000000000000000000001,
+				DE0000000000000000000001 /* DataManagementSection.swift in Sources */,
+				DD0000000000000000000001 /* PeriodHistory.swift in Sources */,
 				CC0000000000000000000001 /* CompanionView.swift in Sources */,
 				CC0000000000000000000002 /* ContentView.swift in Sources */,
 				CC0000000000000000000003 /* CycleStore.swift in Sources */,
