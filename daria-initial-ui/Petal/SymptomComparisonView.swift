@@ -17,50 +17,102 @@ struct SymptomComparisonView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeader(title: "Compare cycles")
-            Text("Uses saved period starts. Counts are recorded days, not symptom episodes.")
+            Text("Choose two cycles to see what you logged in each one.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
             if !store.logsLoaded {
                 ProgressView("Loading symptom history")
             } else if let error = store.logsError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Text("We couldn't load your symptom history. Please try again when you're connected.")
+                    .foregroundStyle(.red)
+                DisclosureGroup("Error details") { Text(error).font(.caption) }
             } else if cycles.count < 2 {
-                Text("Record at least two period starts on the calendar to compare.")
+                Text("Add a little more history")
+                    .font(.headline)
+                Text("Mark the start of at least two periods on the calendar above. Then you can compare what you logged in each cycle.")
             } else {
-                selector("First cycle", selection: $first, fallback: cycles[0].start)
-                selector("Second cycle", selection: $second, fallback: cycles[1].start)
+                selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
+                selector("Compare with", selection: $second, fallback: cycles[1].start)
                 if let result = comparison {
-                    Text("Earlier: \(label(result.earlier)) / Later: \(label(result.later))").font(.caption)
                     if result.later.isOngoing {
-                        Text("The later cycle has no following start recorded. Counts are up to today.").font(.caption)
+                        Label("The cycle starting \(label(result.later)) is still in progress.", systemImage: "clock")
+                            .font(.subheadline.weight(.medium))
+                        Text("No next period start has been recorded. This cycle's totals include entries up to today, even if bleeding has ended.")
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
                     }
-                    Text("Missing entries do not mean symptoms were absent. More recorded days do not establish worsening symptoms.")
+                    Divider()
+                    Text("Days you logged each symptom").font(.headline)
+                    Text("Each day counts once, even if you logged a symptom more than once. More logged days doesn't necessarily mean worse symptoms.")
                         .font(.caption).foregroundStyle(Palette.inkSoft)
-                    if result.observations.isEmpty { Text("No symptoms recorded in the selected cycles.") }
+                    if result.observations.isEmpty {
+                        Text("No symptoms logged for these cycles yet.")
+                        Text("Use + to add an entry. A day without an entry doesn't tell us whether you had symptoms.")
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
                     ForEach(result.observations) { observation in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(observation.symptom).font(.headline)
-                            Text("Recorded days: \(observation.earlierDays) / \(observation.laterDays)")
-                            Text("Reported in \(observation.cyclesReported) of the 2 selected cycles.")
+                            cycleValues(result, earlier: dayCount(observation.earlierDays),
+                                        later: dayCount(observation.laterDays))
+                            Text(observation.cyclesReported == 2
+                                 ? "Logged in both cycles."
+                                 : "Logged in one cycle. No entries for this symptom in the other.")
                                 .font(.caption).foregroundStyle(Palette.inkSoft)
-                            DisclosureGroup("Supporting entries (\(observation.evidence.count))") {
+                            DisclosureGroup(entryTitle(observation.evidence.count)) {
                                 ForEach(observation.evidence) { entry in evidence(entry) }
                             }
                         }.padding(.vertical, 6)
                         Divider()
                     }
-                    Text("Highest positive overall daily pain rating").font(.subheadline.bold())
-                    Text("Earlier: \(rating(result.earlierPeakPain)) / Later: \(rating(result.laterPeakPain))")
-                    Text("Older logs use 0 for both the default and a zero rating, so zeros are excluded. This is overall daily pain, not severity for each symptom.")
+                    Text("Highest daily pain logged").font(.headline)
+                    Text("Your highest overall pain rating in each cycle, on a scale of 1–10. This isn't a separate rating for each symptom.")
                         .font(.caption).foregroundStyle(Palette.inkSoft)
-                    DisclosureGroup("All selected entries / pain evidence") {
+                    cycleValues(result, earlier: rating(result.earlierPeakPain), later: rating(result.laterPeakPain))
+                    DisclosureGroup("Why aren't zero ratings included?") {
+                        Text("A saved 0 can mean either no pain or no rating entered. To avoid guessing, this comparison only includes ratings from 1 to 10.")
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
+                    DisclosureGroup("View all entries for these cycles (\(result.earlier.logs.count + result.later.logs.count))") {
                         ForEach(result.earlier.logs + result.later.logs) { entry in evidence(entry) }
                     }
-                } else { Text("Choose two different cycles.") }
+                    Text("No entry means no information — it doesn't mean you had no symptoms.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                } else {
+                    Label("You've selected the same cycle twice. Choose a different date to compare.", systemImage: "info.circle")
+                }
             }
         }.font(.system(size: 13)).card()
     }
 
-    private func rating(_ value: Int?) -> String { value.map { "\($0)/10" } ?? "No positive rating recorded" }
+    private func rating(_ value: Int?) -> String { value.map { "\($0) out of 10" } ?? "No rating above 0 logged" }
+    private func dayCount(_ count: Int) -> String {
+        count == 0 ? "No entries" : "\(count) \(count == 1 ? "day" : "days") logged"
+    }
+    private func entryTitle(_ count: Int) -> String {
+        "View \(count) \(count == 1 ? "entry" : "entries")"
+    }
+    private func cycleValues(_ result: CycleComparison, earlier: String, later: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 10) {
+                cycleValue(result.earlier, title: "Earlier cycle", value: earlier)
+                cycleValue(result.later, title: "Later cycle", value: later)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                cycleValue(result.earlier, title: "Earlier cycle", value: earlier)
+                cycleValue(result.later, title: "Later cycle", value: later)
+            }
+        }
+    }
+    private func cycleValue(_ cycle: ComparedCycle, title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption).foregroundStyle(Palette.inkSoft)
+            Text("Started \(label(cycle))").font(.caption.weight(.medium))
+            Text(value).font(.subheadline.bold())
+        }
+        .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Palette.surface2.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+    }
     private func label(_ cycle: ComparedCycle) -> String {
         cycle.start.formatted(date: .abbreviated, time: .omitted)
     }
@@ -68,7 +120,7 @@ struct SymptomComparisonView: View {
         Picker(title, selection: Binding<Date>(get: {
             cycles.contains { $0.start == selection.wrappedValue } ? (selection.wrappedValue ?? fallback) : fallback
         }, set: { selection.wrappedValue = $0 })) {
-            ForEach(cycles) { cycle in Text(label(cycle)).tag(cycle.start) }
+            ForEach(cycles) { cycle in Text("Started \(label(cycle))").tag(cycle.start) }
         }.pickerStyle(.menu)
     }
     private func evidence(_ entry: ComparisonEntry) -> some View {
@@ -79,9 +131,9 @@ struct SymptomComparisonView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.date.formatted(date: .abbreviated, time: .omitted)).bold()
                 Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
-                Text("Overall daily pain: \(rating(entry.pain))")
+                Text("Daily pain: \(rating(entry.pain))")
                 if !entry.note.isEmpty { Text(entry.note) }
-                Text("Review / edit saved entry").foregroundStyle(Palette.accent)
+                Label("View or edit entry", systemImage: "pencil").foregroundStyle(Palette.accent)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
         }.buttonStyle(.plain)
     }
