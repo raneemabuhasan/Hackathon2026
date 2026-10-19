@@ -102,8 +102,11 @@ struct TodayView: View {
 
        private var prediction: some View {
         let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
-        let total = Double(CycleStore.days(store.windowEnd, from: store.today) + 4)
-        let pct = { (d: Date) in Double(CycleStore.days(d, from: store.today)) / total }
+        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
+        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
+        let pct = { (d: Date) in
+            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
+        }
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {

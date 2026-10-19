@@ -66,6 +66,7 @@ struct TabBar: View {
             item(.today, "Today", "circle.circle")
             item(.cycle, "Calendar", "calendar")
             Button {
+                store.showingLogPreview = false
                 store.selectedLogDate = store.tab == .cycle ? store.selectedCalendarDate ?? store.today : nil
                 store.showLog = true
             } label: {
