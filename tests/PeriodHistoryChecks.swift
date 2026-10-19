@@ -54,6 +54,24 @@ struct PeriodHistoryChecks {
         assert(restored.records == history.records)
         history.remove(id: id)
         assert(history.records.count == 1)
+        // Backfill September while October is already saved and ongoing.
+        func autumn(_ month: Int, _ day: Int) -> Date {
+            cal.date(from: DateComponents(year: 2026, month: month, day: day))!
+        }
+        var missed = PeriodHistory()
+        let now = autumn(10, 18)
+        try missed.save(start: autumn(10, 10), end: nil, today: now, calendar: cal)
+        let ongoingID = missed.records[0].id
+        try missed.save(start: autumn(9, 12), end: autumn(9, 17), today: now, calendar: cal)
+        assert(missed.records.count == 2)
+        assert(missed.records[0].id == ongoingID && missed.records[0].end == nil)
+        assert(RecordedCycle.recent(from: missed.records, calendar: cal).map(\.days) == [28])
+        let saved = missed.records
+        rejects { try missed.save(start: autumn(9, 16), end: autumn(9, 20), today: now, calendar: cal) }
+        rejects { try missed.save(start: autumn(9, 20), end: autumn(10, 10), today: now, calendar: cal) }
+        assert(missed.records == saved) // Rejected overlaps never change saved records.
+        try missed.save(start: autumn(8, 14), end: autumn(8, 14), today: now, calendar: cal)
+        assert(missed.records.count == 3)
         print("PASS: unlimited duration, no inferred end, start/end, duplicate active record, invalid dates, inclusive boundaries across DST, overlap, editing, JSON round trip, deletion")
     }
 }

@@ -64,7 +64,7 @@ struct TabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             item(.today, "Today", "circle.circle")
-            item(.cycle, "Cycle", "calendar")
+            item(.cycle, "Calendar", "calendar")
             Button {
                 store.selectedLogDate = store.tab == .cycle ? store.selectedCalendarDate ?? store.today : nil
                 store.showLog = true

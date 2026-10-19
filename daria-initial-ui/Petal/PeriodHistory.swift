@@ -8,11 +8,10 @@ struct PeriodRecord: Identifiable, Codable, Equatable {
 
 /// Date-only records shared by calendar controls and future logging integrations.
 struct PeriodHistory: Codable {
-    private(set) var records: [PeriodRecord] = []
+    private(set) var records: [PeriodRecord]
 
-    static func restoring(records: [PeriodRecord]?, onboardingStart: Date,
-                          calendar: Calendar = .current) -> PeriodHistory {
-        PeriodHistory(records: records ?? [PeriodRecord(start: calendar.startOfDay(for: onboardingStart), end: nil)])
+    init(records: [PeriodRecord] = []) {
+        self.records = records.sorted { $0.start > $1.start }
     }
 
     mutating func save(id: UUID? = nil, start: Date, end: Date?, today: Date = .now, calendar: Calendar = .current) throws {
@@ -78,5 +77,21 @@ struct CycleForecast {
 
     func next(calendar: Calendar = .current) -> Date? {
         start.flatMap { calendar.date(byAdding: .day, value: length, to: $0) }
+    }
+}
+
+/// Observed intervals between consecutive saved period starts, oldest first.
+struct RecordedCycle: Identifiable {
+    var id: Date { start }
+    let start: Date
+    let nextStart: Date
+    let days: Int
+
+    static func recent(from records: [PeriodRecord], calendar: Calendar = .current) -> [RecordedCycle] {
+        let starts = Array(Set(records.map { calendar.startOfDay(for: $0.start) })).sorted()
+        return Array(zip(starts, starts.dropFirst()).compactMap { start, next -> RecordedCycle? in
+            guard let days = calendar.dateComponents([.day], from: start, to: next).day, days > 0 else { return nil }
+            return RecordedCycle(start: start, nextStart: next, days: days)
+        }.suffix(5))
     }
 }
