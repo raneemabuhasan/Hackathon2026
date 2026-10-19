@@ -252,7 +252,6 @@ final class CycleStore {
     var diets: Set<String> { Set(profile?.diets ?? []) }
     var avoid: Set<String> { Set(profile?.avoid ?? []) }
 
-    static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
     nonisolated static let cal = Calendar.current
     nonisolated static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
     nonisolated static func days(_ a: Date, from b: Date) -> Int {
@@ -557,23 +556,21 @@ final class CycleStore {
         userRef.collection("grocery").document(item.id).updateData(["done": !item.done])
     }
 
-    /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
-    func deleteAllData() {
+    /// Deletes every document this user owns and waits for Firestore to confirm.
+    /// The profile goes too, so they land back on onboarding.
+    func deleteAllData() async throws {
+        let cached = try await cacheRef.getDocuments().documents.map(\.reference)
         let refs = logs.map { userRef.collection("logs").document($0.id) }
             + reminders.map { userRef.collection("reminders").document($0.id) }
             + grocery.map { userRef.collection("grocery").document($0.id) }
             + periodHistory.records.map { periodsRef.document($0.id.uuidString) }
+            + cached
             + [userRef]
         // Firestore batches are capped at 500 writes.
         for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
             let batch = db.batch()
             chunk.forEach { batch.deleteDocument($0) }
-            batch.commit { error in if let error { print("Delete failed:", error) } }
-        }
-        cacheRef.getDocuments { snap, _ in
-            let batch = Firestore.firestore().batch()
-            snap?.documents.forEach { batch.deleteDocument($0.reference) }
-            batch.commit()
+            try await batch.commit()
         }
         aiMeals = [:]
         plan = nil
@@ -584,24 +581,6 @@ final class CycleStore {
         showToast("Your data was deleted")
     }
 
-    #if DEBUG
-    /// Writes five past cycles of made-up logs so the charts have something to show in a demo.
-    func addSampleHistory() {
-        var s = [lastStart]
-        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
-        let batch = db.batch()
-        let write = { (log: DayLog) in try? batch.setData(from: log, forDocument: self.userRef.collection("logs").document(log.id)) }
-        for start in s.dropFirst() {
-            write(DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]))
-            write(DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]))
-            write(DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]))
-            write(DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]))
-            write(DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]))
-        }
-        batch.commit { error in if let error { print("Sample history failed:", error) } }
-        showToast("Added sample history")
-    }
-    #endif
 
     // MARK: Nourish
 
