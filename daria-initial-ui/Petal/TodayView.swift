@@ -6,6 +6,8 @@ struct TodayView: View {
     @Environment(AuthModel.self) private var auth
     @State private var showSettings = false
     @State private var showPeriodEntry = false
+    /// Day picked on the cycle ring; nil means today.
+    @State private var previewDay: Int?
 
     var body: some View {
         Page {
@@ -44,22 +46,27 @@ struct TodayView: View {
 
     // MARK: Cycle ring
 
+    /// The date the ring is showing, so the button acts on that day.
+    private var ringDate: Date {
+        CycleStore.add(store.lastStart, (previewDay ?? max(1, store.cycleDay)) - 1)
+    }
+
     private var hero: some View {
-        VStack(spacing: 26) {
-            CycleRing()
+        let period = store.period(on: ringDate)
+        return VStack(spacing: 26) {
+            CycleRing(previewDay: $previewDay)
             VStack(spacing: 16) {
                 Button {
                     showPeriodEntry = true
                 } label: {
-                    Text(store.ongoingPeriod == nil ? "Period started" : "Period ended")
-                        .font(.system(size: 16, weight: .semibold))
+                    Text(period == nil ? "Period started" : "Period ended")
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 10)
                         .background(Palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
 
                 Button("Edit cycle details") { store.showCycleSetup = true }
                     .font(.system(size: 11, weight: .medium))
@@ -75,7 +82,7 @@ struct TodayView: View {
                            startPoint: .top, endPoint: .bottom),
             in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .sheet(isPresented: $showPeriodEntry) {
-            PeriodQuickEntry().environment(store)
+            PeriodQuickEntry(period: period, date: min(ringDate, store.today)).environment(store)
         }
     }
 
@@ -135,10 +142,8 @@ struct TodayView: View {
         HStack(spacing: 6) {
             ForEach(-3...3, id: \.self) { offset in
                 let d = CycleStore.add(store.today, offset)
-                let period = store.periodHistory.contains(d)
-                let predicted = store.forecast.next().map { next in
-                    d >= CycleStore.add(next, -store.forecast.margin) && d <= CycleStore.add(next, store.forecast.margin)
-                } ?? false
+                let period = store.hasPeriod(on: d) || store.expectedPeriodStart(for: d) != nil
+                let predicted = store.isPredicted(d) || store.isMaybe(d)
                 VStack(spacing: 6) {
                     Text(d.formatted(.dateTime.weekday(.narrow)))
                         .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
@@ -242,33 +247,20 @@ struct TodayView: View {
     }
 }
 
-/// A 28-day exploration control. Selection never writes to the recorded cycle.
+/// Explores the user's cycle day by day. Selection never writes to the recorded cycle.
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
-    @State private var previewDay: Int?
+    @Binding var previewDay: Int?
 
-    private let cycleLength = 28
+    /// Same length and phases as the prediction card, calendar and Nourish.
+    private var cycleLength: Int { store.average }
 
-    private var actualDay: Int {
-        guard let start = store.forecast.start else { return min(28, max(1, store.cycleDay)) }
-        return min(28, max(1, CycleStore.days(store.today, from: start) + 1))
-    }
+    /// Today's day; can run past the usual length when a period is late.
+    private var shownDay: Int { previewDay ?? max(1, store.cycleDay) }
+    /// Where the handle sits, which stops at the end of the ring.
+    private var selectedDay: Int { min(cycleLength, shownDay) }
 
-    private var selectedDay: Int { previewDay ?? actualDay }
-
-    // Fixed preview ranges avoid changing the user's own cycle estimates.
-    private func days(for phase: Phase) -> ClosedRange<Int> {
-        switch phase {
-        case .menstrual: 1...5
-        case .follicular: 6...12
-        case .mid: 13...16
-        case .luteal: 17...28
-        }
-    }
-
-    private var selectedPhase: Phase {
-        Phase.allCases.first { days(for: $0).contains(selectedDay) } ?? .luteal
-    }
+    private var selectedPhase: Phase { store.phase(forDay: selectedDay) }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -279,22 +271,24 @@ struct CycleRing: View {
 
                 ZStack {
                     ForEach(Phase.allCases) { phase in
-                        let range = days(for: phase)
-                        Circle()
-                            .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
-                                  to: Double(range.upperBound) / Double(cycleLength) - 0.012)
-                            .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
-                                                                  lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .padding(16)
+                        // A very short cycle can leave a phase with no days; skip its arc.
+                        if let range = store.range(of: phase) {
+                            Circle()
+                                .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
+                                      to: Double(range.upperBound) / Double(cycleLength) - 0.012)
+                                .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
+                                                                      lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .padding(16)
+                        }
                     }
 
                     VStack(spacing: 4) {
                         Eyebrow(text: "Cycle day")
-                        Text("\(selectedDay)")
+                        Text("\(shownDay)")
                             .font(.display(68)).monospacedDigit()
                             .contentTransition(.numericText())
-                        Text("of about 28 days")
+                        Text("of about \(cycleLength) days")
                             .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     }
                     .allowsHitTesting(false)
@@ -320,11 +314,11 @@ struct CycleRing: View {
             .frame(width: 230, height: 230)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Cycle day preview")
-            .accessibilityValue("Day \(selectedDay) of 28, \(selectedPhase.name) phase")
+            .accessibilityValue("Day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase")
             .accessibilityHint("Adjust to explore a day without changing your saved cycle")
             .accessibilityAdjustableAction { direction in
                 switch direction {
-                case .increment: previewDay = min(28, selectedDay + 1)
+                case .increment: previewDay = min(cycleLength, selectedDay + 1)
                 case .decrement: previewDay = max(1, selectedDay - 1)
                 @unknown default: break
                 }
@@ -371,7 +365,7 @@ struct CycleRing: View {
         let fullTurn = 2 * Double.pi
         let angle = (atan2(Double(y), Double(x)) + Double.pi / 2 + fullTurn)
             .truncatingRemainder(dividingBy: fullTurn)
-        previewDay = min(28, max(1, Int(angle / fullTurn * Double(cycleLength)) + 1))
+        previewDay = min(cycleLength, max(1, Int(angle / fullTurn * Double(cycleLength)) + 1))
     }
 }
 
@@ -379,26 +373,28 @@ struct CycleRing: View {
 struct PeriodQuickEntry: View {
     @Environment(CycleStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var date = Calendar.current.startOfDay(for: Date())
+    /// The period being ended, or nil to start a new one.
+    let period: PeriodRecord?
+    @State var date: Date
     @State private var error: String?
     var body: some View {
         NavigationStack {
             Form {
-                if let active = store.ongoingPeriod { Text("Started \(store.fmt(active.start))") }
+                if let period { Text("Started \(store.fmt(period.start))") }
                 DatePicker("Actual date", selection: $date, in: ...Date(), displayedComponents: .date)
                 Text("Choose today or a previous date. Changes can also be corrected on the Cycle calendar.")
                 if let error { Text(error).foregroundStyle(.red) }
                 Button("Save") {
                     do {
-                        if let active = store.ongoingPeriod {
-                            try store.savePeriod(id: active.id, start: active.start, end: date)
+                        if let period {
+                            try store.savePeriod(id: period.id, start: period.start, end: date)
                         } else { try store.savePeriod(start: date, end: nil) }
                         dismiss()
                     } catch { self.error = error.localizedDescription }
                 }.disabled(store.periodStorageError != nil)
                 if let error = store.periodStorageError { Text(error).foregroundStyle(.red) }
             }
-            .navigationTitle(store.ongoingPeriod == nil ? "Period started" : "Period ended")
+            .navigationTitle(period == nil ? "Period started" : "Period ended")
             .toolbar { Button("Cancel") { dismiss() } }
         }
     }
@@ -426,12 +422,12 @@ struct CycleSetupView: View {
                     Text("Used as a baseline for estimates. We never infer an actual end date.").font(.caption)
                 }
                 Section("Typical bleeding length") {
-                    Stepper("\(periodDays) days", value: $periodDays, in: 1...90)
+                    Stepper("\(periodDays) days", value: $periodDays, in: 2...10)
                     Text("Your usual number of bleeding days, not a limit on your records.").font(.caption)
                 }
                 Section("Typical cycle length") {
                     Toggle("I know my usual cycle length", isOn: $knowsCycle)
-                    if knowsCycle { Stepper("\(cycleDays) days", value: $cycleDays, in: 2...365) }
+                    if knowsCycle { Stepper("\(cycleDays) days", value: $cycleDays, in: 18...45) }
                     Text("Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.").font(.caption)
                 }
                 if let error { Text(error).foregroundStyle(.red) }

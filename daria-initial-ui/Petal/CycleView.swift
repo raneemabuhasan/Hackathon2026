@@ -331,80 +331,72 @@ struct CycleView: View {
                 .accessibilityHidden(true)
             }
             HStack(spacing: 14) {
-                legend(Rectangle().fill(Palette.pink).frame(height: 4), "Period")
+                legend(Rectangle().fill(Palette.mist), "Period")
+                legend(Rectangle().fill(Palette.mist.opacity(0.5)), "Predicted")
+                legend(Circle().stroke(Palette.accent, lineWidth: 2), "Today")
+                legend(Circle().fill(Palette.accent), "Selected")
             }.font(.caption).foregroundStyle(Palette.inkSoft)
+            Text("Predictions are estimates. Your period may come a few days earlier or later.")
+                .font(.caption).foregroundStyle(Palette.inkFaint)
+                .multilineTextAlignment(.center)
         }
         .card()
     }
 
     private func dayCell(_ d: Date) -> some View {
-        let period = store.periodHistory.contains(d)
-        let isPeriodStart = store.periodHistory.records.contains {
-            CycleStore.cal.isDate(d, inSameDayAs: $0.start)
-        }
+        let day = CycleStore.cal.startOfDay(for: d)
         let completed = store.periodHistory.records.first { record in
             guard let end = record.end else { return false }
-            return d >= CycleStore.cal.startOfDay(for: record.start) && d <= CycleStore.cal.startOfDay(for: end)
+            return day >= CycleStore.cal.startOfDay(for: record.start) && day <= CycleStore.cal.startOfDay(for: end)
         }
-        let periodDay = completed.flatMap {
-            CycleStore.cal.dateComponents([.day], from: CycleStore.cal.startOfDay(for: $0.start),
-                                         to: CycleStore.cal.startOfDay(for: d)).day.map { $0 + 1 }
-        } ?? (isPeriodStart ? 1 : nil)
-        let isSelected = hasSelectedDate && CycleStore.cal.isDate(d, inSameDayAs: selectedDate)
+        let spanStart = completed.map { CycleStore.cal.startOfDay(for: $0.start) } ?? store.expectedPeriodStart(for: day)
+        let period = spanStart != nil || store.hasPeriod(on: day)
+        // Days of the current period that haven't happened yet count as predicted, like the next period.
+        let predicted = (period && day > store.today) || store.isPredicted(day)
+        let periodDay = spanStart.map { CycleStore.days(day, from: $0) + 1 }
+        let isToday = CycleStore.cal.isDate(day, inSameDayAs: store.today)
+        let isSelected = hasSelectedDate && CycleStore.cal.isDate(day, inSameDayAs: selectedDate)
         return Button {
-            selectedDate = CycleStore.cal.startOfDay(for: d)
+            selectedDate = day
             hasSelectedDate = true
             showingPeriodControls = true
         } label: {
             // A stable row height prevents two-digit dates from being compressed
             // by an aspect-ratio proposal. The entire cell accepts taps.
-            Text("\(CycleStore.cal.component(.day, from: d))")
-                .font(.system(size: 15, weight: .semibold))
+            Text("\(CycleStore.cal.component(.day, from: day))")
+                .font(.system(size: 15, weight: isToday ? .bold : .semibold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
+                .foregroundStyle(isSelected ? Color.white : Palette.ink)
+                .frame(width: 34, height: 34)
+                .background {
+                    if isSelected { Circle().fill(Palette.accent) }
+                    else if isToday { Circle().stroke(Palette.accent, lineWidth: 2) }
+                }
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
-                .foregroundStyle(Palette.ink)
                 .background {
-                    if isSelected {
-                        Rectangle().fill(Palette.blush)
-                    }
+                    if predicted { Rectangle().fill(Palette.mist.opacity(0.5)) }
+                    else if period { Rectangle().fill(Palette.mist) }
                 }
-                .overlay(alignment: .top) {
+                .overlay(alignment: .topLeading) {
                     if let periodDay {
-                        HStack(spacing: 3) {
-                            Text("\(periodDay)")
-                                .font(.system(size: 9, weight: .medium))
-                                .monospacedDigit()
-                                .foregroundStyle(Palette.inkSoft)
-                                .fixedSize()
-                            if completed != nil {
-                                Rectangle().fill(Palette.pink)
-                                    .frame(height: 4)
-                            } else {
-                                Spacer(minLength: 0)
-                            }
-                        }
-                        .padding(.leading, 5)
-                        .padding(.trailing, 3)
-                        .padding(.top, 2)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
-                }
-                .overlay(alignment: .bottom) {
-                    if completed == nil && period {
-                        Circle().fill(Palette.accent)
-                            .frame(width: 5, height: 5)
-                            .padding(.bottom, 3)
+                        Text("\(periodDay)")
+                            .font(.system(size: 9, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.inkSoft)
+                            .padding(.leading, 4)
+                            .padding(.top, 2)
                             .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(d.formatted(date: .complete, time: .omitted) + (period ? ", recorded period" : "")
+        .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
+                            + (predicted ? ", predicted period" : period ? ", period" : "")
                             + (periodDay.map { ", period day \($0)" } ?? ""))
         .accessibilityHint("Opens period start and end controls for this date")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

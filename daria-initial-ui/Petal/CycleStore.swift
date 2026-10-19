@@ -68,6 +68,8 @@ struct Profile: Codable {
     /// The user's own tags, shown next to the built-in ones. Optional so older profiles still decode.
     var customMoods: [String]? = nil
     var customSymptoms: [String]? = nil
+    /// Answers from "Edit cycle details". Optional so older profiles still decode.
+    var baseline: CycleBaseline? = nil
 }
 
 /// One suggestion on Today's "Your plan for today" card.
@@ -122,6 +124,7 @@ struct ChatMessage: Identifiable {
 ///   users/{uid}/logs/{yyyy-MM-dd} DayLog
 ///   users/{uid}/reminders/{id}  Reminder
 ///   users/{uid}/grocery/{id}    GroceryItem
+///   users/{uid}/periods/{id}    PeriodRecord
 ///
 /// Writes go straight to Firestore; the snapshot listeners update the arrays below
 /// (immediately for local writes, and offline thanks to Firestore's cache).
@@ -129,42 +132,101 @@ struct ChatMessage: Identifiable {
 final class CycleStore {
     private(set) var periodHistory = PeriodHistory()
     var periodStorageError: String?
-    private let periodKey = "petal.periodHistory.v1"
+    private var periodsRef: CollectionReference { userRef.collection("periods") }
 
+    /// Validates against the loaded history, then writes the one changed record to Firestore.
     func savePeriod(id: UUID? = nil, start: Date, end: Date?) throws {
         var next = periodHistory
         try next.save(id: id, start: start, end: end)
-        try persistPeriods(next)
+        guard let saved = next.records.first(where: { !periodHistory.records.contains($0) }) else { return }
+        try periodsRef.document(saved.id.uuidString).setData(from: saved) { error in
+            if let error { self.showToast("Couldn't save period: \(error.localizedDescription)") }
+        }
+        periodHistory = next
     }
 
     func removePeriod(id: UUID) throws {
-        var next = periodHistory
-        next.remove(id: id)
-        try persistPeriods(next)
+        periodsRef.document(id.uuidString).delete { error in
+            if let error { self.showToast("Couldn't delete period: \(error.localizedDescription)") }
+        }
+        periodHistory.remove(id: id)
     }
 
-    private func persistPeriods(_ next: PeriodHistory) throws {
-        let data = try JSONEncoder().encode(next)
-        UserDefaults.standard.set(data, forKey: periodKey)
-        periodHistory = next
-        periodStorageError = nil
-    }
-
-    private(set) var baseline: CycleBaseline?
+    var baseline: CycleBaseline? { profile?.baseline }
     var showCycleSetup = false
-    var forecast: CycleForecast { CycleForecast(baseline: baseline, records: periodHistory.records) }
-    var ongoingPeriod: PeriodRecord? { periodHistory.records.first { $0.end == nil } }
-    var forecastBasis: String {
-        if forecast.sampleCount > 0 { return "Based on \(forecast.sampleCount) recorded cycle intervals." }
-        return baseline?.cycleDays == nil ? "Using a 28-day starting estimate while we learn your cycle." : "Based on the cycle length you entered."
+    /// Recorded on the calendar or logged with flow. Never inferred from predictions.
+    func hasPeriod(on date: Date) -> Bool {
+        periodHistory.contains(date) || log(for: date).map { $0.flow != "None" } == true
     }
+    private var backfillKey: String { "petal.flowBackfill.v2.\(uid)" }
+
+    /// Flow logged before period records existed only showed as a tint. Turn it into records one time,
+    /// reading from the server so a stale cache can't cause duplicates, and so deleting a record later sticks.
+    private func backfillFlowPeriods() async {
+        guard !UserDefaults.standard.bool(forKey: backfillKey) else { return }
+        do {
+            let logDocs = try await userRef.collection("logs").getDocuments(source: .server).documents
+            let periodDocs = try await periodsRef.getDocuments(source: .server).documents
+            periodHistory = PeriodHistory(records: periodDocs.compactMap { try? $0.data(as: PeriodRecord.self) })
+            let flowDays = logDocs.compactMap { try? $0.data(as: DayLog.self) }.filter { $0.flow != "None" }.map(\.date).sorted()
+            flowDays.forEach(recordFlow)
+            UserDefaults.standard.set(true, forKey: backfillKey)
+        } catch {
+            print("Period backfill failed, will retry next launch:", error)
+        }
+    }
+
+    /// Logging flow on a day no period covers starts one (or extends one that ended within two days),
+    /// so the calendar controls and period history see it.
+    private func recordFlow(on date: Date) {
+        let day = Self.cal.startOfDay(for: date)
+        if periodHistory.contains(day) || ongoingPeriod.map({ $0.start <= day }) == true { return }
+        if let previous = periodHistory.records.first(where: { record in
+            record.end.map { $0 < day && Self.days(day, from: $0) <= 2 } ?? false
+        }) {
+            try? savePeriod(id: previous.id, start: previous.start, end: day)
+        } else {
+            // Recent flow is probably still going; older flow is a one-day record the user can extend.
+            let ongoing = ongoingPeriod == nil && Self.days(today, from: day) < periodLength
+            try? savePeriod(start: day, end: ongoing ? nil : day)
+        }
+    }
+
+    /// Start of the period `date` probably falls in: an ongoing record runs its usual length,
+    /// stretched to today if longer; a start from logged flow runs its usual length.
+    /// Display only; nothing is saved until the user records an end date.
+    func expectedPeriodStart(for date: Date) -> Date? {
+        let start: Date, end: Date
+        if let active = ongoingPeriod {
+            start = Self.cal.startOfDay(for: active.start)
+            end = max(today, Self.add(start, periodLength - 1))
+        } else if !periodHistory.contains(lastStart) {
+            start = lastStart
+            end = Self.add(start, periodLength - 1)
+        } else { return nil }
+        let day = Self.cal.startOfDay(for: date)
+        return day >= start && day <= end ? start : nil
+    }
+    /// The recorded period `date` falls in. One with no end yet covers its usual length,
+    /// or up to today if it has run longer.
+    func period(on date: Date) -> PeriodRecord? {
+        let day = Self.cal.startOfDay(for: date)
+        return periodHistory.records.first { record in
+            let start = Self.cal.startOfDay(for: record.start)
+            let end = record.end.map { Self.cal.startOfDay(for: $0) } ?? max(today, Self.add(start, periodLength - 1))
+            return start <= day && day <= end
+        }
+    }
+    var ongoingPeriod: PeriodRecord? { periodHistory.records.first { $0.end == nil } }
+    /// Also updates the profile fields every estimate reads, so Settings and the Today card agree.
     func saveBaseline(_ value: CycleBaseline, ongoing: Bool) throws {
-        let data = try JSONEncoder().encode(value)
         if ongoing, let start = value.lastStart, ongoingPeriod == nil {
             try savePeriod(start: start, end: nil)
         }
-        UserDefaults.standard.set(data, forKey: "petal.cycleBaseline.v1")
-        baseline = value
+        var fields: [String: Any] = ["baseline": try Firestore.Encoder().encode(value), "periodLength": value.periodDays]
+        if let start = value.lastStart { fields["lastPeriodStart"] = Timestamp(date: Self.cal.startOfDay(for: start)) }
+        if let days = value.cycleDays { fields["cycleLength"] = days }
+        userRef.updateData(fields) { error in if let error { print("Baseline update failed:", error) } }
         showCycleSetup = false
     }
 
@@ -200,7 +262,6 @@ final class CycleStore {
     var diets: Set<String> { Set(profile?.diets ?? []) }
     var avoid: Set<String> { Set(profile?.avoid ?? []) }
 
-    static let demoLengths = [28, 31, 27, 29, 30] // most recent completed cycle first
     nonisolated static let cal = Calendar.current
     nonisolated static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
     nonisolated static func days(_ a: Date, from b: Date) -> Int {
@@ -222,6 +283,7 @@ final class CycleStore {
         self.uid = uid
         today = Self.cal.startOfDay(for: .now)
         listen()
+        Task { await backfillFlowPeriods() }
     }
 
     // MARK: Sync
@@ -242,6 +304,14 @@ final class CycleStore {
                 MainActor.assumeIsolated {
                     if let error { print("Logs listener:", error) }
                     self?.logs = snap?.documents.compactMap { try? $0.data(as: DayLog.self) } ?? []
+                    self?.syncNotifications() // predictions may have moved
+                    self?.prefetchAI()
+                }
+            },
+            periodsRef.addSnapshotListener { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    if let error { print("Periods listener:", error) }
+                    self?.periodHistory = PeriodHistory(records: snap?.documents.compactMap { try? $0.data(as: PeriodRecord.self) } ?? [])
                     self?.syncNotifications() // predictions may have moved
                     self?.prefetchAI()
                 }
@@ -324,10 +394,11 @@ final class CycleStore {
     // MARK: Cycle maths
 
     /// Period start dates, most recent first: any logged flow that follows two flow-free days,
-    /// plus the onboarding answer. Starts less than 10 days apart count as one period.
+    /// periods recorded on the calendar, plus the onboarding answer. Starts less than 10 days apart count as one period.
     var starts: [Date] {
         let flowDays = Set(logs.filter { $0.flow != "None" }.map { Self.cal.startOfDay(for: $0.date) })
         var candidates = flowDays.filter { !flowDays.contains(Self.add($0, -1)) && !flowDays.contains(Self.add($0, -2)) }
+        candidates.formUnion(periodHistory.records.map { Self.cal.startOfDay(for: $0.start) })
         if let seed = profile?.lastPeriodStart { candidates.insert(Self.cal.startOfDay(for: seed)) }
         var result: [Date] = []
         for d in candidates.sorted() where result.last.map({ Self.days(d, from: $0) >= 10 }) ?? true {
@@ -398,7 +469,7 @@ final class CycleStore {
     var currentPhase: Phase { phase(forDay: cycleDay) }
 
     func isPeriod(_ date: Date) -> Bool {
-        date <= today && (logs.contains { $0.flow != "None" && Self.cal.isDate($0.date, inSameDayAs: date) }
+        date <= today && (periodHistory.contains(date) || logs.contains { $0.flow != "None" && Self.cal.isDate($0.date, inSameDayAs: date) }
             || starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength })
     }
     func isPredicted(_ date: Date) -> Bool {
@@ -434,6 +505,7 @@ final class CycleStore {
     /// Logs are keyed by day, so saving replaces that day's entry (not necessarily today's).
     func save(_ log: DayLog) {
         try? userRef.collection("logs").document(log.id).setData(from: log)
+        if log.flow != "None" { recordFlow(on: log.date) }
         showLog = false
         selectedLogDate = nil
         let tags = log.moods.count + log.symptoms.count
@@ -443,6 +515,7 @@ final class CycleStore {
     /// Saves a log and waits for Firestore to accept it, so the assistant only confirms real saves.
     func write(_ log: DayLog) async throws {
         try await set(log, at: userRef.collection("logs").document(log.id))
+        if log.flow != "None" { recordFlow(on: log.date) }
     }
 
     /// Saves a reminder and waits for Firestore, so the assistant only confirms real saves.
@@ -526,26 +599,22 @@ final class CycleStore {
         showToast("Grocery list cleared")
     }
 
-    /// Deletes every document this user owns. The profile goes too, so they land back on onboarding.
-    func deleteAllData() {
+    /// Deletes every document this user owns and waits for Firestore to confirm.
+    /// The profile goes too, so they land back on onboarding.
+    func deleteAllData() async throws {
+        let cached = try await cacheRef.getDocuments().documents.map(\.reference)
         let refs = logs.map { userRef.collection("logs").document($0.id) }
             + reminders.map { userRef.collection("reminders").document($0.id) }
             + grocery.map { userRef.collection("grocery").document($0.id) }
+            + periodHistory.records.map { periodsRef.document($0.id.uuidString) }
+            + cached
             + [userRef]
         // Firestore batches are capped at 500 writes.
         for chunk in stride(from: 0, to: refs.count, by: 450).map({ refs[$0..<min($0 + 450, refs.count)] }) {
             let batch = db.batch()
             chunk.forEach { batch.deleteDocument($0) }
-            batch.commit { error in if let error { print("Delete failed:", error) } }
+            try await batch.commit()
         }
-        cacheRef.getDocuments { snap, _ in
-            let batch = Firestore.firestore().batch()
-            snap?.documents.forEach { batch.deleteDocument($0.reference) }
-            batch.commit()
-        }
-        periodHistory = PeriodHistory()
-        UserDefaults.standard.removeObject(forKey: periodKey)
-        periodStorageError = nil
         aiMeals = [:]
         plan = nil
         messages = []
@@ -555,24 +624,6 @@ final class CycleStore {
         showToast("Your data was deleted")
     }
 
-    #if DEBUG
-    /// Writes five past cycles of made-up logs so the charts have something to show in a demo.
-    func addSampleHistory() {
-        var s = [lastStart]
-        for length in Self.demoLengths { s.append(Self.add(s.last!, -length)) }
-        let batch = db.batch()
-        let write = { (log: DayLog) in try? batch.setData(from: log, forDocument: self.userRef.collection("logs").document(log.id)) }
-        for start in s.dropFirst() {
-            write(DayLog(date: start, flow: "Heavy", symptoms: ["Cramps", "Fatigue"]))
-            write(DayLog(date: Self.add(start, 1), flow: "Medium", symptoms: ["Cramps", "Back pain"]))
-            write(DayLog(date: Self.add(start, 2), flow: "Light", symptoms: ["Fatigue"]))
-            write(DayLog(date: Self.add(start, -2), symptoms: ["Bloating", "Cravings"]))
-            write(DayLog(date: Self.add(start, -4), symptoms: ["Tender breasts", "Trouble sleeping"]))
-        }
-        batch.commit { error in if let error { print("Sample history failed:", error) } }
-        showToast("Added sample history")
-    }
-    #endif
 
     // MARK: Nourish
 
