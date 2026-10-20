@@ -453,10 +453,16 @@ struct CycleView: View {
             .overlay {
                 GeometryReader { geometry in
                     Path { path in
-                        for row in 0..<(cellCount / 7) {
+                        let gridBottom = 28 + CGFloat(cellCount / 7) * Self.cellHeight
+                        for row in 0...(cellCount / 7) {
                             let y = 28 + CGFloat(row) * Self.cellHeight
                             path.move(to: CGPoint(x: 0, y: y))
                             path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                        }
+                        for column in 0...7 {
+                            let x = CGFloat(column) * geometry.size.width / 7
+                            path.move(to: CGPoint(x: x, y: 28))
+                            path.addLine(to: CGPoint(x: x, y: gridBottom))
                         }
                     }
                     .stroke(Palette.berry.opacity(0.12), lineWidth: 1)
