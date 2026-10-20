@@ -372,13 +372,32 @@ final class CycleStore {
             note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")
     }
 
-    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
-        userRef.updateData([
+    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) async throws {
+        let start = Self.cal.startOfDay(for: lastPeriodStart)
+        let batch = db.batch()
+        // Settings displays the latest recorded start, so edits must update that record too.
+        if let latest = periodHistory.records.first,
+           !Self.cal.isDate(start, inSameDayAs: latest.start) {
+            if let periodStorageError {
+                throw NSError(domain: "CycleStore", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: periodStorageError])
+            }
+            var next = periodHistory
+            try next.save(id: latest.id, start: start, end: latest.end)
+            guard let saved = next.records.first(where: { $0.id == latest.id }) else {
+                throw PeriodHistory.Validation.missing
+            }
+            try batch.setData(from: saved, forDocument: periodsRef.document(saved.id.uuidString))
+        }
+        let baseline = CycleBaseline(lastStart: start, periodDays: periodLength, cycleDays: cycleLength)
+        batch.updateData([
             "name": name,
-            "lastPeriodStart": Timestamp(date: Self.cal.startOfDay(for: lastPeriodStart)),
+            "lastPeriodStart": Timestamp(date: start),
             "cycleLength": cycleLength,
             "periodLength": periodLength,
-        ]) { error in if let error { print("Profile update failed:", error) } }
+            "baseline": try Firestore.Encoder().encode(baseline),
+        ], forDocument: userRef)
+        try await batch.commit()
         showToast("Settings saved")
     }
 

@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var periodLength = 5
     @State private var confirmingDelete = false
     @State private var confirmingAccountDelete = false
+    @State private var saving = false
+    @State private var saveError: String?
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -66,11 +68,20 @@ struct SettingsView: View {
                 }
 
                 Button {
-                    store.updateProfile(name: trimmedName, lastPeriodStart: lastStart,
-                                        cycleLength: cycleLength, periodLength: periodLength)
-                    dismiss()
+                    saving = true
+                    saveError = nil
+                    Task {
+                        defer { saving = false }
+                        do {
+                            try await store.updateProfile(name: trimmedName, lastPeriodStart: lastStart,
+                                                          cycleLength: cycleLength, periodLength: periodLength)
+                            dismiss()
+                        } catch {
+                            saveError = error.localizedDescription
+                        }
+                    }
                 } label: {
-                    Text("Save changes")
+                    Text(saving ? "Saving…" : "Save changes")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -78,7 +89,13 @@ struct SettingsView: View {
                         .background(Palette.accent.opacity(changed && !trimmedName.isEmpty ? 1 : 0.4), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!changed || trimmedName.isEmpty)
+                .disabled(saving || !changed || trimmedName.isEmpty)
+
+                if let saveError {
+                    Text(saveError)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.wine)
+                }
 
                 section("Account") {
                     VStack(alignment: .leading, spacing: 12) {
