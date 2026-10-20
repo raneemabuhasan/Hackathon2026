@@ -100,7 +100,7 @@ struct TabBar: View {
                     .frame(height: 24)
                 Text(title).font(.system(size: 10, weight: .semibold))
             }
-            .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
+            .foregroundStyle(selected ? Palette.secondaryAccent : Palette.inkFaint)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
