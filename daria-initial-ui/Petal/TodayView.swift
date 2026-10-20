@@ -14,13 +14,19 @@ struct TodayView: View {
         GeometryReader { viewport in
             Page {
                 HStack(alignment: .top) {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                    // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
+                    TimelineView(.everyMinute) { context in
                         VStack(alignment: .leading, spacing: 4) {
-                            Eyebrow(text: context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                            DisplayTitle(before: "\(greeting(at: context.date)), ", accent: store.name)
+                            Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                            DisplayTitle(
+                                before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                accent: store.name
+                            )
                         }
                     }
+
                     Spacer()
+
                     Button { showSettings = true } label: {
                         Text(String(store.name.prefix(1)).uppercased())
                             .font(.system(size: 15, weight: .bold))
@@ -55,12 +61,19 @@ struct TodayView: View {
         }
     }
 
-    private func greeting(at date: Date) -> String {
+    static func greeting(at date: Date) -> String {
         switch Calendar.current.component(.hour, from: date) {
-        case 5..<12: return "Good morning"
-        case 12..<18: return "Good afternoon"
-        default: return "Good night"
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
         }
+    }
+
+    // MARK: Cycle ring
+
+    /// The date the ring is showing so the button acts on that day.
+    private var ringDate: Date {
+        CycleStore.add(store.lastStart, (previewDay ?? max(1, store.cycleDay)) - 1)
     }
 
     // MARK: Cycle ring
@@ -106,7 +119,12 @@ struct TodayView: View {
     private var prediction: some View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
-
+        let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
+        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
+        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
+        let pct = { (d: Date) in
+            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
+        }
         return Button {
             store.tab = .cycle
         } label: {
@@ -237,10 +255,9 @@ struct TodayView: View {
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
-                        .font(.system(size: 17))
+                        .font(.system(size: 20))
                         .foregroundStyle(Palette.accent)
-                        .frame(width: 40, height: 40)
-                        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)

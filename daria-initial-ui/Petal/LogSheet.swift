@@ -10,9 +10,18 @@ struct LogSheet: View {
     @State private var pain = 0.0
     @State private var energy = 3.0
     @State private var note = ""
-    /// Which list the "+ Add" alert is adding to (true = symptoms), nil when closed.
-    @State private var addingSymptom: Bool?
-    @State private var newTag = ""
+    @State private var viewingSavedLog = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var editingMoods = false
+    @State private var editingSymptoms = false
+    @State private var tagEditor: TagEditRequest?
+
+    private struct TagEditRequest: Identifiable {
+        let id = UUID()
+        let symptom: Bool
+        let originalName: String? // nil when adding a new tag
+        let emoji: String
+    }
 
     private let flows = [("None", 0), ("Light", 1), ("Medium", 2), ("Heavy", 3)]
     private let energyLevels = [("Drained", "battery.0percent"), ("Low", "battery.25percent"), ("Steady", "battery.50percent"),
@@ -30,7 +39,8 @@ struct LogSheet: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        DisplayTitle(before: "How are you ", accent: "today?", size: 30)
+                        DisplayTitle(before: viewingSavedLog ? "How you " : "How do you ",
+                                     accent: viewingSavedLog ? "felt" : "feel?", size: 30)
                     }
                     Spacer()
                     Button { store.showLog = false } label: {
@@ -43,7 +53,10 @@ struct LogSheet: View {
                     .accessibilityLabel("Close")
                 }
 
-                DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                if viewingSavedLog {
+                    savedLogDetails
+                } else {
+                    DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
                     .font(.system(size: 14, weight: .semibold))
                     .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
 
@@ -77,14 +90,14 @@ struct LogSheet: View {
                 }
 
                 field("Mood") {
-                    tagGrid(store.allMoods, selected: $moods, custom: store.profile?.customMoods ?? [], symptom: false)
+                    tagSection(store.allMoods, selected: $moods, symptom: false)
                 }
 
                 field("Symptoms") {
-                    tagGrid(store.allSymptoms, selected: $symptoms, custom: store.profile?.customSymptoms ?? [], symptom: true)
+                    tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
                 }
 
-                field("Pain", value: "\(Self.painWord(Int(pain))) · \(Int(pain))") {
+                field("Pain", value: pain == 0 ? "None" : "\(Self.painWord(Int(pain))) · \(Int(pain))") {
                     painScale
                     if pain >= 7 {
                         VStack(alignment: .leading, spacing: 6) {
@@ -131,7 +144,7 @@ struct LogSheet: View {
                     store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
                                       pain: Int(pain), energy: Int(energy), note: note))
                 } label: {
-                    Text("Save log")
+                    Text(store.log(for: logDate) == nil ? "Save log" : "Save changes")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -140,6 +153,7 @@ struct LogSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.logWritePending)
+                } // End editable log fields
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -149,37 +163,180 @@ struct LogSheet: View {
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
         .animation(.easeOut(duration: 0.2), value: pain >= 7)
-        .alert(addingSymptom == true ? "Add a symptom" : "Add a mood", isPresented: Binding(get: { addingSymptom != nil }, set: { if !$0 { addingSymptom = nil } })) {
-            TextField(addingSymptom == true ? "e.g. Joint pain" : "e.g. Restless", text: $newTag)
-            Button("Add") {
-                let symptom = addingSymptom == true
-                if let tag = store.addCustom(symptom: symptom, newTag) {
-                    if symptom { symptoms.insert(tag) } else { moods.insert(tag) }
+        .sheet(item: $tagEditor) { request in
+            TagEditorSheet(symptom: request.symptom,
+                           originalName: request.originalName,
+                           initialEmoji: request.emoji) { name, emoji in
+                guard let updated = store.saveEditableTag(symptom: request.symptom,
+                                                          original: request.originalName,
+                                                          name: name, emoji: emoji) else { return false }
+                if request.symptom {
+                    if let previous = request.originalName {
+                        if symptoms.remove(previous) != nil { symptoms.insert(updated) }
+                    } else {
+                        symptoms.insert(updated)
+                    }
+                } else {
+                    if let previous = request.originalName {
+                        if moods.remove(previous) != nil { moods.insert(updated) }
+                    } else {
+                        moods.insert(updated)
+                    }
                 }
-                newTag = ""
+                return true
             }
-            Button("Cancel", role: .cancel) { newTag = "" }
-        } message: {
-            Text("It'll be saved to your list for next time.")
         }
         .onAppear {
             logDate = store.selectedLogDate ?? store.today
             loadDraft(for: logDate)
+            // Tapping a saved row previews it. The + button still opens the editor.
+            viewingSavedLog = store.showingLogPreview && store.log(for: logDate) != nil
         }
-        .onDisappear { store.selectedLogDate = nil }
+        .onDisappear { store.selectedLogDate = nil; store.showingLogPreview = false }
+    }
+
+    /// A saved day log is a readable journal entry until the user taps Edit.
+    @ViewBuilder private var savedLogDetails: some View {
+        if let saved = store.log(for: logDate) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 9) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(Palette.accent)
+                    Text(logDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Palette.inkSoft)
+                    Spacer(minLength: 8)
+                    Button {
+                        viewingSavedLog = false
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Palette.accent)
+                    .accessibilityLabel("Edit this saved day log")
+                }
+
+                // Flow gets the same droplet language as the log editor.
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Flow", systemImage: "drop.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                    HStack(spacing: 5) {
+                        let manualWithoutSavedFlow = saved.flow == "None" && store.periodHistory.contains(logDate)
+                        let drops = flows.first(where: { $0.0 == saved.flow })?.1 ?? 0
+                        if drops == 0 {
+                            Image(systemName: "drop")
+                                .foregroundStyle(Palette.inkFaint)
+                        } else {
+                            ForEach(0..<drops, id: \.self) { _ in
+                                Image(systemName: "drop.fill")
+                                    .foregroundStyle(Palette.accent)
+                            }
+                        }
+                        Text(manualWithoutSavedFlow ? "Period marked · choose flow" :
+                             saved.flow == "None" ? "Not recorded" : saved.flow)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
+                }
+
+                savedTagSection("Moods", icon: "face.smiling", tags: saved.moods, symptom: false)
+                savedTagSection("Symptoms", icon: "heart.text.square", tags: saved.symptoms, symptom: true)
+
+                HStack(spacing: 10) {
+                    savedStat("Pain", icon: "waveform.path.ecg",
+                              value: saved.pain == 0 ? "None" : "\(saved.pain) / 10")
+                    savedStat("Energy",
+                              icon: energyLevels[max(0, min(energyLevels.count - 1, saved.energy - 1))].1,
+                              value: "\(saved.energy) / 5")
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Note", systemImage: "square.and.pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                    Text(saved.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                         ? "No note for this day." : saved.note)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.inkSoft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
+                }
+            }
+            .padding(17)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
+        } else {
+            Text("This saved log is no longer available.")
+                .foregroundStyle(Palette.inkSoft)
+        }
+    }
+
+    private func savedTagSection(_ title: String, icon: String,
+                                 tags: [String], symptom: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+            if tags.isEmpty {
+                Text("None recorded")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkSoft)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
+            } else {
+                LazyVGrid(columns: tileColumns, spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        let icon = store.emojiForTag(symptom: symptom, tag) ?? Self.emoji[tag] ?? "✨"
+                        VStack(spacing: 5) {
+                            Text(icon).font(.system(size: 23))
+                            Text(tag)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 67)
+                        .padding(.horizontal, 3)
+                        .background(Palette.surface2.opacity(0.32),
+                                    in: RoundedRectangle(cornerRadius: 13))
+                    }
+                }
+            }
+        }
+    }
+
+    private func savedStat(_ title: String, icon: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+            Text(value)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .background(Palette.surface2.opacity(0.32), in: RoundedRectangle(cornerRadius: 13))
     }
 
     /// Fills the form from that day's saved log, or blank defaults (no flow, pain 0, steady energy).
     private func loadDraft(for date: Date) {
         if let saved = store.log(for: date) {
-            flow = saved.flow
+            flow = store.flowForLog(on: date, saved: saved.flow)
             moods = Set(saved.moods)
             symptoms = Set(saved.symptoms)
             pain = Double(saved.pain)
             energy = Double(saved.energy)
             note = saved.note
         } else {
-            flow = "None"
+            flow = store.flowForLog(on: date)
             moods = []
             symptoms = []
             pain = 0
@@ -192,31 +349,106 @@ struct LogSheet: View {
         if set.contains(value) { set.remove(value) } else { set.insert(value) }
     }
 
-    /// Emoji tiles for moods or symptoms, with the user's own tags and a "+ Add" tile at the end.
-    private func tagGrid(_ tags: [String], selected: Binding<Set<String>>, custom: [String], symptom: Bool) -> some View {
-        // Keep anything already on this day's log visible, even if it was removed from the custom list.
+    /// The management bar only affects Mood and Symptoms; Flow and all other fields stay unchanged.
+    private func tagSection(_ tags: [String], selected: Binding<Set<String>>, symptom: Bool) -> some View {
+        let managing = symptom ? editingSymptoms : editingMoods
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Spacer()
+                Button(managing ? "Done" : "Edit") {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        if symptom {
+                            editingSymptoms.toggle()
+                            editingMoods = false
+                        } else {
+                            editingMoods.toggle()
+                            editingSymptoms = false
+                        }
+                    }
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .accessibilityLabel(managing ? "Finish editing tags" : "Edit tags")
+            }
+            if managing {
+                Text("Hold and drag to reorder · Tap − to remove · Double-tap to rename or change emoji")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            tagGrid(tags, selected: selected, symptom: symptom, managing: managing)
+        }
+    }
+
+    private func tagGrid(_ tags: [String], selected: Binding<Set<String>>, symptom: Bool, managing: Bool) -> some View {
+        // Include archived tags still selected in an existing day's log so editing never loses data.
         let shown = tags + selected.wrappedValue.filter { !tags.contains($0) }.sorted()
         return LazyVGrid(columns: tileColumns, spacing: 8) {
             ForEach(shown, id: \.self) { tag in
                 let on = selected.wrappedValue.contains(tag)
-                Button { toggle(&selected.wrappedValue, tag) } label: {
-                    tile(emoji: Self.emoji[tag] ?? "✨", label: tag, on: on)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tag)
-                .accessibilityAddTraits(on ? .isSelected : [])
-                .contextMenu {
-                    if custom.contains(tag) {
-                        Button("Remove from my list", role: .destructive) { store.removeCustom(symptom: symptom, tag) }
+                let icon = store.emojiForTag(symptom: symptom, tag) ?? Self.emoji[tag] ?? "✨"
+                if managing {
+                    tile(emoji: icon, label: tag, on: on)
+                        .phaseAnimator([false, true]) { content, phase in
+                            content.rotationEffect(.degrees(reduceMotion ? 0 : (phase ? 1.4 : -1.4)))
+                        } animation: { _ in .easeInOut(duration: 0.17) }
+                        .onTapGesture(count: 2) { editTag(tag, symptom: symptom) }
+                        .draggable(tag)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let source = items.first else { return false }
+                            store.moveTag(symptom: symptom, from: source, to: tag)
+                            return true
+                        }
+                        .overlay(alignment: .topLeading) {
+                            Button {
+                                store.removeTag(symptom: symptom, tag)
+                                selected.wrappedValue.remove(tag)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 21))
+                                    .foregroundStyle(Palette.accent)
+                                    .background(Palette.surface, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(tag) from my list")
+                            .offset(x: -5, y: -5)
+                        }
+                        .accessibilityLabel("\(tag), hold and drag to reorder or double tap to edit")
+                } else {
+                    Button { toggle(&selected.wrappedValue, tag) } label: {
+                        tile(emoji: icon, label: tag, on: on)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tag)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .contextMenu {
+                        Button { editTag(tag, symptom: symptom) } label: {
+                            Label("Edit name or emoji", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            store.removeTag(symptom: symptom, tag)
+                            selected.wrappedValue.remove(tag)
+                        } label: {
+                            Label("Remove from my list", systemImage: "trash")
+                        }
                     }
                 }
             }
-            Button { addingSymptom = symptom } label: {
-                tile(emoji: "＋", label: "Add", on: false, dashed: true)
+            if managing {
+                Button {
+                    tagEditor = TagEditRequest(symptom: symptom, originalName: nil,
+                                               emoji: symptom ? "🌀" : "😊")
+                } label: {
+                    tile(emoji: "＋", label: "Add", on: false, dashed: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(symptom ? "Add your own symptom" : "Add your own mood")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(symptom ? "Add your own symptom" : "Add your own mood")
         }
+    }
+
+    private func editTag(_ name: String, symptom: Bool) {
+        let emoji = store.emojiForTag(symptom: symptom, name) ?? Self.emoji[name] ?? (symptom ? "🌀" : "😊")
+        tagEditor = TagEditRequest(symptom: symptom, originalName: name, emoji: emoji)
     }
 
     private func tile(emoji: String, label: String, on: Bool, dashed: Bool = false) -> some View {
@@ -313,6 +545,139 @@ struct LogSheet: View {
                 if let value { Text(value).font(.system(size: 14)).monospacedDigit().foregroundStyle(Palette.inkSoft) }
             }
             content()
+        }
+    }
+}
+
+// A compact name + emoji editor. Built-in tags may be renamed (converted into custom tags);
+// previously saved logs remain unchanged so the history stays accurate.
+@MainActor
+private struct TagEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let symptom: Bool
+    let originalName: String?
+    let onSave: (String, String) -> Bool
+    @State private var name: String
+    @State private var emoji: String
+    @State private var showingEmojiPicker = false
+    @State private var showNameError = false
+
+    init(symptom: Bool, originalName: String?, initialEmoji: String,
+         onSave: @escaping (String, String) -> Bool) {
+        self.symptom = symptom
+        self.originalName = originalName
+        self.onSave = onSave
+        _name = State(initialValue: originalName ?? "")
+        _emoji = State(initialValue: initialEmoji)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(symptom ? "Symptom" : "Mood") {
+                    Button {
+                        showingEmojiPicker = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(emoji).font(.system(size: 30))
+                            Image(systemName: "face.smiling").foregroundStyle(Palette.accent)
+                            Text("Choose emoji").foregroundStyle(Palette.ink)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(Palette.inkFaint)
+                        }
+                    }
+                    .accessibilityLabel("Choose emoji, currently \(emoji)")
+                    TextField(symptom ? "e.g. Joint pain" : "e.g. Restless", text: $name)
+                        .textInputAutocapitalization(.sentences)
+                        .onChange(of: name) { _, _ in showNameError = false }
+                }
+                if showNameError {
+                    Text("Use a unique name of 1–30 characters.")
+                        .font(.footnote).foregroundStyle(.red)
+                }
+                Text("Choose a \(symptom ? "general emoji" : "face emoji") and a name. Changes affect future choices; saved daily entries keep their original labels.")
+                    .font(.footnote).foregroundStyle(Palette.inkSoft)
+            }
+            .navigationTitle(originalName == nil ? (symptom ? "New symptom" : "New mood") : "Edit tag")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if onSave(name, emoji) { dismiss() } else { showNameError = true }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .tint(Palette.accent)
+            .sheet(isPresented: $showingEmojiPicker) {
+                PetalEmojiPicker(symptom: symptom, emoji: $emoji)
+            }
+        }
+    }
+}
+
+/// Apple-style emoji grid. iOS does not expose a system emoji keyboard filtered to faces,
+/// so moods use a curated face-only selection and symptoms use broader emoji categories.
+@MainActor
+private struct PetalEmojiPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let symptom: Bool
+    @Binding var emoji: String
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+    private let faces = "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 🫠 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🫢 🫣 🤫 🤔 🫡 🤐 🤨 😐 😑 😶 🫥 😏 😒 🙄 😬 😮‍💨 🤥 🫨 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 😵‍💫 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 🫤 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 🥹 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿".split(separator: " ").map(String.init)
+    private let symptomGroups: [(String, String)] = [
+        ("Faces & feelings", "😀 😊 🥺 😷 🤕 🤒 😴 😰 🤢 😵 😡 🥵 😢 🤯 😩 😮‍💨 🥹 😌"),
+        ("Body & wellbeing", "💊 🩹 💉 🩺 🧠 🫀 🫁 🦷 🦴 👀 👂 👃 👄 🦵 🦶 ✋ 🤲 💪 🩸 🧘 🚶 🛌 💤 ♨️"),
+        ("Food, nature & symbols", "🍫 🍪 🍦 🍎 🍋 🍵 ☕ 💧 🌊 🌧️ 🌙 ☀️ 🌸 🌺 🍃 🌱 🪷 ⭐ ✨ 🌈 🔥 💥 ⚡ 💫 ❤️ 💔 💕 💖 💗 🧊 🎈 🌀 💢 ❗ ⚠️")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if symptom {
+                        ForEach(symptomGroups, id: \.0) { title, symbols in
+                            emojiGroup(title, values: symbols.split(separator: " ").map(String.init))
+                        }
+                    } else {
+                        emojiGroup("Faces", values: faces)
+                    }
+                }
+                .padding(16)
+            }
+            .background(Palette.bg)
+            .navigationTitle(symptom ? "Choose an emoji" : "Choose a face")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .tint(Palette.accent)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func emojiGroup(_ title: String, values: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(values, id: \.self) { symbol in
+                    Button {
+                        emoji = symbol
+                        dismiss()
+                    } label: {
+                        Text(symbol)
+                            .font(.system(size: 27))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(emoji == symbol ? Palette.accentSoft : Palette.surface,
+                                        in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Choose \(symbol)")
+                }
+            }
         }
     }
 }

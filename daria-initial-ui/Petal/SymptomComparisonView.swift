@@ -5,6 +5,7 @@ struct SymptomComparisonView: View {
     @Environment(CycleStore.self) private var store
     @State private var first: Date?
     @State private var second: Date?
+    @State private var showingDetails = false
 
     private var cycles: [ComparedCycle] { Array(store.comparisonCycles.reversed()) }
     private var comparison: CycleComparison? {
@@ -14,9 +15,73 @@ struct SymptomComparisonView: View {
         return SymptomComparisonEngine.compare(a, b)
     }
 
+    /// A short preview for the Calendar carousel; the full breakdown opens in a sheet.
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Compare cycles")
+            if !store.logsLoaded {
+                ProgressView("Loading symptom history")
+            } else if store.logsError != nil {
+                Text("We couldn't load your symptom history. Please try again when you're connected.")
+                    .font(.system(size: 13)).foregroundStyle(.red)
+            } else if cycles.count < 2 {
+                Text("Add a little more history").font(.system(size: 15, weight: .semibold))
+                Text("Mark the start of at least two periods on the calendar. Then you can compare what you logged in each cycle.")
+                    .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
+                    selector("Compare with", selection: $second, fallback: cycles[1].start)
+                }
+                if let result = comparison {
+                    if result.observations.isEmpty {
+                        Text("No symptoms logged for these cycles yet.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    } else {
+                        HStack {
+                            Text("Days logged").font(.caption).foregroundStyle(Palette.inkFaint)
+                            Spacer()
+                            Text("Earlier · Later").font(.caption).foregroundStyle(Palette.inkFaint)
+                        }
+                        ForEach(result.observations.prefix(3)) { observation in
+                            HStack {
+                                Text(observation.symptom).font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(observation.earlierDays) · \(observation.laterDays)")
+                                    .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft)
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("\(observation.symptom): \(observation.earlierDays) days in the earlier cycle, \(observation.laterDays) in the later")
+                        }
+                    }
+                } else {
+                    Text("You've picked the same cycle twice.")
+                        .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                }
+                Button("See full comparison") { showingDetails = true }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+            }
+        }
+        .sheet(isPresented: $showingDetails) {
+            NavigationStack {
+                ScrollView { details.padding(16) }
+                    .background(Palette.bg)
+                    .navigationTitle("Compare cycles")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingDetails = false }
+                        }
+                    }
+                    .tint(Palette.accent)
+            }
+            .environment(store)
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Choose two cycles to see what you logged in each one.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
             if !store.logsLoaded {
@@ -125,8 +190,13 @@ struct SymptomComparisonView: View {
     }
     private func evidence(_ entry: ComparisonEntry) -> some View {
         Button {
-            store.selectedLogDate = entry.date
-            store.showLog = true
+            // The log sheet opens from the app root, which can't present over this sheet, so close it first.
+            showingDetails = false
+            Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                store.selectedLogDate = entry.date
+                store.showLog = true
+            }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.date.formatted(date: .abbreviated, time: .omitted)).bold()
