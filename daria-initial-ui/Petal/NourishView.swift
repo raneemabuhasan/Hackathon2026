@@ -208,8 +208,8 @@ struct NourishView: View {
                         FoodCategoryIcon(category: d)
                             .frame(width: 14, height: 14)
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Palette.surface2, in: Capsule())
-                            .foregroundStyle(Palette.accent)
+                            .background(Palette.secondarySurface, in: Capsule())
+                            .foregroundStyle(Palette.secondaryAccent)
                             .accessibilityLabel(d)
                             .help(d)
                     }
