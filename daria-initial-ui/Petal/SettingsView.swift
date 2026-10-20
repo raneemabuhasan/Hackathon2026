@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var periodLength = 5
     @State private var confirmingDelete = false
     @State private var confirmingAccountDelete = false
+    @State private var confirmingSignOut = false
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -80,6 +81,18 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .disabled(!changed || trimmedName.isEmpty)
 
+                section("Appearance") {
+                    Text("Choose your colors")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkSoft)
+                    Text("Text, backgrounds and accents change together. Saved on this device.")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                    ForEach(CoordinatedTheme.allCases) { theme in
+                        paletteOption(theme)
+                    }
+                }
+
                 section("Account") {
                     VStack(alignment: .leading, spacing: 12) {
                         if usesPassword, let email = auth.user?.email {
@@ -92,8 +105,7 @@ struct SettingsView: View {
                             Divider().overlay(Palette.line)
                         }
                         row("Sign out", icon: "rectangle.portrait.and.arrow.right") {
-                            dismiss()
-                            auth.signOut()
+                            confirmingSignOut = true
                         }
                     }
                 }
@@ -118,6 +130,15 @@ struct SettingsView: View {
         .scrollDismissesKeyboard(.interactively)
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
+        .alert("Are you sure you want to sign out?", isPresented: $confirmingSignOut) {
+            Button("Sign out", role: .destructive) {
+                dismiss()
+                auth.signOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your data stays saved in your account. Sign back in any time to pick up where you left off.")
+        }
         .alert("Are you sure you want to delete all your data?", isPresented: $confirmingDelete) {
             Button("Delete my data", role: .destructive) {
                 Task {
@@ -147,6 +168,45 @@ struct SettingsView: View {
             cycleLength = p.cycleLength
             periodLength = p.periodLength
         }
+    }
+
+    private func paletteOption(_ theme: CoordinatedTheme) -> some View {
+        let selected = PalettePreferences.shared.theme == theme
+        let colors = theme.colors
+        return Button { PalettePreferences.shared.theme = theme } label: {
+            HStack(spacing: 12) {
+                HStack(spacing: -6) {
+                    Circle().fill(Color(hex: colors.pastel))
+                    Circle().fill(Color(hex: colors.secondaryPastel))
+                    Circle().fill(Color(hex: colors.accent))
+                }
+                .frame(width: 66, height: 28)
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(theme.name).font(.subheadline.weight(.semibold))
+                    Text(theme.detail).font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? Palette.secondaryAccent : Palette.inkSoft)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(12)
+            .frame(minHeight: 64)
+            .background(selected ? Palette.secondarySurface : Palette.surface,
+                        in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(selected ? Palette.secondaryAccent : Palette.line, lineWidth: selected ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(theme.name)
+        .accessibilityValue(theme.detail)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHint("Changes the app's full color palette")
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {

@@ -54,7 +54,7 @@ final class Assistant {
     private static func instructions(for store: CycleStore) -> String {
         let today = store.today.formatted(.dateTime.weekday(.wide).month(.wide).day().year())
         return """
-        You are the wellness companion inside Petal, a period-tracking app. Today is \(today) \
+        You are the wellness companion inside Sync, a period-tracking app. Today is \(today) \
         (\(dayFormatter.string(from: store.today))) in the user's time zone, \(TimeZone.current.identifier). \
         The user's name is \(store.name).
 
@@ -409,7 +409,7 @@ final class Assistant {
             generationConfig: GenerationConfig(temperature: 0.7, responseMIMEType: "application/json", responseSchema: planSchema)
         )
         let prompt = """
-        You write the "Your plan for today" card in Petal, a period-tracking app. Give exactly 3 gentle, optional \
+        You write the "Your plan for today" card in Sync, a period-tracking app. Give exactly 3 gentle, optional \
         suggestions for today: one food idea, one comfort or self-care idea, and one rest or movement idea.
 
         \(context)

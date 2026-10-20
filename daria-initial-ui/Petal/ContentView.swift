@@ -66,6 +66,7 @@ struct TabBar: View {
             item(.today, "Today", "circle.circle")
             item(.cycle, "Calendar", "calendar")
             Button {
+                store.showingLogPreview = false
                 store.selectedLogDate = store.tab == .cycle ? store.selectedCalendarDate ?? store.today : nil
                 store.showLog = true
             } label: {
@@ -94,10 +95,12 @@ struct TabBar: View {
         let selected = store.tab == tab
         return Button { store.tab = tab } label: {
             VStack(spacing: 3) {
+                // Symbols differ in height; a fixed slot keeps every label on the same line.
                 Image(systemName: icon).font(.system(size: 19, weight: selected ? .semibold : .regular))
+                    .frame(height: 24)
                 Text(title).font(.system(size: 10, weight: .semibold))
             }
-            .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
+            .foregroundStyle(selected ? Palette.secondaryAccent : Palette.inkFaint)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)

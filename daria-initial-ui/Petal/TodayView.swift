@@ -12,9 +12,13 @@ struct TodayView: View {
     var body: some View {
         Page {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    DisplayTitle(before: "Hi \(store.name), ", accent: "be gentle", after: " today")
+                // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
+                TimelineView(.everyMinute) { context in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                        DisplayTitle(before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                     accent: store.name)
+                    }
                 }
                 Spacer()
                 Button { showSettings = true } label: {
@@ -41,6 +45,14 @@ struct TodayView: View {
                 .environment(auth)
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
+        }
+    }
+
+    static func greeting(at date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
         }
     }
 
@@ -78,7 +90,7 @@ struct TodayView: View {
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(colors: [Color(hex: 0xF7BAC9), Palette.mist, Palette.cream],
+            LinearGradient(colors: [Palette.blushPink, Palette.mist, Palette.cream],
                            startPoint: .top, endPoint: .bottom),
             in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .sheet(isPresented: $showPeriodEntry) {
@@ -90,8 +102,11 @@ struct TodayView: View {
 
        private var prediction: some View {
         let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
-        let total = Double(CycleStore.days(store.windowEnd, from: store.today) + 4)
-        let pct = { (d: Date) in Double(CycleStore.days(d, from: store.today)) / total }
+        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
+        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
+        let pct = { (d: Date) in
+            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
+        }
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -223,10 +238,9 @@ struct TodayView: View {
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
-                        .font(.system(size: 17))
+                        .font(.system(size: 20))
                         .foregroundStyle(Palette.accent)
-                        .frame(width: 40, height: 40)
-                        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
