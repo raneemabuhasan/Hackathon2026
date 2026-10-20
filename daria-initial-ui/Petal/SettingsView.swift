@@ -46,18 +46,6 @@ struct SettingsView: View {
                     }
                 }
 
-                section("Appearance") {
-                    Text("Choose your colors")
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.inkSoft)
-                    Text("Text, backgrounds and accents change together. Saved on this device.")
-                        .font(.caption)
-                        .foregroundStyle(Palette.inkSoft)
-                    ForEach(CoordinatedTheme.allCases) { theme in
-                        paletteOption(theme)
-                    }
-                }
-
                 section("Profile") {
                     TextField("First name", text: $name)
                         .textContentType(.givenName)
@@ -92,6 +80,18 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!changed || trimmedName.isEmpty)
+
+                section("Appearance") {
+                    Text("Choose your colors")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.inkSoft)
+                    Text("Text, backgrounds and accents change together. Saved on this device.")
+                        .font(.caption)
+                        .foregroundStyle(Palette.inkSoft)
+                    ForEach(CoordinatedTheme.allCases) { theme in
+                        paletteOption(theme)
+                    }
+                }
 
                 section("Account") {
                     VStack(alignment: .leading, spacing: 12) {
