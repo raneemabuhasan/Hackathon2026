@@ -75,8 +75,9 @@ struct RootView: View {
                         .configure { $0.animationSpeed = 2.3 }
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: min(600, geometry.size.width * 1.6))
-                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                        // Compact wordmark, centered on any iPhone screen size.
+                        .frame(width: min(380, geometry.size.width * 0.95))
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
                 }
                 .background(Color.white.ignoresSafeArea())
                 .ignoresSafeArea()
