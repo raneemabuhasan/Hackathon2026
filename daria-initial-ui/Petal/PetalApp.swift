@@ -57,7 +57,7 @@ struct RootView: View {
         }
         .task {
             // A short intro plays once per app launch, independently of Firebase loading.
-            try? await Task.sleep(for: .seconds(reduceMotion ? 0.3 : 3.2))
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.3 : 2.9))
             showingLaunchAnimation = false
         }
     }
@@ -70,8 +70,8 @@ struct RootView: View {
                 GeometryReader { geometry in
                     LottieView(animation: .named("sync-animation"))
                         // The supplied animation contains 11 seconds, with a long end hold.
-                        // Play its animated portion in ~3 seconds, then show the app.
-                        .playing(.fromFrame(0, toFrame: 340, loopMode: .playOnce))
+                        // Play the complete shorter logo motion in ~2.9 seconds, then show the app.
+                        .playing(.fromFrame(0, toFrame: 320, loopMode: .playOnce))
                         .configure { $0.animationSpeed = 2.3 }
                         .resizable()
                         .aspectRatio(contentMode: .fit)
