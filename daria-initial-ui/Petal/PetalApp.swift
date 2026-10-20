@@ -17,7 +17,6 @@ struct PetalApp: App {
             RootView()
                 .environment(auth)
                 .preferredColorScheme(.light)
-                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
     }
 }
@@ -27,6 +26,13 @@ struct RootView: View {
     @Environment(AuthModel.self) private var auth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var store: CycleStore?
+    /// Set by the widget's link. Held through sign-in and onboarding, then opens today's log.
+    @State private var pendingLog = false
+
+    private var canOpenLog: Bool {
+        guard pendingLog, let store else { return false }
+        return store.loaded && store.profile != nil && !store.showCycleSetup
+    }
     @State private var showingLaunchAnimation = true
 
     var body: some View {
@@ -55,6 +61,15 @@ struct RootView: View {
             store?.stop()
             store = uid.map { CycleStore(uid: $0) }
         }
+        .onOpenURL { url in
+            if DeepLink(url) == .log { pendingLog = true } else { GIDSignIn.sharedInstance.handle(url) }
+        }
+        .onChange(of: canOpenLog, initial: true) { _, ready in
+            guard ready, let store else { return }
+            pendingLog = false
+            store.selectedLogDate = nil
+            store.showLog = true
+                                                 }
         .task {
             // A short intro plays once per app launch, independently of Firebase loading.
             try? await Task.sleep(for: .seconds(reduceMotion ? 0.3 : 2.9))
