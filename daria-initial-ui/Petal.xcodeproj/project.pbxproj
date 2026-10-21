@@ -31,6 +31,7 @@
 		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
 		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 		DD0000000000000000000001 /* PeriodHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000002 /* PeriodHistory.swift */; };
+		FF0000000000000000000001 /* PasswordRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0000000000000000000002 /* PasswordRequirement.swift */; };
 		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
 		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
 		AB0000000000000000000010 /* PetalWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* PetalWidget.swift */; };
@@ -87,6 +88,7 @@
 		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		DD0000000000000000000002 /* PeriodHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
+		FF0000000000000000000002 /* PasswordRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRequirement.swift; sourceTree = "<group>"; };
 		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
 		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
 		AB0000000000000000000001 /* PetalWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PetalWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -127,6 +129,7 @@
 				EF0000000000000000000002 /* SymptomComparisonView.swift */,
 				FA0000000000000000000002 /* Assets.xcassets */,
 				DD0000000000000000000002 /* PeriodHistory.swift */,
+				FF0000000000000000000002 /* PasswordRequirement.swift */,
 				BB0000000000000000000001 /* CompanionView.swift */,
 				BB0000000000000000000002 /* ContentView.swift */,
 				BB0000000000000000000003 /* CycleStore.swift */,
@@ -305,6 +308,7 @@
 				EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */,
 				EE0000000000000000000001 /* SymptomComparison.swift in Sources */,
 				DD0000000000000000000001 /* PeriodHistory.swift in Sources */,
+				FF0000000000000000000001 /* PasswordRequirement.swift in Sources */,
 				CC0000000000000000000001 /* CompanionView.swift in Sources */,
 				CC0000000000000000000002 /* ContentView.swift in Sources */,
 				CC0000000000000000000003 /* CycleStore.swift in Sources */,
