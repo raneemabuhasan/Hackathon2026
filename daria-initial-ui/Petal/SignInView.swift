@@ -15,19 +15,26 @@ struct SignInView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                Image("SyncWordmark")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 156)
+                    .padding(.top, 12)
+                    .accessibilityLabel("Sync")
+
                 VStack(spacing: 6) {
                     DisplayTitle(before: "Hi ", accent: "there!", size: 38)
                     Text(creating ? "Let's set up your private space." : "Good to see you. Sign in to pick up where you left off.")
                         .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
                         .multilineTextAlignment(.center)
                 }
-                .padding(.top, 28)
+                .padding(.top, 8)
 
                 LottieView(animation: .named("signin"))
                     .looping()
                     .resizable()
                     .scaledToFit()
-                    .frame(height: creating ? 150 : 200)
+                    .frame(height: creating ? 140 : 175)
                     .accessibilityHidden(true)
 
                 VStack(spacing: 14) {
