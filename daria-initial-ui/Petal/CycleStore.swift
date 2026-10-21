@@ -77,6 +77,8 @@ struct Profile: Codable {
     var symptomEmojis: [String: String]? = nil
     /// Answers from "Edit cycle details". Optional so older profiles still decode.
     var baseline: CycleBaseline? = nil
+    /// CoordinatedTheme raw value, so the palette follows the account across devices.
+    var palette: String? = nil
 }
 
 /// One suggestion on Today's "Your plan for today" card.
@@ -327,6 +329,7 @@ final class CycleStore {
                     guard let self else { return }
                     if let error { print("Profile listener:", error) }
                     self.profile = try? snap?.data(as: Profile.self)
+                    self.applySavedPalette()
                     self.invalidateComparisonConversation()
                     self.loaded = true
                     self.syncNotifications()
@@ -406,6 +409,24 @@ final class CycleStore {
             "periodLength": periodLength,
         ]) { error in if let error { print("Profile update failed:", error) } }
         showToast("Settings saved")
+    }
+
+    /// Applies the palette immediately and saves it to the profile so other devices pick it up.
+    func setPalette(_ theme: CoordinatedTheme) {
+        PalettePreferences.shared.theme = theme
+        guard profile != nil else { return } // No profile document until onboarding finishes.
+        userRef.updateData(["palette": theme.rawValue]) { error in if let error { print("Palette update failed:", error) } }
+    }
+
+    /// Firestore is the source of truth; the local copy only covers launch and signed-out screens.
+    /// Profiles from before palettes were synced get this device's choice uploaded once.
+    private func applySavedPalette() {
+        guard let profile else { return }
+        if let saved = profile.palette.flatMap(CoordinatedTheme.init(rawValue:)) {
+            if PalettePreferences.shared.theme != saved { PalettePreferences.shared.theme = saved }
+        } else {
+            setPalette(PalettePreferences.shared.theme)
+        }
     }
 
     /// Writes the profile plus a few default reminders the first time someone signs in.

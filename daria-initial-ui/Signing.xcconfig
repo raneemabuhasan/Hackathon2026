@@ -1,0 +1,3 @@
+// Signing team lives in your own Local.xcconfig (gitignored), so nobody pushes their team ID.
+// Copy Local.xcconfig.example to Local.xcconfig and put your team ID in it.
+#include? "Local.xcconfig"
