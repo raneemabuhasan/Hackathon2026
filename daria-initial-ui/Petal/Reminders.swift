@@ -76,6 +76,20 @@ struct Reminder: Identifiable, Codable {
 enum ReminderNotifications {
     private static let prefix = "reminder-"
 
+    /// iOS hides notifications while the app is open unless a delegate opts in.
+    private final class ForegroundPresenter: NSObject, UNUserNotificationCenterDelegate {
+        func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                    withCompletionHandler completion: @escaping (UNNotificationPresentationOptions) -> Void) {
+            completion([.banner, .list, .sound])
+        }
+    }
+    private static let presenter = ForegroundPresenter()
+
+    /// Call once at launch so reminders still show as banners when Petal is in the foreground.
+    static func showWhileOpen() {
+        UNUserNotificationCenter.current().delegate = presenter
+    }
+
     static func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, error in
             if let error { print("Notification permission failed:", error) }
