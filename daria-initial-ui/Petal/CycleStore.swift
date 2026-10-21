@@ -430,18 +430,18 @@ final class CycleStore {
     }
 
     /// Writes the profile plus a few default reminders the first time someone signs in.
-    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
+    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int, logHour: Int, logMinute: Int, periodDaysBefore: Int) {
         let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
                               cycleLength: cycleLength, periodLength: periodLength)
         let batch = db.batch()
         try? batch.setData(from: profile, forDocument: userRef)
-        addDefaultReminders(to: batch)
+        addDefaultReminders(to: batch, logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore)
         batch.commit { error in if let error { print("Onboarding write failed:", error) } }
         ReminderNotifications.requestPermission()
     }
 
-    private func addDefaultReminders(to batch: WriteBatch) {
-        for (i, var r) in Reminder.defaults.enumerated() {
+    private func addDefaultReminders(to batch: WriteBatch, logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2) {
+        for (i, var r) in Reminder.defaults(logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore).enumerated() {
             r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
             try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
         }
@@ -456,7 +456,7 @@ final class CycleStore {
 
     private func syncNotifications() {
         guard profile != nil else { return }
-        ReminderNotifications.sync(reminders, windowStart: windowStart)
+        ReminderNotifications.sync(reminders, windowStart: windowStart, name: name)
     }
 
     // MARK: Cycle maths
@@ -821,7 +821,7 @@ final class CycleStore {
         plan = nil
         messages = []
         assistant = nil
-        ReminderNotifications.sync([], windowStart: windowStart)
+        ReminderNotifications.sync([], windowStart: windowStart, name: name)
         tab = .today
         showToast("Your data was deleted")
     }

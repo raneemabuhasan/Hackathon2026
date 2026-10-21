@@ -20,7 +20,7 @@ struct CompanionView: View {
             Page {
                 VStack(alignment: .leading, spacing: 4) {
                     Eyebrow(text: "Companion")
-                    DisplayTitle(before: "Here when ", accent: "you", after: " need it")
+                    DisplayTitle(before: "Your ", accent: "companion")
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -29,14 +29,14 @@ struct CompanionView: View {
                         HStack(spacing: 12) {
                             Button { editing = .edit(r) } label: {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(r.title).font(.system(size: 14, weight: .semibold))
+                                    Text(r.text(name: store.name)).font(.system(size: 14, weight: .semibold))
                                     Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
+                            Toggle(r.text(name: store.name), isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
                                 .labelsHidden()
                                 .tint(Palette.accent)
                         }

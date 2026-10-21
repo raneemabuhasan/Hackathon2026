@@ -26,15 +26,32 @@ struct Reminder: Identifiable, Codable {
     var daysBefore: Int? = nil
     var on = true
     var created = Date()
+    /// Opens with a greeting for the time of day and the user's name, e.g. "Good evening, Maya."
+    /// Optional so older reminders still decode.
+    var greets: Bool? = nil
 
-    /// Suggested set for new accounts, most important first.
-    static var defaults: [Reminder] {
+    /// Suggested set for new accounts, most important first. Onboarding picks the log time and the period heads-up.
+    static func defaults(logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2) -> [Reminder] {
         [
-            Reminder(title: "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0, daysBefore: 2, on: true),
-            Reminder(title: "Evening check-in", kind: .daily, hour: 20, minute: 30, on: true),
+            Reminder(title: "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0, daysBefore: periodDaysBefore, on: true),
+            Reminder(title: "Don't forget to log your symptoms today!", kind: .daily, hour: logHour, minute: logMinute, on: true, greets: true),
             Reminder(title: "Restock pads & tampons", kind: .beforePeriod, hour: 18, minute: 0, daysBefore: 5, on: false),
             Reminder(title: "Drink some water", kind: .daily, hour: 14, minute: 0, on: false),
         ]
+    }
+
+    static func greeting(hour: Int) -> String {
+        switch hour {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
+        }
+    }
+
+    /// What the notification and the reminders list show.
+    func text(name: String) -> String {
+        guard greets == true else { return title }
+        return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
     }
 
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
@@ -75,6 +92,7 @@ struct Reminder: Identifiable, Codable {
 /// Mirrors the enabled reminders into local iOS notifications. Works without a paid developer account.
 enum ReminderNotifications {
     private static let prefix = "reminder-"
+    private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sync"
 
     /// iOS hides notifications while the app is open unless a delegate opts in.
     private final class ForegroundPresenter: NSObject, UNUserNotificationCenterDelegate {
@@ -97,8 +115,8 @@ enum ReminderNotifications {
     }
 
     /// Replaces every pending Petal reminder with the current set. Call whenever reminders or predictions change.
-    static func sync(_ reminders: [Reminder], windowStart: Date) {
-        let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart) }
+    static func sync(_ reminders: [Reminder], windowStart: Date, name: String) {
+        let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart, name: name) }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { pending in
             center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
@@ -106,7 +124,7 @@ enum ReminderNotifications {
         }
     }
 
-    private static func request(for reminder: Reminder, windowStart: Date) -> UNNotificationRequest? {
+    private static func request(for reminder: Reminder, windowStart: Date, name: String) -> UNNotificationRequest? {
         let trigger: UNCalendarNotificationTrigger
         if reminder.kind == .daily {
             trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: reminder.hour, minute: reminder.minute), repeats: true)
@@ -115,11 +133,15 @@ enum ReminderNotifications {
             let parts = CycleStore.cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
             trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
         }
+        // iOS banners don't show the app name, so it goes in the title and the reminder underneath.
         let content = UNMutableNotificationContent()
-        content.title = reminder.title
+        content.title = appName
         if reminder.kind == .beforePeriod {
             let days = reminder.daysBefore ?? 2
+            content.subtitle = reminder.title
             content.body = "Your period may start in about \(days) day\(days == 1 ? "" : "s")."
+        } else {
+            content.body = reminder.text(name: name)
         }
         content.sound = .default
         return UNNotificationRequest(identifier: prefix + reminder.id, content: content, trigger: trigger)
@@ -170,10 +192,14 @@ struct ReminderEditor: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Remind me to…").font(.system(size: 15, weight: .semibold))
-                    TextField("e.g. Take my iron tablet", text: $title)
+                    TextField("Reminder title", text: $title, prompt: Text(""))
                         .font(.system(size: 15))
                         .padding(.horizontal, 14).padding(.vertical, 12)
                         .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    if original?.greets == true {
+                        Text("Starts with a greeting for the time of day and your name.")
+                            .font(.caption).foregroundStyle(Palette.inkFaint)
+                    }
                 }
                 .card()
 
