@@ -9,3 +9,9 @@ build/
 .firebase/
 firebase-debug*.log
 firestore-debug.log
+
+# Local Swift package build output
+.build/
+
+# Personal signing team (see daria-initial-ui/Local.xcconfig.example)
+Local.xcconfig
