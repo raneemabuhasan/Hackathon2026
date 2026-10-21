@@ -127,6 +127,8 @@ enum Palette {
     static var secondarySurface: Color { Color(hex: colors.secondarySurface) }
     static var selectionSurface: Color { sageGreen }
     static var selectionInk: Color { Color(hex: colors.selectionInk) }
+    /// Met-state green; at least 3.5:1 against every palette's lightest background.
+    static let success = Color(hex: 0x1B7A3A)
 }
 
 extension Font {
