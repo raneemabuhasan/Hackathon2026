@@ -173,7 +173,7 @@ struct SettingsView: View {
     private func paletteOption(_ theme: CoordinatedTheme) -> some View {
         let selected = PalettePreferences.shared.theme == theme
         let colors = theme.colors
-        return Button { PalettePreferences.shared.theme = theme } label: {
+        return Button { store.setPalette(theme) } label: {
             HStack(spacing: 12) {
                 HStack(spacing: -6) {
                     Circle().fill(Color(hex: colors.pastel))
