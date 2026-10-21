@@ -178,9 +178,10 @@ struct SettingsView: View {
                 HStack(spacing: -6) {
                     Circle().fill(Color(hex: colors.pastel))
                     Circle().fill(Color(hex: colors.secondaryPastel))
-                    Circle().fill(Color(hex: colors.accent))
+                    Circle().fill(Color(hex: colors.background))
+                    Circle().fill(Color(hex: colors.secondary))
                 }
-                .frame(width: 66, height: 28)
+                .frame(width: 86, height: 28)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(theme.name).font(.subheadline.weight(.semibold))
