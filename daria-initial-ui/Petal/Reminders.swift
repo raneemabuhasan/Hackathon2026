@@ -161,10 +161,14 @@ struct ReminderEditor: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Remind me to…").font(.system(size: 15, weight: .semibold))
-                    TextField("e.g. Take my iron tablet", text: $title)
+                    TextField("Reminder title", text: $title, prompt: Text(""))
                         .font(.system(size: 15))
                         .padding(.horizontal, 14).padding(.vertical, 12)
                         .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    if original?.greets == true {
+                        Text("Starts with a greeting for the time of day and your name.")
+                            .font(.caption).foregroundStyle(Palette.inkFaint)
+                    }
                 }
                 .card()
 
