@@ -13,87 +13,267 @@ struct CompanionView: View {
         var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
     }
 
-    private let prompts = ["When is my next period?", "Remind me to restock pads", "I have cramps", "What should I eat today?"]
+    @State private var remindersExpanded = true
+    @State private var showReminders = false
+
+    private var canSend: Bool {
+        store.aiEnabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.thinking
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            Page {
-                VStack(alignment: .leading, spacing: 4) {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                HStack {
                     Eyebrow(text: "Companion")
-                    DisplayTitle(before: "Your ", accent: "companion")
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    SectionHeader(title: "Reminders", trailing: "tap to edit")
-                    ForEach(store.reminders) { r in
-                        HStack(spacing: 12) {
-                            Button { editing = .edit(r) } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(r.text(name: store.name)).font(.system(size: 14, weight: .semibold))
-                                    Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            Toggle(r.text(name: store.name), isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
-                                .labelsHidden()
-                                .tint(Palette.accent)
-                        }
-                        .padding(.vertical, 8)
-                    }
-                    Button { editing = .new } label: {
-                        Label("New reminder", systemImage: "plus")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.accent)
-                            .padding(.top, 6)
+                    Spacer()
+                    Button { showReminders = true } label: {
+                        Image(systemName: "bell")
+                            .font(.system(size: 18))
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
+                    .foregroundStyle(Palette.inkSoft)
+                    .accessibilityLabel("Manage reminders")
+                    Image("CompanionLogo")
+                        .resizable().scaledToFill()
+                        .frame(width: 42, height: 42)
+                        .scaleEffect(1.06)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .accessibilityHidden(true)
                 }
-                .card()
-                .sheet(item: $editing) { target in
-                    ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
-                        .environment(store)
-                        .presentationDetents([.large])
-                        .presentationCornerRadius(32)
-                        .presentationBackground(Palette.bg)
-                }
+                .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
 
                 if !store.aiEnabled {
-                    aiOffCard
-                } else {
-                FlowLayout {
-                    ForEach(prompts, id: \.self) { p in
-                        Chip(label: p, selected: false, small: true) { store.send(p) }
-                            .disabled(store.thinking)
+                    ScrollView { aiOffCard.padding(24) }
+                } else if store.messages.isEmpty {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 28)
+                            VStack(spacing: 24) {
+                                VStack(spacing: 10) {
+                                    DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
+                                        .multilineTextAlignment(.center)
+                                    Text("A little support for your cycle.")
+                                        .font(.subheadline).foregroundStyle(Palette.inkSoft)
+                                }
+                                composerField
+                                VStack(spacing: 4) {
+                                    suggestion("Find a little comfort", question: "Help me feel better with cramps", icon: "heart")
+                                    suggestion("What could I eat today?", question: "What should I eat today?", icon: "leaf")
+                                    suggestion("Help me understand my cycle", question: "When is my next period?", icon: "calendar")
+                                }
+                            }
+                            Spacer(minLength: 48)
+                            disclaimer
+                                .padding(.bottom, 16)
+                        }
+                        .padding(.horizontal, 24)
+                        .frame(minHeight: max(0, geometry.size.height - 68))
                     }
+                    .scrollDismissesKeyboard(.interactively)
+                    .scrollIndicators(.hidden)
+                } else {
+                    conversation
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            VStack(spacing: 8) { composerField; disclaimer }
+                                .padding(.horizontal, 20).padding(.vertical, 10)
+                                .background(Palette.bg)
+                        }
                 }
+            }
+        }
+        .sheet(isPresented: $showReminders) {
+            NavigationStack {
+                ScrollView { reminders.padding(20) }
+                    .background(Palette.bg)
+                    .navigationTitle("Reminders")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showReminders = false }
+                        }
+                    }
+                    .sheet(item: $editing) { target in
+                        ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                            .environment(store)
+                            .presentationDetents([.large])
+                            .presentationCornerRadius(32)
+                            .presentationBackground(Palette.bg)
+                    }
+            }
+            .tint(Palette.accent)
+            .presentationDetents([.medium, .large])
+            .presentationCornerRadius(32)
+        }
+    }
 
-                VStack(spacing: 10) {
-                    ForEach(store.messages) { m in
-                        bubble(m).id(m.id)
+    private func suggestion(_ title: String, question: String, icon: String) -> some View {
+        Button {
+            draft = question
+            focused = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 17))
+                    .foregroundStyle(Palette.secondaryAccent)
+                    .frame(width: 34, height: 34)
+                    .background(Palette.secondarySurface, in: RoundedRectangle(cornerRadius: 12))
+                Text(title).font(.system(size: 14))
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 6)
+                ZStack {
+                    Ellipse()
+                        .fill(Palette.blush)
+                        .frame(width: 8, height: 15)
+                        .rotationEffect(.degrees(-38))
+                        .offset(x: -5, y: -2)
+                    Ellipse()
+                        .fill(Palette.petal)
+                        .frame(width: 8, height: 15)
+                        .rotationEffect(.degrees(38))
+                        .offset(x: 4, y: -2)
+                    Ellipse()
+                        .fill(Palette.secondaryAccent.opacity(0.6))
+                        .frame(width: 6, height: 11)
+                        .rotationEffect(.degrees(65))
+                        .offset(x: 1, y: 5)
+                }
+                .frame(width: 28, height: 30)
+                .accessibilityHidden(true)
+            }
+            .foregroundStyle(Palette.inkSoft)
+            .padding(.horizontal, 8).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Adds a suggested question to your draft")
+    }
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(store.messages) { message in
+                        bubble(message).id(message.id)
                     }
                     if store.thinking {
-                        Text("Thinking…")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Palette.inkSoft)
-                            .padding(.horizontal, 14).padding(.vertical, 12)
-                            .background(Palette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 6, bottomTrailingRadius: 20, topTrailingRadius: 20))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id("thinking")
+                        HStack(spacing: 10) {
+                            ProgressView().tint(Palette.secondaryAccent)
+                            Text("Thinking with you…")
+                                .font(.subheadline).foregroundStyle(Palette.inkSoft)
+                            Spacer()
+                        }
+                        .padding(16)
+                        .accessibilityLabel("Companion is preparing a reply")
+                    }
+                    Color.clear.frame(height: 1).id("conversationBottom")
+                }
+                .padding(20)
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: store.messages.count) { scrollToBottom(proxy) }
+            .onChange(of: store.thinking) { scrollToBottom(proxy) }
+            .onChange(of: focused) { if focused { scrollToBottom(proxy) } }
+            .onAppear { scrollToBottom(proxy) }
+        }
+    }
+
+    private var disclaimer: some View {
+        Text("AI companion · Wellness support, not medical advice")
+            .font(.system(size: 10))
+            .foregroundStyle(Palette.inkFaint)
+            .multilineTextAlignment(.center)
+    }
+
+    private var reminders: some View {
+        DisclosureGroup(isExpanded: $remindersExpanded) {
+            VStack(spacing: 12) {
+                ForEach(store.reminders) { reminder in
+                    HStack(spacing: 12) {
+                        Button { editing = .edit(reminder) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(reminder.text(name: store.name)).font(.subheadline.weight(.medium))
+                                Text(reminder.detail(windowStart: store.windowStart))
+                                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Toggle(reminder.text(name: store.name), isOn: Binding(
+                            get: { reminder.on }, set: { store.setReminder(reminder, on: $0) }))
+                            .labelsHidden().tint(Palette.secondaryAccent)
                     }
                 }
+                Button { editing = .new } label: {
+                    Label("Add a reminder", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
+                .buttonStyle(.plain).foregroundStyle(Palette.accent)
             }
-            .onChange(of: store.messages.count) {
-                if let last = store.messages.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            .padding(.top, 12)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.badge").foregroundStyle(Palette.secondaryAccent)
+                Text("Little reminders").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(store.reminders.filter { $0.on }.count) on")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(.vertical, 6)
+        }
+        .tint(Palette.inkSoft)
+        .padding(16)
+        .background(Palette.secondarySurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var composerField: some View {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Ask your companion…", text: $draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .font(.system(size: 16))
+                    .focused($focused)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                    .padding(.vertical, 12)
+                    .accessibilityLabel("Message to Companion")
+                if focused {
+                    Button { focused = false } label: {
+                        Image(systemName: "keyboard.chevron.compact.down")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss keyboard")
                 }
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(canSend ? Color.white : Palette.inkFaint)
+                        .frame(width: 44, height: 44)
+                        .background(canSend ? Palette.accent : Palette.secondarySurface, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .accessibilityLabel("Send message")
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if store.aiEnabled { inputBar }
-        }
+            .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 6)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 26))
+            .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(Palette.line))
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("conversationBottom", anchor: .bottom) }
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canSend else { return }
+        draft = ""
+        store.send(text)
     }
 
     /// Shown instead of the chat until the user opts in to sending data to Gemini.
@@ -114,46 +294,6 @@ struct CompanionView: View {
             .padding(.top, 4)
         }
         .card()
-    }
-
-    private var inputBar: some View {
-            HStack(spacing: 8) {
-                TextField("Ask your companion...", text: $draft)
-                    .focused($focused)
-                    .submitLabel(.send)
-                    .onSubmit(send)
-                if focused {
-                    Button {
-                        focused = false
-                    } label: {
-                        Image(systemName: "keyboard.chevron.compact.down")
-                            .frame(width: 40, height: 40)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss keyboard")
-                }
-                Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Palette.accent, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(store.thinking)
-            }
-            .padding(.leading, 18).padding(.trailing, 6).padding(.vertical, 6)
-            .background(Palette.surface, in: Capsule())
-            .shadow(color: Palette.berry.opacity(0.1), radius: 12, y: 4)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
-    }
-
-    private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !store.thinking else { return }
-        draft = ""
-        store.send(text)
     }
 
     @ViewBuilder
