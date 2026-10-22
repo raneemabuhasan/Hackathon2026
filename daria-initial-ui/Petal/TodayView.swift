@@ -387,26 +387,79 @@ struct PeriodQuickEntry: View {
     let period: PeriodRecord?
     @State var date: Date
     @State private var error: String?
+
+    /// An end can't come before its start.
+    private var earliest: Date { period.map { CycleStore.cal.startOfDay(for: $0.start) } ?? .distantPast }
+
+    /// One-tap answers for the usual case: today or the two days before.
+    private var recentDays: [Date] {
+        (0..<3).map { CycleStore.add(store.today, -$0) }.filter { $0 >= earliest }
+    }
+
+    private func label(_ day: Date) -> String {
+        if CycleStore.cal.isDateInToday(day) { return "Today" }
+        if CycleStore.cal.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.abbreviated))
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                if let period { Text("Started \(store.fmt(period.start))") }
-                DatePicker("Actual date", selection: $date, in: ...Date(), displayedComponents: .date)
-                Text("Choose today or a previous date. Changes can also be corrected on the Cycle calendar.")
-                if let error { Text(error).foregroundStyle(.red) }
-                Button("Save") {
-                    do {
-                        if let period {
-                            try store.savePeriod(id: period.id, start: period.start, end: date)
-                        } else { try store.savePeriod(start: date, end: nil) }
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }.disabled(store.periodStorageError != nil)
-                if let error = store.periodStorageError { Text(error).foregroundStyle(.red) }
+        VStack(alignment: .leading, spacing: 18) {
+            SheetHeader(eyebrow: period.map { "Period · day \(CycleStore.days(store.today, from: $0.start) + 1)" } ?? "Period") {
+                dismiss()
+            } title: {
+                DisplayTitle(before: "When did it ", accent: period == nil ? "start?" : "end?", size: 30)
             }
-            .navigationTitle(period == nil ? "Period started" : "Period ended")
-            .toolbar { Button("Cancel") { dismiss() } }
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    ForEach(recentDays, id: \.self) { day in
+                        Chip(label: label(day), selected: CycleStore.cal.isDate(day, inSameDayAs: date)) { date = day }
+                    }
+                }
+                Divider()
+                DatePicker("Another day", selection: $date, in: earliest...Date(), displayedComponents: .date)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.inkSoft)
+                if let period {
+                    Text("Started \(store.fmt(period.start)).").font(.caption).foregroundStyle(Palette.inkFaint)
+                }
+            }
+            .card()
+
+            if let error = error ?? store.periodStorageError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+
+            Button(action: save) {
+                Text(period == nil ? "Start period on \(store.fmt(date))" : "End period on \(store.fmt(date))")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Palette.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.periodStorageError != nil)
+
+            Text("You can fix dates anytime on the Cycle calendar.")
+                .font(.caption).foregroundStyle(Palette.inkFaint)
+                .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
+        .fittedSheet()
+    }
+
+    private func save() {
+        do {
+            if let period {
+                try store.savePeriod(id: period.id, start: period.start, end: date)
+            } else { try store.savePeriod(start: date, end: nil) }
+            dismiss()
+        } catch { self.error = error.localizedDescription }
     }
 }
 

@@ -307,6 +307,7 @@ final class Assistant {
         }
         return ["ok": .bool(true), "name": .string(profile.name),
             "diets": .array(profile.diets.map(JSONValue.string)), "allergensToAvoid": .array(profile.avoid.map(JSONValue.string)),
+            "dislikedFoods": .array((profile.dislikes ?? []).map(JSONValue.string)),
             "configuredCycleLength": .number(Double(profile.cycleLength)), "configuredPeriodLength": .number(Double(profile.periodLength)),
             "limitation": .string("User-configured settings, not an observed cycle average. Use get_cycle_summary for estimates.")]
     }
@@ -577,7 +578,7 @@ final class Assistant {
 
     /// Asks Gemini for recipes that suit a cycle phase and the user's diet. Callers should still
     /// re-check allergens: the model's own labels can be wrong.
-    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, recentSymptoms: [String] = [],
+    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, dislikes: [String] = [], recentSymptoms: [String] = [],
                           notLike previous: [String] = []) async throws -> [Meal] {
         let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
             modelName: fastModelName,
@@ -591,6 +592,7 @@ final class Assistant {
         - Every recipe must suit: \(diets.isEmpty ? "no particular diet" : diets.sorted().joined(separator: ", ")).
         - Must not contain, even as part of another ingredient: \(avoid.isEmpty ? "nothing excluded" : avoid.sorted().joined(separator: ", ")). \
         For example nuts rules out almond milk and pesto; gluten rules out regular pasta, bread and soy sauce.
+        \(dislikes.isEmpty ? "" : "- They don't like: \(dislikes.joined(separator: ", ")). Leave these out entirely.")
         \(recentSymptoms.isEmpty ? "" : "- Recently logged: \(recentSymptoms.joined(separator: ", ")). Where it fits naturally, favour comforting, gentle options for these, without claiming to treat them.")
         - One breakfast, one lunch, one dinner and one snack. Each under 45 minutes with common supermarket ingredients.
         - why: one friendly sentence on why it fits this phase, in general nutrition terms (iron, fibre, protein, \
