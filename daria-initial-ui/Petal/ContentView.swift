@@ -24,6 +24,21 @@ struct ContentView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             TabBar()
+                .background {
+                    Rectangle()
+                        .fill(.thickMaterial)
+                        .overlay(Palette.bg.opacity(0.45))
+                        .mask {
+                            LinearGradient(stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: .white, location: 0.24),
+                                .init(color: .white, location: 1)
+                            ], startPoint: .top, endPoint: .bottom)
+                        }
+                        .padding(.top, -24)
+                        .ignoresSafeArea(edges: .bottom)
+                        .allowsHitTesting(false)
+                }
         }
         .animation(.easeOut(duration: 0.2), value: store.tab)
         .overlay(alignment: .top) {
