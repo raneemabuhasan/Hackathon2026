@@ -43,7 +43,7 @@ struct NourishView: View {
                     Spacer()
                     if loading {
                         ProgressView().controlSize(.small)
-                    } else {
+                    } else if store.aiEnabled {
                         Button { Task { await store.loadMeals(for: selected, refresh: true) } } label: {
                             Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .semibold))
                         }
@@ -52,6 +52,7 @@ struct NourishView: View {
                         .accessibilityLabel("New meal ideas")
                     }
                 }
+                if !store.aiEnabled { AIOffNotice(feature: "recipes picked for your phase and preferences") }
                 if loading && generated == nil {
                     Text("Cooking up recipes for you…")
                         .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -372,7 +373,6 @@ private struct PreferencesEditor: View {
     @State private var diets: Set<String>
     @State private var avoid: Set<String>
     @State private var dislikes: [String]
-    @State private var newDislike = ""
 
     init(diets: Set<String>, avoid: Set<String>, dislikes: [String]) {
         original = (diets, avoid, dislikes)
@@ -381,7 +381,7 @@ private struct PreferencesEditor: View {
         _dislikes = State(initialValue: dislikes)
     }
 
-    static func label(_ option: String) -> String { option.prefix(1).uppercased() + option.dropFirst() }
+    static func label(_ option: String) -> String { FoodPreferencesForm.label(option) }
 
     private var changed: Bool { diets != original.diets || avoid != original.avoid || dislikes != original.dislikes }
 
@@ -395,9 +395,7 @@ private struct PreferencesEditor: View {
             Text("Meal ideas only show recipes that fit.")
                 .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                 .padding(.top, -14)
-            section("Diet", options: CycleStore.dietOptions, selected: diets) { diets.formSymmetricDifference([$0]) }
-            section("Avoid", options: CycleStore.allergenOptions, selected: avoid) { avoid.formSymmetricDifference([$0]) }
-            dislikesSection
+            FoodPreferencesForm(diets: $diets, avoid: $avoid, dislikes: $dislikes)
         }
         .padding(.horizontal, 20)
         .padding(.top, 24)
@@ -425,6 +423,24 @@ private struct PreferencesEditor: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: changed)
+    }
+}
+
+/// The diet, avoid and dislike lists, shared by PreferencesEditor and onboarding.
+struct FoodPreferencesForm: View {
+    @Binding var diets: Set<String>
+    @Binding var avoid: Set<String>
+    @Binding var dislikes: [String]
+    @State private var newDislike = ""
+
+    static func label(_ option: String) -> String { option.prefix(1).uppercased() + option.dropFirst() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            section("Diet", options: CycleStore.dietOptions, selected: diets) { diets.formSymmetricDifference([$0]) }
+            section("Avoid", options: CycleStore.allergenOptions, selected: avoid) { avoid.formSymmetricDifference([$0]) }
+            dislikesSection
+        }
     }
 
     private func section(_ title: String, options: [String], selected: Set<String>, toggle: @escaping (String) -> Void) -> some View {
@@ -505,6 +521,7 @@ private struct PreferencesEditor: View {
         newDislike = ""
     }
 }
+
 
 private struct FoodCategoryIcon: View {
     let category: String

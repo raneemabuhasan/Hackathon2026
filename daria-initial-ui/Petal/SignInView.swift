@@ -1,5 +1,4 @@
 import SwiftUI
-import Lottie
 
 struct SignInView: View {
     @Environment(AuthModel.self) private var auth
@@ -23,16 +22,10 @@ struct SignInView: View {
                 Image("SyncWordmark")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 96)
-                    .padding(.top, 56)
+                    .frame(width: creating ? 170 : 220)
+                    .padding(.top, creating ? 48 : 90)
+                    .padding(.bottom, creating ? 16 : 40)
                     .accessibilityLabel("Sync")
-
-                LottieView(animation: .named("signin"))
-                    .looping()
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: creating ? 140 : 175)
-                    .accessibilityHidden(true)
 
                 VStack(spacing: 14) {
                     Button { Task { await auth.signInWithGoogle() } } label: {

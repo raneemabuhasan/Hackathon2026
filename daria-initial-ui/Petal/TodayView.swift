@@ -231,6 +231,7 @@ struct TodayView: View {
                     Text(ai == nil ? "optional" : "from today's log").font(.caption).foregroundStyle(Palette.inkFaint)
                 }
             }
+            if !store.aiEnabled { AIOffNotice(feature: "a daily plan based on your logs") }
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)

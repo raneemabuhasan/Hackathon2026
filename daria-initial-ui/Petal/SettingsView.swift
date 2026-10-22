@@ -85,7 +85,7 @@ struct SettingsView: View {
                     Text("Choose your colors")
                         .font(.subheadline)
                         .foregroundStyle(Palette.inkSoft)
-                    Text("Text, backgrounds and accents change together. Saved on this device.")
+                    Text("Text, backgrounds and accents change together. Saved to your account.")
                         .font(.caption)
                         .foregroundStyle(Palette.inkSoft)
                     ForEach(CoordinatedTheme.allCases) { theme in
@@ -110,9 +110,18 @@ struct SettingsView: View {
                     }
                 }
 
+                section("AI companion") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Use the AI companion", isOn: Binding(get: { store.aiEnabled }, set: { store.setAIConsent($0) }))
+                            .font(.system(size: 15))
+                        Text("Powers chat, AI meal ideas and your daily plan using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+
                 section("Your data") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Your logs are stored in your private account and only you can read them. Nothing is shared or sold.")
+                        Text("Your logs are stored in your private account and only you can read them. Nothing is sold, and nothing is sent to AI unless you turn the companion on.")
                             .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                         outlineButton("Delete all my data") { confirmingDelete = true }
                         outlineButton("Delete account") { confirmingAccountDelete = true }
