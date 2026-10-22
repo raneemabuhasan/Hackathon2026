@@ -51,3 +51,15 @@ The simulator build checks compilation; manually exercise the tabs and logging f
 ## Companion
 
 Curated education, profile and reminder tools require no web service. See [EDUCATION.md](daria-initial-ui/EDUCATION.md) for behavior and manual acceptance checks.
+
+## Home screen widget checks
+
+The `PetalWidget` extension adds a "Quick log" widget in small, medium and large sizes. It shows no cycle or
+health details, and tapping it opens `petal://log`.
+
+- Add the widget from the home screen gallery (search "Petal"). Each size shows
+  only the fig from the Sync logo with a + inside it, and "Log today".
+- Signed in: tapping it opens today's log sheet, even if Cycle has a past date selected.
+- Signed out: tapping it opens sign-in; after signing in (and onboarding for new
+  accounts) today's log opens.
+- From a terminal: `xcrun simctl openurl booted petal://log`.

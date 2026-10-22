@@ -153,3 +153,10 @@ repeating the PMS definition. Then ask “What did I eat last week?” and verif
 retrieves saved entries rather than treating that as a new meal request. Repeat
 with unavailable profile data: the app should acknowledge missing preferences,
 not invent allergy-safe recommendations.
+
+
+PR integration verification: after merging the latest main, all 67 Foundation
+regressions passed (including the team's password-requirement checks). The Debug
+iOS Simulator build passed for the app and PetalWidget on Xcode 27.1. Main's
+palettes, launch animation, password UI, widget and local signing setup were retained.
+Firebase remains pinned to 11.13.0. Live Gemini/Firestore/device tests remain manual.

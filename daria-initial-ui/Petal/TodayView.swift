@@ -90,7 +90,7 @@ struct TodayView: View {
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
         .background(
-            LinearGradient(colors: [Color(hex: 0xF7BAC9), Palette.mist, Palette.cream],
+            LinearGradient(colors: [Palette.blushPink, Palette.mist, Palette.cream],
                            startPoint: .top, endPoint: .bottom),
             in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .sheet(isPresented: $showPeriodEntry) {
