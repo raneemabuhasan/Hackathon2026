@@ -36,6 +36,8 @@ The simulator build checks compilation; manually exercise the tabs and logging f
 
 ## Calendar and onboarding checks
 
+- Tap a calendar date once: it becomes selected without opening a sheet. Tap that
+  selected date again to open period controls. Tapping a different date only selects it.
 - Finish onboarding with a known period start. Cycle must show that start without
   entering it again; no end date is inferred.
 - Profiles without `periodRecords` use their onboarding start as the initial
