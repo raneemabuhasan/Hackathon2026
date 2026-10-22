@@ -33,12 +33,6 @@ struct CompanionView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(Palette.inkSoft)
                     .accessibilityLabel("Manage reminders")
-                    Image("CompanionLogo")
-                        .resizable().scaledToFill()
-                        .frame(width: 42, height: 42)
-                        .scaleEffect(1.06)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
 
