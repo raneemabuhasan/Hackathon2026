@@ -71,7 +71,8 @@ struct SettingsView: View {
                                         cycleLength: cycleLength, periodLength: periodLength)
                     dismiss()
                 } label: {
-                    Text("Save changes")
+                    // Say why it's disabled instead of just fading out.
+                    Text(trimmedName.isEmpty ? "Add your name to save" : changed ? "Save changes" : "No changes to save")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)

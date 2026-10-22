@@ -151,8 +151,12 @@ struct NourishView: View {
     }
 
     private var title: String {
-        if selected == store.currentPhase { return "right now" }
-        return selected == .menstrual ? "your period" : "the \(selected.name.lowercased()) phase"
+        switch selected {
+        case .menstrual: "your period"
+        case .follicular: "follicular phase"
+        case .mid: "mid cycle"
+        case .luteal: "luteal phase"
+        }
     }
 
     /// A filter-style chip row: the preferences button, then what's selected. Any chip opens PreferencesEditor.

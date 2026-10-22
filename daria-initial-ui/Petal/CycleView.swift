@@ -532,8 +532,12 @@ struct CycleView: View {
         let isToday = CycleStore.cal.isDate(day, inSameDayAs: store.today)
         let isSelected = hasSelectedDate && CycleStore.cal.isDate(day, inSameDayAs: selectedDate)
         return Button {
-            store.selectedCalendarDate = day
-            showingPeriodControls = true
+            // First tap selects the day; tapping the selected day again opens its period controls.
+            if isSelected {
+                showingPeriodControls = true
+            } else {
+                store.selectedCalendarDate = day
+            }
         } label: {
             // A stable row height prevents two-digit dates from being compressed
             // by an aspect-ratio proposal. The entire cell accepts taps.
@@ -578,7 +582,8 @@ struct CycleView: View {
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
                             + (predicted ? ", predicted period" : period ? ", period" : "")
                             + (periodDay.map { ", period day \($0)" } ?? ""))
-        .accessibilityHint("Opens period start and end controls for this date")
+        .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date")
+        .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
