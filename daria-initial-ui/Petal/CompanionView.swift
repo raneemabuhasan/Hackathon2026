@@ -62,11 +62,11 @@ struct CompanionView: View {
                 FlowLayout {
                     ForEach(prompts, id: \.self) { p in
                         Chip(label: p, selected: false, small: true) { store.send(p) }
+                            .disabled(store.thinking)
                     }
                 }
 
                 VStack(spacing: 10) {
-                    bubble(store.greeting)
                     ForEach(store.messages) { m in
                         bubble(m).id(m.id)
                     }
@@ -89,7 +89,7 @@ struct CompanionView: View {
         }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 8) {
-                TextField("Ask or set a reminder…", text: $draft)
+                TextField("Ask your companion...", text: $draft)
                     .focused($focused)
                     .submitLabel(.send)
                     .onSubmit(send)
@@ -111,6 +111,7 @@ struct CompanionView: View {
                         .background(Palette.accent, in: Circle())
                 }
                 .buttonStyle(.plain)
+                .disabled(store.thinking)
             }
             .padding(.leading, 18).padding(.trailing, 6).padding(.vertical, 6)
             .background(Palette.surface, in: Capsule())
@@ -122,7 +123,7 @@ struct CompanionView: View {
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, !store.thinking else { return }
         draft = ""
         store.send(text)
     }
@@ -139,7 +140,28 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text(m.text).font(.system(size: 14))
+                Text(m.text)
+                    .font(!m.recordedCycles.isEmpty && m.text.trimmingCharacters(in: .whitespacesAndNewlines) == "Here are your recorded cycles:"
+                          ? .headline : .system(size: 14))
+                ForEach(m.educationCitations) { citation in
+                    Link(destination: citation.url) {
+                        Text("[\(citation.number)] \(citation.sourceTitle) · \(citation.passageTitle)")
+                            .font(.caption)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .foregroundStyle(Palette.accent)
+                    .accessibilityLabel("Source \(citation.number): \(citation.sourceTitle), \(citation.passageTitle)")
+                }
+                if m.educationCitations.contains(where: { $0.sourceID == "cc-cycle-syncing" }) {
+                    Text("Cycle-syncing programs lack clinical research. Food ideas are optional, not treatments or hormone-balancing methods.")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                }
+                ForEach(m.suggestedPrompts, id: \.self) { prompt in
+                    Button(prompt) { store.send(prompt) }
+                        .font(.caption).foregroundStyle(Palette.accent)
+                        .padding(8).background(Palette.surface2, in: Capsule())
+                        .disabled(store.thinking)
+                }
                 if let note = m.note {
                     if let link = m.link {
                         Link(note, destination: link).font(.system(size: 11)).foregroundStyle(Palette.accent)
@@ -158,12 +180,135 @@ struct CompanionView: View {
                         }
                     }
                 }
+                if !m.recordedCycles.isEmpty {
+                    Divider()
+                    cycleVisualization(m.recordedCycles)
+                }
+                ForEach(m.comparisons.indices, id: \.self) { index in
+                    Divider()
+                    SymptomComparisonView(snapshot: m.comparisons[index])
+                }
+                ForEach(m.savedLogs) { result in
+                    Divider()
+                    savedEntries(result)
+                }
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background(Palette.surface, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 6, bottomTrailingRadius: 20, topTrailingRadius: 20))
             .shadow(color: Palette.berry.opacity(0.07), radius: 10, y: 4)
             .frame(maxWidth: 320, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func cycleVisualization(_ cycles: [ComparedCycle]) -> some View {
+        let maximum = max(cycles.compactMap { cycle in
+            cycle.nextStart.map { CycleStore.days($0, from: cycle.start) }
+        }.max() ?? 1, 1)
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Recorded cycles (\(cycles.count))").font(.headline)
+            Text("Cycle length in days, measured between recorded period starts.")
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+            ForEach(cycles) { cycle in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Started \(readableDate(cycle.start))")
+                        .font(.subheadline.weight(.semibold))
+                    if let next = cycle.nextStart {
+                        let days = CycleStore.days(next, from: cycle.start)
+                        HStack(spacing: 10) {
+                            GeometryReader { geometry in
+                                Capsule().fill(Palette.surface2)
+                                    .overlay(alignment: .leading) {
+                                        Capsule().fill(Palette.accent.opacity(0.75))
+                                            .frame(width: geometry.size.width * CGFloat(days) / CGFloat(maximum))
+                                    }
+                            }
+                            .frame(height: 10)
+                            Text("\(days) days").font(.caption).monospacedDigit()
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Cycle starting \(readableDate(cycle.start)): \(days) days")
+                    } else {
+                        Label("Ongoing — final length not yet known", systemImage: "clock")
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                    }
+                    DisclosureGroup("Symptoms and saved entries") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            let symptoms = Set(cycle.logs.flatMap(\.symptoms)).sorted()
+                            if cycle.logs.isEmpty {
+                                Text("No daily logs saved for this cycle")
+                            } else if symptoms.isEmpty {
+                                Text("No symptoms recorded.")
+                            }
+                            ForEach(symptoms, id: \.self) { symptom in
+                                let count = Set(cycle.logs.filter { $0.symptoms.contains(symptom) }
+                                    .map { CycleStore.cal.startOfDay(for: $0.date) }).count
+                                Text("\(symptom): \(count) recorded \(count == 1 ? "day" : "days")")
+                            }
+                            ForEach(cycle.logs) { entry in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(readableDate(entry.date))
+                                        .fontWeight(.medium)
+                                    Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
+                                    if let pain = entry.pain { Text("Overall daily pain: \(pain)/10") }
+                                    if !entry.note.isEmpty { Text(entry.note) }
+                                    Button("View or edit entry") {
+                                        store.selectedLogDate = entry.date
+                                        store.showingLogPreview = true
+                                        store.showLog = true
+                                    }
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }.font(.caption).padding(.top, 6)
+                    }
+                    .font(.caption)
+                    .tint(Palette.accent)
+                }
+                .padding(12)
+                .background(Palette.surface2.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private func readableDate(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))
+    }
+
+    private func savedEntries(_ result: SavedLogResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Saved entries").font(.headline)
+            Text("\(readableDate(result.from)) – \(readableDate(result.to))")
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+            if result.logs.isEmpty {
+                Text("No saved entries in this date range.")
+                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
+            } else {
+                ForEach(result.logs) { log in
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Symptoms: \(log.symptoms.isEmpty ? "None recorded" : log.symptoms.joined(separator: ", "))")
+                            Text("Moods: \(log.moods.isEmpty ? "None recorded" : log.moods.joined(separator: ", "))")
+                            Text("Flow: \(log.flow)")
+                            Text(log.pain > 0 ? "Daily pain: \(log.pain)/10" : "Daily pain: 0 or not rated")
+                            Text("Saved energy: \(log.energy)/5")
+                            if !log.note.isEmpty { Text(log.note) }
+                            Button("View or edit entry") {
+                                store.selectedLogDate = log.date
+                                store.showingLogPreview = true
+                                store.showLog = true
+                            }
+                            .foregroundStyle(Palette.accent)
+                        }
+                        .font(.system(size: 13))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                    } label: {
+                        Text(readableDate(log.date))
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .tint(Palette.accent)
+                }
+            }
         }
     }
 }

@@ -48,6 +48,10 @@ The simulator build checks compilation; manually exercise the tabs and logging f
 - Change the most recent period start in Settings. Cycle and comparison must
   reflect the corrected date; invalid or overlapping dates must show an error.
 
+## Companion
+
+Curated education, profile and reminder tools require no web service. See [EDUCATION.md](daria-initial-ui/EDUCATION.md) for behavior and manual acceptance checks.
+
 ## Home screen widget checks
 
 The `PetalWidget` extension adds a "Quick log" widget in small, medium and large sizes. It shows no cycle or

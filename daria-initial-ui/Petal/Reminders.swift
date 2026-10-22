@@ -1,45 +1,7 @@
 import SwiftUI
 import UserNotifications
 
-/// A reminder the user can switch on or off. Stored at users/{uid}/reminders/{id}.
-struct Reminder: Identifiable, Codable {
-    enum Kind: String, Codable, CaseIterable {
-        case daily, once, beforePeriod
-
-        var label: String {
-            switch self {
-            case .daily: "Every day"
-            case .once: "Once"
-            case .beforePeriod: "Before period"
-            }
-        }
-    }
-
-    var id = UUID().uuidString
-    var title: String
-    var kind: Kind
-    var hour: Int
-    var minute: Int
-    /// Day to fire for `.once`.
-    var date: Date? = nil
-    /// Days before the predicted window for `.beforePeriod`.
-    var daysBefore: Int? = nil
-    var on = true
-    var created = Date()
-    /// Opens with a greeting for the time of day and the user's name, e.g. "Good evening, Maya."
-    /// Optional so older reminders still decode.
-    var greets: Bool? = nil
-
-    /// Suggested set for new accounts, most important first. Onboarding picks the log time and the period heads-up.
-    static func defaults(logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2) -> [Reminder] {
-        [
-            Reminder(title: "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0, daysBefore: periodDaysBefore, on: true),
-            Reminder(title: "Don't forget to log your symptoms today!", kind: .daily, hour: logHour, minute: logMinute, on: true, greets: true),
-            Reminder(title: "Restock pads & tampons", kind: .beforePeriod, hour: 18, minute: 0, daysBefore: 5, on: false),
-            Reminder(title: "Drink some water", kind: .daily, hour: 14, minute: 0, on: false),
-        ]
-    }
-
+extension Reminder {
     static func greeting(hour: Int) -> String {
         switch hour {
         case 5..<12: "Good morning"
@@ -90,7 +52,9 @@ struct Reminder: Identifiable, Codable {
 }
 
 /// Mirrors the enabled reminders into local iOS notifications. Works without a paid developer account.
+@MainActor
 enum ReminderNotifications {
+    private static var generation = 0
     private static let prefix = "reminder-"
     private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sync"
 
@@ -116,11 +80,16 @@ enum ReminderNotifications {
 
     /// Replaces every pending Petal reminder with the current set. Call whenever reminders or predictions change.
     static func sync(_ reminders: [Reminder], windowStart: Date, name: String) {
+        generation += 1
+        let currentGeneration = generation
         let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart, name: name) }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { pending in
-            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
-            requests.forEach { center.add($0) }
+            Task { @MainActor in
+                guard generation == currentGeneration else { return }
+                center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
+                requests.forEach { center.add($0) }
+            }
         }
     }
 
