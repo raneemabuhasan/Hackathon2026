@@ -147,6 +147,48 @@ struct CardStyle: ViewModifier {
 
 extension View {
     func card() -> some View { modifier(CardStyle()) }
+    /// Sizes a sheet to its content instead of opening a mostly empty full-height page.
+    func fittedSheet() -> some View { modifier(FittedSheet()) }
+}
+
+private struct FittedSheet: ViewModifier {
+    @State private var height: CGFloat = 420
+
+    func body(content: Content) -> some View {
+        ScrollView {
+            content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Palette.bg)
+    }
+}
+
+/// Eyebrow and title with a round close button: how every Petal sheet opens.
+struct SheetHeader<Title: View>: View {
+    let eyebrow: String
+    let close: () -> Void
+    @ViewBuilder let title: Title
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Eyebrow(text: eyebrow)
+                title
+            }
+            Spacer()
+            Button(action: close) {
+                Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                    .frame(width: 38, height: 38)
+                    .background(Palette.surface, in: Circle())
+                    .overlay(Circle().stroke(Palette.line))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+    }
 }
 
 struct Eyebrow: View {

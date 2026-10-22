@@ -59,6 +59,9 @@ struct CompanionView: View {
                         .presentationBackground(Palette.bg)
                 }
 
+                if !store.aiEnabled {
+                    aiOffCard
+                } else {
                 FlowLayout {
                     ForEach(prompts, id: \.self) { p in
                         Chip(label: p, selected: false, small: true) { store.send(p) }
@@ -80,6 +83,7 @@ struct CompanionView: View {
                             .id("thinking")
                     }
                 }
+                }
             }
             .onChange(of: store.messages.count) {
                 if let last = store.messages.last {
@@ -88,6 +92,31 @@ struct CompanionView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            if store.aiEnabled { inputBar }
+        }
+    }
+
+    /// Shown instead of the chat until the user opts in to sending data to Gemini.
+    private var aiOffCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Chat is off").font(.system(size: 15, weight: .semibold))
+            Text("The companion uses Google's Gemini AI through Firebase. To answer you, Sync sends your messages with your cycle dates, recent logs and food preferences. It's general wellness info, not medical advice.")
+                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Button { store.setAIConsent(true) } label: {
+                Text("Turn on companion")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    .background(Palette.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .card()
+    }
+
+    private var inputBar: some View {
             HStack(spacing: 8) {
                 TextField("Ask your companion...", text: $draft)
                     .focused($focused)
@@ -118,7 +147,6 @@ struct CompanionView: View {
             .shadow(color: Palette.berry.opacity(0.1), radius: 12, y: 4)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
-        }
     }
 
     private func send() {
@@ -310,5 +338,38 @@ struct CompanionView: View {
                 }
             }
         }
+    }
+}
+
+/// Stands in for an AI feature while the companion is off. Opens the Companion tab, which explains
+/// what's shared before the user turns it on.
+struct AIOffNotice: View {
+    @Environment(CycleStore.self) private var store
+    let feature: String
+
+    var body: some View {
+        Button { store.tab = .companion } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Please turn on the AI companion").font(.system(size: 13, weight: .semibold))
+                    Text("for \(feature). Showing our standard picks for now.")
+                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.inkFaint)
+                    .accessibilityHidden(true)
+            }
+            .padding(12)
+            .background(Palette.mist, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the Companion tab")
     }
 }
