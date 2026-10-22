@@ -29,7 +29,7 @@ struct LogSheet: View {
     private static let emoji: [String: String] = [
         "Calm": "😌", "Happy": "😊", "Confident": "😎", "Tired": "😴", "Anxious": "😰", "Irritable": "😤", "Low": "😔", "Sensitive": "🥺",
         "Cramps": "🌀", "Headache": "🤕", "Bloating": "🎈", "Tender breasts": "👙", "Back pain": "🦴", "Acne": "🧴",
-        "Fatigue": "🪫", "Cravings": "🍫", "Trouble sleeping": "🌙",
+        "Fatigue": "🪫", "Cravings": "🍫", "Trouble sleeping": "🌙", "Low sex drive": "🥀", "High sex drive": "🔥",
     ]
     private let tileColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
 

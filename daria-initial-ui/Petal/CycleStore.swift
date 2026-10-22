@@ -410,7 +410,7 @@ final class CycleStore {
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
-    static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping"]
+    static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping", "Low sex drive", "High sex drive"]
     static let moodOptions = ["Calm", "Happy", "Confident", "Tired", "Anxious", "Irritable", "Low", "Sensitive"]
     static let dietOptions = ["vegetarian", "vegan", "gluten-free", "dairy-free"]
     static let allergenOptions = ["nuts", "dairy", "gluten", "soy", "eggs", "fish", "sesame"]
