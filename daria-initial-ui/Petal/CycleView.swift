@@ -188,7 +188,7 @@ struct CycleView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Eyebrow(text: selectedDate.formatted(.dateTime.weekday(.wide)))
                 Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                    .font(.display(30))
+                    .font(.display(25))
                     .accessibilityAddTraits(.isHeader)
                 statusPill
             }
@@ -414,9 +414,9 @@ struct CycleView: View {
                     showingMonthPicker = true
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(month.formatted(.dateTime.month(.wide))).font(.display(30))
-                        Text(month.formatted(.dateTime.year())).font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Palette.inkFaint)
+                        Text(month.formatted(.dateTime.month(.wide).year()))
+                            .font(.display(30))
+                            .foregroundStyle(Palette.ink)
                         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Palette.inkSoft)
                     }
@@ -622,7 +622,7 @@ struct CycleView: View {
         RecordedCycle.recent(from: store.periodHistory.records)
     }
 
-    /// Cycle length, symptom summary and cycle comparison, swiped through one at a time.
+    /// Cycle length and symptom summary, swiped through one at a time.
     private var insights: some View {
         let current = insightPage ?? 0
         return VStack(spacing: 10) {
@@ -632,11 +632,10 @@ struct CycleView: View {
                         Group {
                             switch page {
                             case 0: lengths
-                            case 1: symptoms
-                            default: SymptomComparisonView()
+                            default: symptoms
                             }
                         }
-                        // Stretch to the tallest card so all three match, without a fixed height.
+                        // Stretch to the tallest card so both match, without a fixed height.
                         .frame(maxHeight: .infinity, alignment: .top)
                         .card()
                         .containerRelativeFrame(.horizontal)
@@ -668,7 +667,7 @@ struct CycleView: View {
         }
     }
 
-    private static let insightCount = 3
+    private static let insightCount = 2
 
     private func carouselArrow(_ icon: String, label: String, enabled: Bool, to page: @escaping () -> Int) -> some View {
         Button {

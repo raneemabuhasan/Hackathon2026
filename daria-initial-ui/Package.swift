@@ -8,8 +8,10 @@ let package = Package(
     products: [.library(name: "PetalComparison", targets: ["PetalComparison"])],
     targets: [
         .target(name: "PetalComparison", path: "Petal",
-                exclude: ["Animations", "Assistant.swift", "AuthModel.swift", "CompanionView.swift", "ContentView.swift", "CycleStore.swift", "CycleView.swift", "GoogleService-Info.plist", "LogSheet.swift", "NourishView.swift", "OnboardingView.swift", "PetalApp.swift", "README_VALEN.txt", "Reminders.swift", "SettingsView.swift", "SignInView.swift", "SymptomComparisonView.swift", "Theme.swift", "TodayView.swift"],
-                sources: ["SymptomComparison.swift", "PeriodHistory.swift"]),
+                exclude: ["Animations", "CompanionPrompt.swift", "Assistant.swift", "AuthModel.swift", "CompanionView.swift", "ContentView.swift", "CycleStore.swift", "CycleView.swift", "GoogleService-Info.plist", "LogSheet.swift", "NourishView.swift", "OnboardingView.swift", "PetalApp.swift", "README_VALEN.txt", "Reminders.swift", "SettingsView.swift", "SignInView.swift", "SymptomComparisonView.swift", "Theme.swift", "TodayView.swift"],
+                sources: ["SymptomComparison.swift", "PeriodHistory.swift", "EducationLibrary.swift", "CompanionLogging.swift", "CompanionContracts.swift"],
+                resources: [.process("Education")],
+                swiftSettings: [.define("PETAL_EDUCATION_PACKAGE")]),
         .testTarget(name: "PetalComparisonTests", dependencies: ["PetalComparison"],
                     path: "ComparisonTests")
     ]

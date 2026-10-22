@@ -33,9 +33,15 @@
 		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
 		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
 		FA0000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000002 /* Assets.xcassets */; };
+		ED0000000000000000000001 /* EducationLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000003 /* EducationLibrary.swift */; };
+		ED0000000000000000000002 /* education.json in Resources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000004 /* education.json */; };
+		ED0000000000000000000005 /* CompanionLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000006 /* CompanionLogging.swift */; };
+		ED000000000000000000000B /* CompanionPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000C /* CompanionPrompt.swift */; };
+		ED000000000000000000000D /* CompanionContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000E /* CompanionContracts.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		5C0000000000000000000001 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000001 /* Petal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Petal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -58,6 +64,11 @@
 		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
 		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
 		FA0000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		ED0000000000000000000003 /* EducationLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EducationLibrary.swift; sourceTree = "<group>"; };
+		ED0000000000000000000004 /* education.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Education/education.json; sourceTree = "<group>"; };
+		ED0000000000000000000006 /* CompanionLogging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLogging.swift; sourceTree = "<group>"; };
+		ED000000000000000000000C /* CompanionPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPrompt.swift; sourceTree = "<group>"; };
+		ED000000000000000000000E /* CompanionContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionContracts.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +90,11 @@
 		AA0000000000000000000002 /* Petal */ = {
 			isa = PBXGroup;
 			children = (
+				ED000000000000000000000C /* CompanionPrompt.swift */,
+				ED000000000000000000000E /* CompanionContracts.swift */,
+				ED0000000000000000000003 /* EducationLibrary.swift */,
+				ED0000000000000000000006 /* CompanionLogging.swift */,
+				ED0000000000000000000004 /* education.json */,
 				EF0000000000000000000001 /* SymptomComparison.swift */,
 				EF0000000000000000000002 /* SymptomComparisonView.swift */,
 				FA0000000000000000000002 /* Assets.xcassets */,
@@ -107,6 +123,7 @@
 		AA0000000000000000000004 = {
 			isa = PBXGroup;
 			children = (
+				5C0000000000000000000001 /* Signing.xcconfig */,
 				AA0000000000000000000002 /* Petal */,
 				AA0000000000000000000005 /* Products */,
 			);
@@ -202,6 +219,7 @@
 				FA0000000000000000000001 /* Assets.xcassets in Resources */,
 				CC000000000000000000000E /* GoogleService-Info.plist in Resources */,
 				CC000000000000000000000F /* signin.json in Resources */,
+				ED0000000000000000000002 /* education.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -229,6 +247,10 @@
 				CC000000000000000000000C /* OnboardingView.swift in Sources */,
 				CC000000000000000000000D /* SettingsView.swift in Sources */,
 				CC0000000000000000000010 /* Assistant.swift in Sources */,
+				ED000000000000000000000B /* CompanionPrompt.swift in Sources */,
+				ED000000000000000000000D /* CompanionContracts.swift in Sources */,
+				ED0000000000000000000001 /* EducationLibrary.swift in Sources */,
+				ED0000000000000000000005 /* CompanionLogging.swift in Sources */,
 				CC0000000000000000000011 /* Reminders.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -238,6 +260,7 @@
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000012 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5C0000000000000000000001 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
@@ -265,6 +288,7 @@
 		};
 		AA0000000000000000000013 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5C0000000000000000000001 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
@@ -289,7 +313,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = TC6GNXLH7Y;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Petal-Info.plist";
@@ -304,6 +327,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.raneemabuhasan.sync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -331,6 +355,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

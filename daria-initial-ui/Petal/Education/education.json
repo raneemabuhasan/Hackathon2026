@@ -1,0 +1,276 @@
+{
+  "version": 1,
+  "reviewedOn": "2026-10-21",
+  "sources": [
+    {
+      "id": "cc-menstrual-cycle",
+      "title": "Menstrual Cycle",
+      "url": "https://my.clevelandclinic.org/health/articles/10132-menstrual-cycle",
+      "limitations": "General education, not individual diagnosis or prediction. The article gives differing typical-length ranges; this library does not use them as diagnostic cutoffs."
+    },
+    {
+      "id": "cc-cycle-syncing",
+      "title": "Nutrition and Exercise Throughout Your Menstrual Cycle",
+      "url": "https://health.clevelandclinic.org/cycle-syncing",
+      "limitations": "Cycle-syncing programs lack clinical research. Food ideas are optional, not treatments or hormone-balancing methods."
+    },
+    {
+      "id": "nhs-cramps",
+      "title": "NHS: Period pain",
+      "url": "https://www.nhs.uk/symptoms/period-pain/",
+      "limitations": "General education only; cannot identify the cause of an individual’s pain. No medication selection or dosing."
+    },
+    {
+      "id": "nhs-pms",
+      "title": "NHS: PMS (premenstrual syndrome)",
+      "url": "https://www.nhs.uk/conditions/pre-menstrual-syndrome/",
+      "limitations": "Symptoms alone do not diagnose PMS or prove that a particular feeling is caused by cycle hormones."
+    },
+    {
+      "id": "nhs-heavy-periods",
+      "title": "NHS: Heavy periods",
+      "url": "https://www.nhs.uk/conditions/heavy-periods/",
+      "limitations": "Examples are not a diagnosis or a personal safety threshold; assessment depends on the individual."
+    },
+    {
+      "id": "nhs-fatigue",
+      "title": "NHS: Tiredness and fatigue",
+      "url": "https://www.nhs.uk/symptoms/tiredness-and-fatigue/",
+      "limitations": "General possibilities, not a diagnosis; do not infer anemia, a hormonal cause, or a personal symptom pattern."
+    }
+  ],
+  "passages": [
+    {
+      "id": "cycle-definition",
+      "sourceID": "cc-menstrual-cycle",
+      "title": "What a cycle means",
+      "topics": [
+        "definitions",
+        "menstruation"
+      ],
+      "keywords": [
+        "menstrual",
+        "period",
+        "uterus",
+        "bleeding",
+        "definition"
+      ],
+      "text": "The menstrual cycle prepares the body for possible pregnancy. Menstruation is shedding of the uterine lining.",
+      "limitations": "Bleeding alone does not establish a diagnosis."
+    },
+    {
+      "id": "cycle-counting",
+      "sourceID": "cc-menstrual-cycle",
+      "title": "Counting cycle length",
+      "topics": [
+        "counting",
+        "cycle-length"
+      ],
+      "keywords": [
+        "count",
+        "counting",
+        "length",
+        "track",
+        "tracking",
+        "days",
+        "start"
+      ],
+      "text": "Day one is the first day of a period. Cycle length is the interval between successive period starts; bleeding duration counts only bleeding days.",
+      "limitations": "An unfinished cycle has no confirmed final length."
+    },
+    {
+      "id": "cycle-phases",
+      "sourceID": "cc-menstrual-cycle",
+      "title": "Phases and their overlap",
+      "topics": [
+        "phases",
+        "follicular",
+        "menstruation"
+      ],
+      "keywords": [
+        "phase",
+        "phases",
+        "follicular",
+        "menses",
+        "overlap",
+        "estrogen"
+      ],
+      "text": "Menstruation begins the cycle. The follicular phase also starts then and continues until ovulation, while follicles develop and the uterine lining thickens.",
+      "limitations": "Phase boundaries are not fixed calendar dates."
+    },
+    {
+      "id": "cycle-ovulation-luteal",
+      "sourceID": "cc-menstrual-cycle",
+      "title": "Ovulation and the luteal phase",
+      "topics": [
+        "phases",
+        "ovulation",
+        "luteal"
+      ],
+      "keywords": [
+        "ovulation",
+        "ovulate",
+        "luteal",
+        "progesterone",
+        "egg",
+        "hormones"
+      ],
+      "text": "Ovulation releases an egg. In the luteal phase, progesterone helps prepare the uterine lining. Without pregnancy, hormone levels fall and menstruation follows.",
+      "limitations": "This cannot confirm personal ovulation or fertility."
+    },
+    {
+      "id": "syncing-evidence",
+      "sourceID": "cc-cycle-syncing",
+      "title": "What cycle syncing can establish",
+      "topics": [
+        "cycle-syncing",
+        "evidence"
+      ],
+      "keywords": [
+        "sync",
+        "syncing",
+        "evidence",
+        "research",
+        "proven",
+        "balance",
+        "balancing"
+      ],
+      "text": "Cycle syncing adapts routines to menstrual-cycle changes. The article notes that the program has not been studied clinically. Notice personal preferences rather than expecting a phase-based routine to deliver health benefits.",
+      "limitations": "Do not infer treatment effectiveness or hormone balancing."
+    },
+    {
+      "id": "nutrition-menstrual",
+      "sourceID": "cc-cycle-syncing",
+      "title": "Optional food ideas during menstruation",
+      "topics": [
+        "nutrition",
+        "menstruation"
+      ],
+      "keywords": [
+        "food",
+        "foods",
+        "eat",
+        "nutrition",
+        "iron",
+        "lentils",
+        "beans",
+        "vitamin",
+        "menstrual"
+      ],
+      "text": "Optional meal ideas include iron-containing beans, lentils or leafy greens alongside vitamin-C-containing fruit or vegetables.",
+      "limitations": "Adapt to allergies and preferences. These foods are not treatments for cramps or heavy bleeding; phase-specific benefits are unproven."
+    },
+    {
+      "id": "nutrition-other-phases",
+      "sourceID": "cc-cycle-syncing",
+      "title": "Flexible meals across the cycle",
+      "topics": [
+        "nutrition",
+        "follicular",
+        "ovulation",
+        "luteal"
+      ],
+      "keywords": [
+        "food",
+        "foods",
+        "eat",
+        "nutrition",
+        "protein",
+        "carbohydrates",
+        "snack",
+        "cravings",
+        "fiber"
+      ],
+      "text": "The article suggests lean protein and whole grains during follicular and ovulation phases, and fiber-containing foods or snacks such as fruit during the luteal phase.",
+      "limitations": "Optional general food choices, not required phase-specific diets. No treatment or hormone-balancing benefit is established."
+    },
+    {
+      "id": "nhs-cramps",
+      "sourceID": "nhs-cramps",
+      "title": "Period pain",
+      "topics": [
+        "cramps",
+        "pain",
+        "cramp"
+      ],
+      "keywords": [
+        "cramps",
+        "pain",
+        "cramp"
+      ],
+      "text": "Period cramps can occur when the womb contracts during menstruation. Optional comfort measures include a warm bath, a wrapped heat pad and gentle activity such as walking. Seek urgent medical advice if pain is severe or worse than usual and pain relief has not helped. Speak with a clinician if pain disrupts daily life or periods become more painful, heavier or irregular.",
+      "limitations": "General education only; cannot identify the cause of an individual’s pain. No medication selection or dosing.",
+      "suggestedPrompts": [
+        "What causes period cramps?",
+        "When should I seek help for period pain?"
+      ]
+    },
+    {
+      "id": "nhs-pms",
+      "sourceID": "nhs-pms",
+      "title": "PMS (premenstrual syndrome)",
+      "topics": [
+        "pms",
+        "irritable",
+        "grumpy",
+        "mood"
+      ],
+      "keywords": [
+        "pms",
+        "irritable",
+        "grumpy",
+        "mood"
+      ],
+      "text": "PMS refers to symptoms in the weeks before a period. These can include irritability, tiredness, sleep difficulties, bloating or cramps, and vary between people and months. Sleep, regular activity, a balanced diet and reducing stress are optional general self-care ideas. See a clinician if symptoms affect daily life or self-care has not helped.",
+      "limitations": "Symptoms alone do not diagnose PMS or prove that a particular feeling is caused by cycle hormones.",
+      "suggestedPrompts": [
+        "What is PMS?",
+        "When should I seek help for PMS?"
+      ]
+    },
+    {
+      "id": "nhs-heavy-periods",
+      "sourceID": "nhs-heavy-periods",
+      "title": "Heavy periods",
+      "topics": [
+        "heavy_periods",
+        "bleeding",
+        "heavy"
+      ],
+      "keywords": [
+        "heavy_periods",
+        "bleeding",
+        "heavy"
+      ],
+      "text": "Signs of heavy periods can include needing to change pads or tampons every one to two hours, bleeding longer than seven days, leaking through clothing, or bleeding that limits usual activities. Discuss bleeding with a clinician if it affects your life, persists, or occurs between periods or after sex.",
+      "limitations": "Examples are not a diagnosis or a personal safety threshold; assessment depends on the individual.",
+      "suggestedPrompts": [
+        "What can heavy periods look like?",
+        "When should I seek help for heavy periods?"
+      ]
+    },
+    {
+      "id": "nhs-fatigue",
+      "sourceID": "nhs-fatigue",
+      "title": "Tiredness and fatigue",
+      "topics": [
+        "fatigue",
+        "tired",
+        "tiredness",
+        "exhausted"
+      ],
+      "keywords": [
+        "fatigue",
+        "tired",
+        "tiredness",
+        "exhausted"
+      ],
+      "text": "Tiredness can have several possible contributors, including insufficient sleep, stress, lifestyle factors or illness. A chat or cycle estimate cannot establish which applies to you. Seek medical advice if tiredness is persistent, unexplained, affects daily life, or worries you.",
+      "limitations": "General possibilities, not a diagnosis; do not infer anemia, a hormonal cause, or a personal symptom pattern.",
+      "suggestedPrompts": [
+        "What might contribute to tiredness?",
+        "When should I seek help for tiredness?"
+      ]
+    }
+  ]
+}

@@ -1,42 +1,7 @@
 import SwiftUI
 import UserNotifications
 
-/// A reminder the user can switch on or off. Stored at users/{uid}/reminders/{id}.
-struct Reminder: Identifiable, Codable {
-    enum Kind: String, Codable, CaseIterable {
-        case daily, once, beforePeriod
-
-        var label: String {
-            switch self {
-            case .daily: "Every day"
-            case .once: "Once"
-            case .beforePeriod: "Before period"
-            }
-        }
-    }
-
-    var id = UUID().uuidString
-    var title: String
-    var kind: Kind
-    var hour: Int
-    var minute: Int
-    /// Day to fire for `.once`.
-    var date: Date? = nil
-    /// Days before the predicted window for `.beforePeriod`.
-    var daysBefore: Int? = nil
-    var on = true
-    var created = Date()
-
-    /// Suggested set for new accounts, most important first.
-    static var defaults: [Reminder] {
-        [
-            Reminder(title: "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0, daysBefore: 2, on: true),
-            Reminder(title: "Evening check-in", kind: .daily, hour: 20, minute: 30, on: true),
-            Reminder(title: "Restock pads & tampons", kind: .beforePeriod, hour: 18, minute: 0, daysBefore: 5, on: false),
-            Reminder(title: "Drink some water", kind: .daily, hour: 14, minute: 0, on: false),
-        ]
-    }
-
+extension Reminder {
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
     func day(windowStart: Date) -> Date? {
         switch kind {
@@ -73,7 +38,9 @@ struct Reminder: Identifiable, Codable {
 }
 
 /// Mirrors the enabled reminders into local iOS notifications. Works without a paid developer account.
+@MainActor
 enum ReminderNotifications {
+    private static var generation = 0
     private static let prefix = "reminder-"
 
     static func requestPermission() {
@@ -84,11 +51,16 @@ enum ReminderNotifications {
 
     /// Replaces every pending Petal reminder with the current set. Call whenever reminders or predictions change.
     static func sync(_ reminders: [Reminder], windowStart: Date) {
+        generation += 1
+        let currentGeneration = generation
         let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart) }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { pending in
-            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
-            requests.forEach { center.add($0) }
+            Task { @MainActor in
+                guard generation == currentGeneration else { return }
+                center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
+                requests.forEach { center.add($0) }
+            }
         }
     }
 

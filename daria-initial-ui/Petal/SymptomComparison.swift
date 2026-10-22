@@ -45,6 +45,27 @@ struct CycleComparison: Codable {
 
 /// Pure comparison tool. No storage, network, AI inference, or medical thresholds.
 enum SymptomComparisonEngine {
+    enum Selection {
+        case all, latest(Int), starts([Date]), range(Date, Date)
+    }
+
+    static func select(_ cycles: [ComparedCycle], matching selection: Selection) -> [ComparedCycle]? {
+        let sorted = cycles.sorted { $0.start < $1.start }
+        switch selection {
+        case .all: return sorted
+        case .latest(let count):
+            guard count > 0 else { return nil }
+            return Array(sorted.suffix(count))
+        case .starts(let dates):
+            let requested = Set(dates)
+            guard !requested.isEmpty, requested.isSubset(of: Set(sorted.map(\.start))) else { return nil }
+            return sorted.filter { requested.contains($0.start) }
+        case .range(let from, let to):
+            guard from <= to else { return nil }
+            return sorted.filter { $0.start >= from && $0.start <= to }
+        }
+    }
+
     static func cycles(starts: [Date], logs: [ComparisonEntry], asOf: Date,
                        calendar: Calendar = .current) -> [ComparedCycle] {
         let today = calendar.startOfDay(for: asOf)
