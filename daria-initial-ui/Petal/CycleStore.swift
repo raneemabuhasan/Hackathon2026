@@ -10,7 +10,8 @@ enum Phase: String, CaseIterable, Identifiable {
 
     var name: String {
         switch self {
-        case .menstrual: "Period"
+        // "Period" stays for bleeding itself (logging, predictions); the phase is "Menstrual".
+        case .menstrual: "Menstrual"
         case .follicular: "Follicular"
         case .ovulation: "Ovulation"
         case .luteal: "Luteal"

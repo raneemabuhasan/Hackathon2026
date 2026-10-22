@@ -154,7 +154,7 @@ struct NourishView: View {
     private var title: String {
         if !store.tracksPhases { return store.foodName(selected).lowercased() }
         return switch selected {
-        case .menstrual: "your period"
+        case .menstrual: "menstrual phase"
         case .follicular: "follicular phase"
         case .ovulation: "ovulation phase"
         case .luteal: "luteal phase"
