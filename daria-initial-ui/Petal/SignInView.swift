@@ -24,16 +24,8 @@ struct SignInView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 96)
-                    .padding(.top, 12)
+                    .padding(.top, 56)
                     .accessibilityLabel("Sync")
-
-                VStack(spacing: 6) {
-                    DisplayTitle(before: "Hi ", accent: "there!", size: 38)
-                    Text(creating ? "Let's set up your private space." : "Good to see you. Sign in to pick up where you left off.")
-                        .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 8)
 
                 LottieView(animation: .named("signin"))
                     .looping()
