@@ -18,7 +18,7 @@ struct SignInView: View {
                 Image("SyncWordmark")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 112)
+                    .frame(width: 96)
                     .padding(.top, 12)
                     .accessibilityLabel("Sync")
 
