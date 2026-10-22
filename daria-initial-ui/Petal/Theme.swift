@@ -35,10 +35,10 @@ enum CoordinatedTheme: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .blush: "Blush pink · sage · warm ivory · forest green"
-        case .lavender: "Lilac accents · plum text"
-        case .sage: "Botanical greens · warm peach details"
-        case .sky: "Soft blues · sandy neutrals"
-        case .peach: "Apricot accents · dusky-purple details"
+        case .lavender: "Lilac accents · honey-brown text · buttercream"
+        case .sage: "Sage accents · terracotta text · apricot"
+        case .sky: "Sky-blue accents · sand-brown text · warm sand"
+        case .peach: "Apricot accents · plum text · lilac"
         }
     }
     var colors: ThemeColors {
@@ -51,34 +51,35 @@ enum CoordinatedTheme: String, CaseIterable, Identifiable {
                         pastel: 0xF2C6CF, softPrimary: 0xF7DFE4, primarySurface: 0xF9E9EC,
                         secondary: 0x566B5C, secondaryPastel: 0xA8BDA5, secondarySurface: 0xE4ECE0,
                         selectionInk: 0x344A3C, background: 0xF7F3EC, border: 0xD9DCD2)
+        // Like Blush: the primary colour carries actions, the secondary carries the text, so both show everywhere.
         case .lavender:
-            ThemeColors(ink: 0x3C304B, softInk: 0x51415F, mutedInk: 0x584966,
-                        accent: 0x76508C, deepAccent: 0x624277, phaseDark: 0x51405F,
+            ThemeColors(ink: 0x4A3C1C, softInk: 0x6B5A33, mutedInk: 0x6B5A33,
+                        accent: 0x76508C, deepAccent: 0x624277, phaseDark: 0x6B5A33,
                         highlight: 0xAD91C3, lightAccent: 0xC9B4D9,
                         pastel: 0xDCCCE9, softPrimary: 0xEBE1F2, primarySurface: 0xF1EAF6,
-                        secondary: 0x756039, secondaryPastel: 0xE4D4A9, secondarySurface: 0xF4EEDC,
-                        selectionInk: 0x483919, background: 0xF7F3F5, border: 0xDDD6D9)
+                        secondary: 0x756039, secondaryPastel: 0xE8D29A, secondarySurface: 0xF6EDCF,
+                        selectionInk: 0x483919, background: 0xFAF6EC, border: 0xDED8C6)
         case .sage:
-            ThemeColors(ink: 0x2F4539, softInk: 0x405848, mutedInk: 0x465D4E,
-                        accent: 0x4F715B, deepAccent: 0x41624D, phaseDark: 0x3E5550,
+            ThemeColors(ink: 0x5A3622, softInk: 0x7A4B30, mutedInk: 0x7A4B30,
+                        accent: 0x4F715B, deepAccent: 0x41624D, phaseDark: 0x7A4B30,
                         highlight: 0x8DB39A, lightAccent: 0xB4CDB6,
                         pastel: 0xC9DDC9, softPrimary: 0xDEEADD, primarySurface: 0xEAF1E7,
-                        secondary: 0x82553B, secondaryPastel: 0xE7BEA1, secondarySurface: 0xF6E7DA,
-                        selectionInk: 0x4F341F, background: 0xF6F4EC, border: 0xD9DDD0)
+                        secondary: 0x82553B, secondaryPastel: 0xEDB892, secondarySurface: 0xF8E4D3,
+                        selectionInk: 0x4F341F, background: 0xF8F3EC, border: 0xE2D6CB)
         case .sky:
-            ThemeColors(ink: 0x2C4054, softInk: 0x3D536A, mutedInk: 0x455A70,
-                        accent: 0x416F94, deepAccent: 0x345E81, phaseDark: 0x4C536C,
+            ThemeColors(ink: 0x463825, softInk: 0x66563D, mutedInk: 0x66563D,
+                        accent: 0x416F94, deepAccent: 0x345E81, phaseDark: 0x66563D,
                         highlight: 0x8EB6D6, lightAccent: 0xB4CEE3,
                         pastel: 0xCADEEF, softPrimary: 0xDFEAF5, primarySurface: 0xEAF1F8,
-                        secondary: 0x796345, secondaryPastel: 0xDCC8A9, secondarySurface: 0xF2EBDF,
-                        selectionInk: 0x493B28, background: 0xF5F4F0, border: 0xD6DDE0)
+                        secondary: 0x796345, secondaryPastel: 0xE0C79E, secondarySurface: 0xF4EAD7,
+                        selectionInk: 0x493B28, background: 0xF7F4EE, border: 0xDFD8CB)
         case .peach:
-            ThemeColors(ink: 0x503B46, softInk: 0x604952, mutedInk: 0x67515B,
-                        accent: 0xA15A40, deepAccent: 0x874A36, phaseDark: 0x665078,
+            ThemeColors(ink: 0x3F2F52, softInk: 0x5E4C70, mutedInk: 0x5E4C70,
+                        accent: 0xA15A40, deepAccent: 0x874A36, phaseDark: 0x5E4C70,
                         highlight: 0xD99A7D, lightAccent: 0xE8BCA6,
                         pastel: 0xF0D0BD, softPrimary: 0xF7E3D7, primarySurface: 0xFBEDE4,
-                        secondary: 0x705981, secondaryPastel: 0xCEBCDD, secondarySurface: 0xEEE5F4,
-                        selectionInk: 0x473650, background: 0xF9F3ED, border: 0xE1D7D2)
+                        secondary: 0x705981, secondaryPastel: 0xC9B2DE, secondarySurface: 0xECE1F5,
+                        selectionInk: 0x473650, background: 0xF9F4F0, border: 0xDDD6E0)
         }
     }
 }
