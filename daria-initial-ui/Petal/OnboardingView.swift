@@ -8,6 +8,8 @@ struct OnboardingView: View {
     @State private var lastStart = CycleStore.add(.now, -10)
     @State private var cycleLength = 28
     @State private var periodLength = 5
+    @State private var periodDaysBefore = 2
+    @State private var logTime = CycleStore.cal.date(bySettingHour: 20, minute: 30, second: 0, of: .now) ?? .now
     @FocusState private var nameFocused: Bool
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
@@ -48,6 +50,25 @@ struct OnboardingView: View {
                         stepper("Period length", value: $periodLength, range: 2...10)
                     }
                 }
+
+                question("How early should we let you know your period's coming?") {
+                    Stepper(value: $periodDaysBefore, in: 1...7) {
+                        HStack {
+                            Text("Heads-up").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                            Spacer()
+                            Text("\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s") before")
+                                .font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                        }
+                    }
+                }
+
+                question("When's a good time for a daily check-in?") {
+                    DatePicker("Remind me at", selection: $logTime, displayedComponents: .hourAndMinute)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Palette.inkSoft)
+                    Text("We'll send a gentle nudge to log how you're feeling. You can change or turn it off anytime.")
+                        .font(.caption).foregroundStyle(Palette.inkFaint)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
@@ -57,8 +78,11 @@ struct OnboardingView: View {
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
                 Button {
+                    let log = CycleStore.cal.dateComponents([.hour, .minute], from: logTime)
                     store.completeOnboarding(name: trimmedName, lastPeriodStart: lastStart,
-                                             cycleLength: cycleLength, periodLength: periodLength)
+                                             cycleLength: cycleLength, periodLength: periodLength,
+                                             logHour: log.hour ?? 20, logMinute: log.minute ?? 30,
+                                             periodDaysBefore: periodDaysBefore)
                 } label: {
                     Text("Start tracking")
                         .font(.system(size: 16, weight: .semibold))
@@ -87,6 +111,8 @@ struct OnboardingView: View {
             RadialGradient(colors: [Palette.blush, Palette.mist, Palette.cream], center: .top, startRadius: 0, endRadius: 520)
                 .ignoresSafeArea())
         .onAppear {
+            // Every new account (email or Google) lands here right after sign-up.
+            ReminderNotifications.requestPermission()
             if name.isEmpty, let full = auth.user?.displayName {
                 name = full.components(separatedBy: " ").first ?? full
             }

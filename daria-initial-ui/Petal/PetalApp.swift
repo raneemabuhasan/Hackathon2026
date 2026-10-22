@@ -9,6 +9,7 @@ struct PetalApp: App {
 
     init() {
         FirebaseApp.configure()
+        ReminderNotifications.showWhileOpen()
         _auth = State(initialValue: AuthModel())
     }
 

@@ -16,6 +16,20 @@ extension Reminder {
         return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
     }
 
+    static func greeting(hour: Int) -> String {
+        switch hour {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
+        }
+    }
+
+    /// What the notification and the reminders list show.
+    func text(name: String) -> String {
+        guard greets == true else { return title }
+        return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
+    }
+
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
     func day(windowStart: Date) -> Date? {
         switch kind {
