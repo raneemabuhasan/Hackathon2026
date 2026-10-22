@@ -28,6 +28,9 @@
 		CC000000000000000000000E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000E /* GoogleService-Info.plist */; };
 		CC000000000000000000000F /* signin.json in Resources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000F /* signin.json */; };
 		CC0000000000000000000012 /* sync-animation.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* sync-animation.json */; };
+		CC0000000000000000000013 /* heart.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* heart.json */; };
+		CC0000000000000000000014 /* bell.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* bell.json */; };
+		CC0000000000000000000015 /* cooking.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* cooking.json */; };
 		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
 		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 		DD0000000000000000000001 /* PeriodHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000002 /* PeriodHistory.swift */; };
@@ -91,6 +94,9 @@
 		BB000000000000000000000E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		BB000000000000000000000F /* signin.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = signin.json; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* sync-animation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "sync-animation.json"; sourceTree = "<group>"; };
+		BB0000000000000000000013 /* heart.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = heart.json; sourceTree = "<group>"; };
+		BB0000000000000000000014 /* bell.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = bell.json; sourceTree = "<group>"; };
+		BB0000000000000000000015 /* cooking.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cooking.json; sourceTree = "<group>"; };
 		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		DD0000000000000000000002 /* PeriodHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
@@ -192,6 +198,9 @@
 			children = (
 				BB000000000000000000000F /* signin.json */,
 				BB0000000000000000000012 /* sync-animation.json */,
+				BB0000000000000000000013 /* heart.json */,
+				BB0000000000000000000014 /* bell.json */,
+				BB0000000000000000000015 /* cooking.json */,
 			);
 			path = Animations;
 			sourceTree = "<group>";
@@ -305,6 +314,9 @@
 				CC000000000000000000000F /* signin.json in Resources */,
 				ED0000000000000000000002 /* education.json in Resources */,
 				CC0000000000000000000012 /* sync-animation.json in Resources */,
+				CC0000000000000000000013 /* heart.json in Resources */,
+				CC0000000000000000000014 /* bell.json in Resources */,
+				CC0000000000000000000015 /* cooking.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

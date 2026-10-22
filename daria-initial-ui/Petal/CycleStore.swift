@@ -43,6 +43,16 @@ enum Phase: String, CaseIterable, Identifiable {
         case .luteal: "Cravings and lower energy are common before a period. Regular meals with slow-release carbs can help you feel steadier."
         }
     }
+
+    /// One-line version of `blurb` for the Nourish tip; the full text still goes to the AI prompts.
+    var foodTip: String {
+        switch self {
+        case .menstrual: "Iron-rich, warm meals and plenty of fluids."
+        case .follicular: "Fresh, colourful meals with protein and fibre."
+        case .mid: "Balanced plates, lots of veg, and stay hydrated."
+        case .luteal: "Slow-release carbs help with cravings and low energy."
+        }
+    }
 }
 
 /// users/{uid} — set during onboarding.
@@ -53,6 +63,8 @@ struct Profile: Codable {
     var periodLength: Int
     var diets: [String] = []
     var avoid: [String] = []
+    /// Foods to leave out of meal ideas. A soft preference, unlike `avoid`. Optional so older profiles still decode.
+    var dislikes: [String]? = nil
     /// The user's own tags, shown next to the built-in ones. Optional so older profiles still decode.
     var customMoods: [String]? = nil
     var customSymptoms: [String]? = nil
@@ -67,6 +79,8 @@ struct Profile: Codable {
     var baseline: CycleBaseline? = nil
     /// CoordinatedTheme raw value, so the palette follows the account across devices.
     var palette: String? = nil
+    /// Whether the user agreed to send their data to Gemini. nil means never asked, which counts as no.
+    var aiConsent: Bool? = nil
 }
 
 /// One suggestion on Today's "Your plan for today" card.
@@ -313,6 +327,9 @@ final class CycleStore {
     var periodLength: Int { profile?.periodLength ?? 5 }
     var diets: Set<String> { Set(profile?.diets ?? []) }
     var avoid: Set<String> { Set(profile?.avoid ?? []) }
+    var dislikes: [String] { profile?.dislikes ?? [] }
+    /// Chat, AI meal ideas and the AI daily plan only run with consent; everything else works without it.
+    var aiEnabled: Bool { profile?.aiConsent == true }
 
     nonisolated static var cal: Calendar { LogDate.calendar }
     nonisolated static func add(_ date: Date, _ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: date)! }
@@ -347,8 +364,13 @@ final class CycleStore {
                     guard let self else { return }
                     self.profileError = error.map { "Could not load profile: \($0.localizedDescription)" }
                     if error != nil { return }
-                    do { self.profile = try snap?.data(as: Profile.self) }
-                    catch { self.profileError = "Could not read profile."; return }
+                    // A brand-new account has no document yet: that's "needs onboarding", not an error.
+                    if let snap, snap.exists {
+                        do { self.profile = try snap.data(as: Profile.self) }
+                        catch { self.profileError = "Could not read profile."; return }
+                    } else {
+                        self.profile = nil
+                    }
                     self.applySavedPalette()
                     self.invalidateComparisonConversation()
                     self.loaded = true
@@ -452,8 +474,8 @@ final class CycleStore {
         userRef.updateData(["palette": theme.rawValue]) { error in if let error { print("Palette update failed:", error) } }
     }
 
-    /// Firestore is the source of truth; the local copy only covers launch and signed-out screens.
-    /// Profiles from before palettes were synced get this device's choice uploaded once.
+    /// Firestore is the source of truth; the local copy only covers launch until the profile loads,
+    /// and resets to the default on sign-out. Profiles from before palettes were synced get this device's choice uploaded once.
     private func applySavedPalette() {
         guard let profile else { return }
         if let saved = profile.palette.flatMap(CoordinatedTheme.init(rawValue:)) {
@@ -464,9 +486,11 @@ final class CycleStore {
     }
 
     /// Writes the profile plus a few default reminders the first time someone signs in.
-    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int, logHour: Int, logMinute: Int, periodDaysBefore: Int) {
+    func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int, logHour: Int, logMinute: Int, periodDaysBefore: Int,
+                            diets: Set<String>, avoid: Set<String>, dislikes: [String], aiConsent: Bool) {
         let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
-                              cycleLength: cycleLength, periodLength: periodLength)
+                              cycleLength: cycleLength, periodLength: periodLength,
+                              diets: diets.sorted(), avoid: avoid.sorted(), dislikes: dislikes, aiConsent: aiConsent)
         let batch = db.batch()
         try? batch.setData(from: profile, forDocument: userRef)
         addDefaultReminders(to: batch, logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore)
@@ -912,11 +936,28 @@ final class CycleStore {
         removeTag(symptom: symptom, name)
     }
 
-    func toggleDiet(_ diet: String) { toggle("diets", diet, diets.contains(diet)) }
-    func toggleAvoid(_ allergen: String) { toggle("avoid", allergen, avoid.contains(allergen)) }
+    func setAIConsent(_ on: Bool) {
+        if !on {
+            plan = nil
+            aiMeals = [:]
+            messages = []
+            assistant = nil
+        }
+        userRef.updateData(["aiConsent": on]) { error in
+            if let error { Task { @MainActor in self.showToast("Couldn't update AI setting: \(error.localizedDescription)") } }
+        }
+    }
 
-    private func toggle(_ field: String, _ value: String, _ present: Bool) {
-        userRef.updateData([field: present ? FieldValue.arrayRemove([value]) : FieldValue.arrayUnion([value])])
+    func savePreferences(diets: Set<String>, avoid: Set<String>, dislikes: [String]) {
+        userRef.updateData(["diets": diets.sorted(), "avoid": avoid.sorted(), "dislikes": dislikes]) { error in
+            if let error { Task { @MainActor in self.showToast("Couldn't save preferences: \(error.localizedDescription)") } }
+        }
+    }
+
+    /// Lowercase letters, spaces and hyphens only: dislikes end up in a cache document ID (see mealKey).
+    static func cleanDislike(_ text: String) -> String {
+        String(text.lowercased().filter { $0.isLetter || $0 == " " || $0 == "-" }.prefix(30))
+            .trimmingCharacters(in: .whitespaces)
     }
 
     func toggleGrocery(_ item: GroceryItem) {
@@ -1009,8 +1050,13 @@ final class CycleStore {
 
     func meals(for phase: Phase) -> [Meal] {
         (Self.meals[phase] ?? []).filter { meal in
-            diets.allSatisfy(meal.diets.contains) && !meal.allergens.contains(where: avoid.contains)
+            diets.allSatisfy(meal.diets.contains) && !meal.allergens.contains(where: avoid.contains) && !mentionsDislike(meal)
         }
+    }
+
+    private func mentionsDislike(_ meal: Meal) -> Bool {
+        let text = ([meal.name] + meal.ingredients + meal.items).joined(separator: " ").lowercased()
+        return dislikes.contains { text.range(of: "\\b\(NSRegularExpression.escapedPattern(for: $0))", options: .regularExpression) != nil }
     }
 
     // MARK: AI meal ideas
@@ -1027,14 +1073,15 @@ final class CycleStore {
 
     func mealKey(_ phase: Phase) -> String {
         "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
+            + (dislikes.isEmpty ? "" : "|" + dislikes.sorted().joined(separator: ","))
     }
 
     /// What Nourish shows: AI recipes once loaded, otherwise the built-in ideas.
-    func shownMeals(for phase: Phase) -> [Meal] { aiMeals[mealKey(phase)] ?? meals(for: phase) }
+    func shownMeals(for phase: Phase) -> [Meal] { (aiEnabled ? aiMeals[mealKey(phase)] : nil) ?? meals(for: phase) }
 
     func loadMeals(for phase: Phase, refresh: Bool = false) async {
         let key = mealKey(phase)
-        guard refresh || aiMeals[key] == nil, !mealsLoading.contains(key) else { return }
+        guard aiEnabled, refresh || aiMeals[key] == nil, !mealsLoading.contains(key) else { return }
         mealsLoading.insert(key)
         mealsFailed.remove(key)
         defer { mealsLoading.remove(key) }
@@ -1046,7 +1093,7 @@ final class CycleStore {
             return
         }
         do {
-            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid, recentSymptoms: recentSymptoms,
+            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid, dislikes: dislikes, recentSymptoms: recentSymptoms,
                                                       notLike: aiMeals[key]?.map(\.name) ?? [])
             guard ideas.count == 4, ideas.allSatisfy(Self.validMeal) else { throw ContractError.invalid("Invalid recipe response.") }
             let safe = ideas.filter(fitsPreferences)
@@ -1109,7 +1156,7 @@ final class CycleStore {
 
     func loadPlan() async {
         let context = planContext
-        guard !planLoading else { return }
+        guard aiEnabled, !planLoading else { return }
         planLoading = true
         defer { planLoading = false }
         let doc = cacheRef.document("plan")
@@ -1136,7 +1183,7 @@ final class CycleStore {
 
     /// Start AI work early so Today and Nourish are ready by the time the user looks.
     private func prefetchAI() {
-        guard profile != nil, !deletingData else { return }
+        guard profile != nil, aiEnabled, !deletingData else { return }
         Task {
             await loadPlan()
             await loadMeals(for: currentPhase)
@@ -1145,7 +1192,7 @@ final class CycleStore {
 
     /// Second check on AI recipes: the model's own labels, then a keyword scan of the ingredients.
     private func fitsPreferences(_ meal: Meal) -> Bool {
-        guard diets.allSatisfy(meal.diets.contains), !meal.allergens.contains(where: avoid.contains) else { return false }
+        guard diets.allSatisfy(meal.diets.contains), !meal.allergens.contains(where: avoid.contains), !mentionsDislike(meal) else { return false }
         let text = ([meal.name] + meal.ingredients + meal.items).joined(separator: " ").lowercased()
         return !avoid.contains { allergen in
             var scanned = text
@@ -1209,7 +1256,7 @@ final class CycleStore {
     }
 
     func send(_ text: String) {
-        guard !thinking else { return }
+        guard aiEnabled, !thinking else { return }
         today = Self.cal.startOfDay(for: Date())
         let previousAssistantText = messages.last(where: { !$0.fromUser })?.text
         messages.append(ChatMessage(fromUser: true, text: text))

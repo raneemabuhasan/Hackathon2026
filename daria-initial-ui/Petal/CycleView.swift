@@ -100,23 +100,15 @@ struct CycleView: View {
     }
 
     private var periodControlsSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    if let entry = store.log(for: selectedDate) { calendarLogPreview(entry) }
-                    periodControls
-                }.padding(16)
-            }
-            .background(Palette.bg)
-            .navigationTitle("Track your period")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showingPeriodControls = false }
-                }
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            periodControls
+            if let entry = store.log(for: selectedDate) { calendarLogPreview(entry) }
         }
-        .presentationDetents([.large])
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .foregroundStyle(Palette.ink)
+        .fittedSheet()
         .sheet(item: $addingPastPeriod) { draft in
             PastPeriodEditor(start: draft.start).environment(store)
         }
@@ -185,12 +177,15 @@ struct CycleView: View {
 
     private var periodControls: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: selectedDate.formatted(.dateTime.weekday(.wide)))
-                Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                    .font(.display(25))
-                    .accessibilityAddTraits(.isHeader)
-                statusPill
+            SheetHeader(eyebrow: selectedDate.formatted(.dateTime.weekday(.wide))) {
+                showingPeriodControls = false
+            } title: {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
+                        .font(.display(28))
+                        .accessibilityAddTraits(.isHeader)
+                    statusPill
+                }
             }
 
             if let error = store.periodStorageError {
@@ -235,28 +230,12 @@ struct CycleView: View {
                     .font(.caption).foregroundStyle(Palette.inkSoft)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Your periods",
-                              trailing: store.periodHistory.records.isEmpty ? nil : "\(store.periodHistory.records.count) recorded")
-                if store.periodHistory.records.isEmpty {
-                    Text("No periods recorded yet. Mark a start above, or add one from the past.")
-                        .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+            // Only the period this day belongs to; any other day is one tap away on the calendar.
+            if let record = displayedStartPeriod {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: "This period")
+                    periodRow(record)
                 }
-                ForEach(store.periodHistory.records) { record in periodRow(record) }
-                Button {
-                    addingPastPeriod = PeriodRecord(start: min(selectedDate, store.today))
-                } label: {
-                    Label("Add a past period", systemImage: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Palette.accent)
-                .disabled(store.periodStorageError != nil)
-                .padding(.top, 4)
             }
         }
         .tint(Palette.accent)
@@ -553,6 +532,7 @@ struct CycleView: View {
         let isToday = CycleStore.cal.isDate(day, inSameDayAs: store.today)
         let isSelected = hasSelectedDate && CycleStore.cal.isDate(day, inSameDayAs: selectedDate)
         return Button {
+            // First tap selects the day; tapping the selected day again opens its period controls.
             if isSelected {
                 showingPeriodControls = true
             } else {
@@ -603,6 +583,7 @@ struct CycleView: View {
                             + (predicted ? ", predicted period" : period ? ", period" : "")
                             + (periodDay.map { ", period day \($0)" } ?? ""))
         .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date. Activate again to open period start and end controls.")
+        .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

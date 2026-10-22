@@ -1,5 +1,4 @@
 import SwiftUI
-import Lottie
 
 struct SignInView: View {
     @Environment(AuthModel.self) private var auth
@@ -20,20 +19,13 @@ struct SignInView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                VStack(spacing: 6) {
-                    DisplayTitle(before: "Hi ", accent: "there!", size: 38)
-                    Text(creating ? "Let's set up your private space." : "Good to see you. Sign in to pick up where you left off.")
-                        .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 28)
-
-                LottieView(animation: .named("signin"))
-                    .looping()
+                Image("SyncWordmark")
                     .resizable()
                     .scaledToFit()
-                    .frame(height: creating ? 150 : 200)
-                    .accessibilityHidden(true)
+                    .frame(width: creating ? 170 : 220)
+                    .padding(.top, creating ? 48 : 90)
+                    .padding(.bottom, creating ? 16 : 40)
+                    .accessibilityLabel("Sync")
 
                 VStack(spacing: 14) {
                     Button { Task { await auth.signInWithGoogle() } } label: {
