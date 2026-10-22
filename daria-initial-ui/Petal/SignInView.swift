@@ -8,8 +8,13 @@ struct SignInView: View {
     @State private var email = ""
     @State private var password = ""
 
+    // Sign-in checks only the length so accounts made under older rules can still sign in.
+    private var passwordOK: Bool {
+        creating ? PasswordRequirement.allMet(password) : password.count >= PasswordRequirement.minLength
+    }
+
     private var canSubmit: Bool {
-        !email.isEmpty && password.count >= 6 && (!creating || !name.trimmingCharacters(in: .whitespaces).isEmpty)
+        !email.isEmpty && passwordOK && (!creating || !name.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     var body: some View {
@@ -66,6 +71,11 @@ struct SignInView: View {
                         .autocorrectionDisabled()
                     field("Password", text: $password, secure: true)
                         .textContentType(creating ? .newPassword : .password)
+
+                    if creating {
+                        PasswordChecklist(password: password)
+                            .transition(.opacity)
+                    }
 
                     if let error = auth.error {
                         Text(error).font(.system(size: 13)).foregroundStyle(Palette.accent)
@@ -142,5 +152,42 @@ struct SignInView: View {
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Palette.line))
+    }
+}
+
+/// Live sign-up password rules; collapses to one line once every rule passes.
+private struct PasswordChecklist: View {
+    let password: String
+
+    var body: some View {
+        let allMet = PasswordRequirement.allMet(password)
+        VStack(alignment: .leading, spacing: 6) {
+            if allMet {
+                row("Password looks good", met: true, spoken: "Password looks good, all requirements met")
+            } else {
+                ForEach(PasswordRequirement.all) { requirement in
+                    let met = requirement.isMet(password)
+                    row(requirement.label, met: met, spoken: "\(requirement.label), \(met ? "met" : "not met")")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .animation(.easeOut(duration: 0.15), value: allMet)
+    }
+
+    private func row(_ label: String, met: Bool, spoken: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: met ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(met ? Palette.success : Palette.inkFaint)
+                .contentTransition(.symbolEffect(.replace))
+            Text(label)
+                .foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.footnote)
+        .animation(.easeOut(duration: 0.15), value: met)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 }
