@@ -13,7 +13,6 @@ struct CompanionView: View {
         var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
     }
 
-    @State private var remindersExpanded = true
     @State private var showReminders = false
 
     private var canSend: Bool {
@@ -83,27 +82,33 @@ struct CompanionView: View {
             }
         }
         .sheet(isPresented: $showReminders) {
-            NavigationStack {
-                ScrollView { reminders.padding(20) }
-                    .background(Palette.bg)
-                    .navigationTitle("Reminders")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showReminders = false }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    SheetHeader(eyebrow: "Reminders") {
+                        showReminders = false
+                    } title: {
+                        DisplayTitle(before: "Little ", accent: "reminders", size: 30)
                     }
-                    .sheet(item: $editing) { target in
-                        ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
-                            .environment(store)
-                            .presentationDetents([.large])
-                            .presentationCornerRadius(32)
-                            .presentationBackground(Palette.bg)
-                    }
+                    reminders
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 16)
             }
+            .scrollIndicators(.hidden)
+            .foregroundStyle(Palette.ink)
             .tint(Palette.accent)
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
             .presentationCornerRadius(32)
+            .presentationBackground(Palette.bg)
+            .sheet(item: $editing) { target in
+                ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                    .environment(store)
+                    .presentationDetents([.large])
+                    .presentationCornerRadius(32)
+                    .presentationBackground(Palette.bg)
+            }
         }
     }
 
@@ -187,48 +192,41 @@ struct CompanionView: View {
             .multilineTextAlignment(.center)
     }
 
+    /// The bell sheet's list: tap a reminder to edit it, or switch it on and off.
     private var reminders: some View {
-        DisclosureGroup(isExpanded: $remindersExpanded) {
-            VStack(spacing: 12) {
-                ForEach(store.reminders) { reminder in
-                    HStack(spacing: 12) {
-                        Button { editing = .edit(reminder) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(reminder.text(name: store.name)).font(.subheadline.weight(.medium))
-                                Text(reminder.detail(windowStart: store.windowStart))
-                                    .font(.caption).foregroundStyle(Palette.inkSoft)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        Toggle(reminder.text(name: store.name), isOn: Binding(
-                            get: { reminder.on }, set: { store.setReminder(reminder, on: $0) }))
-                            .labelsHidden().tint(Palette.secondaryAccent)
-                    }
-                }
-                Button { editing = .new } label: {
-                    Label("Add a reminder", systemImage: "plus")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-                .buttonStyle(.plain).foregroundStyle(Palette.accent)
-            }
-            .padding(.top, 12)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "bell.badge").foregroundStyle(Palette.secondaryAccent)
-                Text("Little reminders").font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Your reminders").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text("\(store.reminders.filter { $0.on }.count) on")
-                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                Text("\(store.reminders.filter(\.on).count) on").font(.caption).foregroundStyle(Palette.inkFaint)
             }
-            .foregroundStyle(Palette.ink)
-            .padding(.vertical, 6)
+            ForEach(store.reminders) { reminder in
+                HStack(spacing: 12) {
+                    Button { editing = .edit(reminder) } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(reminder.text(name: store.name)).font(.system(size: 14, weight: .semibold))
+                            Text(reminder.detail(windowStart: store.windowStart))
+                                .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Toggle(reminder.text(name: store.name), isOn: Binding(
+                        get: { reminder.on }, set: { store.setReminder(reminder, on: $0) }))
+                        .labelsHidden().tint(Palette.accent)
+                }
+                Divider().overlay(Palette.line)
+            }
+            Button { editing = .new } label: {
+                Label("Add a reminder", systemImage: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
         }
-        .tint(Palette.inkSoft)
-        .padding(16)
-        .background(Palette.secondarySurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 20))
+        .card()
     }
 
     private var composerField: some View {
