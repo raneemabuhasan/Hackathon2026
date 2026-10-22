@@ -81,13 +81,14 @@ enum CardValidation {
 /// A reminder the user can switch on or off. Stored at users/{uid}/reminders/{id}.
 struct Reminder: Identifiable, Codable {
     enum Kind: String, Codable, CaseIterable {
-        case daily, once, beforePeriod
+        case daily, once, beforePeriod, everyWeeks
 
         var label: String {
             switch self {
             case .daily: "Every day"
             case .once: "Once"
             case .beforePeriod: "Before period"
+            case .everyWeeks: "Weekly"
             }
         }
     }
@@ -101,6 +102,8 @@ struct Reminder: Identifiable, Codable {
     var date: Date? = nil
     /// Days before the predicted window for `.beforePeriod`.
     var daysBefore: Int? = nil
+    /// Repeat interval for `.everyWeeks`, counted from `date`, e.g. a patch change.
+    var weeks: Int? = nil
     var on = true
     var created = Date()
     /// Opens with a greeting for the time of day and the user's name, e.g. "Good evening, Maya."
@@ -108,9 +111,12 @@ struct Reminder: Identifiable, Codable {
     var greets: Bool? = nil
 
     /// Suggested set for new accounts, most important first. Onboarding picks the log time and the period heads-up.
-    static func defaults(logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2) -> [Reminder] {
+    /// On hormonal birth control the heads-up is about a bleed, and it's off when nothing is predicted.
+    static func defaults(logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2,
+                         bleed: Bool = false, predicts: Bool = true) -> [Reminder] {
         [
-            Reminder(title: "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0, daysBefore: periodDaysBefore, on: true),
+            Reminder(title: bleed ? "Bleed may start soon" : "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0,
+                     daysBefore: periodDaysBefore, on: predicts),
             Reminder(title: "Don't forget to log your symptoms today!", kind: .daily, hour: logHour, minute: logMinute, on: true, greets: true),
             Reminder(title: "Restock pads & tampons", kind: .beforePeriod, hour: 18, minute: 0, daysBefore: 5, on: false),
             Reminder(title: "Drink some water", kind: .daily, hour: 14, minute: 0, on: false),

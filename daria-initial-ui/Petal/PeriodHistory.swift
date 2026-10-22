@@ -104,7 +104,7 @@ struct PeriodHistory: Codable {
     }
 }
 
-struct CycleBaseline: Codable {
+struct CycleBaseline: Codable, Equatable {
     var lastStart: Date?
     var periodDays: Int
     var cycleDays: Int?
