@@ -49,11 +49,7 @@ struct TodayView: View {
     }
 
     static func greeting(at date: Date) -> String {
-        switch Calendar.current.component(.hour, from: date) {
-        case 5..<12: "Good morning"
-        case 12..<17: "Good afternoon"
-        default: "Good evening"
-        }
+        Reminder.greeting(hour: Calendar.current.component(.hour, from: date))
     }
 
     // MARK: Cycle ring
