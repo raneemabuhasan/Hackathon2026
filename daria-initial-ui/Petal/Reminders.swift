@@ -2,6 +2,20 @@ import SwiftUI
 import UserNotifications
 
 extension Reminder {
+    static func greeting(hour: Int) -> String {
+        switch hour {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
+        }
+    }
+
+    /// What the notification and the reminders list show.
+    func text(name: String) -> String {
+        guard greets == true else { return title }
+        return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
+    }
+
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
     func day(windowStart: Date) -> Date? {
         switch kind {
@@ -42,6 +56,21 @@ extension Reminder {
 enum ReminderNotifications {
     private static var generation = 0
     private static let prefix = "reminder-"
+    private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sync"
+
+    /// iOS hides notifications while the app is open unless a delegate opts in.
+    private final class ForegroundPresenter: NSObject, UNUserNotificationCenterDelegate {
+        func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                    withCompletionHandler completion: @escaping (UNNotificationPresentationOptions) -> Void) {
+            completion([.banner, .list, .sound])
+        }
+    }
+    private static let presenter = ForegroundPresenter()
+
+    /// Call once at launch so reminders still show as banners when Petal is in the foreground.
+    static func showWhileOpen() {
+        UNUserNotificationCenter.current().delegate = presenter
+    }
 
     static func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, error in
@@ -50,10 +79,10 @@ enum ReminderNotifications {
     }
 
     /// Replaces every pending Petal reminder with the current set. Call whenever reminders or predictions change.
-    static func sync(_ reminders: [Reminder], windowStart: Date) {
+    static func sync(_ reminders: [Reminder], windowStart: Date, name: String) {
         generation += 1
         let currentGeneration = generation
-        let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart) }
+        let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart, name: name) }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { pending in
             Task { @MainActor in
@@ -64,7 +93,7 @@ enum ReminderNotifications {
         }
     }
 
-    private static func request(for reminder: Reminder, windowStart: Date) -> UNNotificationRequest? {
+    private static func request(for reminder: Reminder, windowStart: Date, name: String) -> UNNotificationRequest? {
         let trigger: UNCalendarNotificationTrigger
         if reminder.kind == .daily {
             trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: reminder.hour, minute: reminder.minute), repeats: true)
@@ -73,11 +102,15 @@ enum ReminderNotifications {
             let parts = CycleStore.cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
             trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
         }
+        // iOS banners don't show the app name, so it goes in the title and the reminder underneath.
         let content = UNMutableNotificationContent()
-        content.title = reminder.title
+        content.title = appName
         if reminder.kind == .beforePeriod {
             let days = reminder.daysBefore ?? 2
+            content.subtitle = reminder.title
             content.body = "Your period may start in about \(days) day\(days == 1 ? "" : "s")."
+        } else {
+            content.body = reminder.text(name: name)
         }
         content.sound = .default
         return UNNotificationRequest(identifier: prefix + reminder.id, content: content, trigger: trigger)
