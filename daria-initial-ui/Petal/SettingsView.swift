@@ -188,10 +188,8 @@ struct SettingsView: View {
                 HStack(spacing: -6) {
                     Circle().fill(Color(hex: colors.pastel))
                     Circle().fill(Color(hex: colors.secondaryPastel))
-                    Circle().fill(Color(hex: colors.background))
-                    Circle().fill(Color(hex: colors.secondary))
                 }
-                .frame(width: 86, height: 28)
+                .frame(width: 50, height: 28)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(theme.name).font(.subheadline.weight(.semibold))
@@ -201,16 +199,16 @@ struct SettingsView: View {
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(selected ? Palette.secondaryAccent : Palette.inkSoft)
+                    .foregroundStyle(selected ? Color(hex: colors.accent) : Palette.inkSoft)
                     .accessibilityHidden(true)
             }
             .foregroundStyle(Palette.ink)
             .padding(12)
             .frame(minHeight: 64)
-            .background(selected ? Palette.secondarySurface : Palette.surface,
+            .background(selected ? Color(hex: colors.primarySurface) : Palette.surface,
                         in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(selected ? Palette.secondaryAccent : Palette.line, lineWidth: selected ? 2 : 1))
+                .strokeBorder(selected ? Color(hex: colors.secondaryPastel) : Palette.line, lineWidth: selected ? 2 : 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
