@@ -24,6 +24,34 @@ service cloud.firestore {
         && log.note is string && log.note.size() <= 2000;
     }
 
+    function isDay(s) {
+      return s is string && s.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    // Mirrors AIForecast in CycleStore.swift. Document ID is the cycle start, yyyy-MM-dd.
+    function isValidForecast(f, id) {
+      return f.keys().hasAll(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
+        && f.keys().hasOnly(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
+        && f.cycleStart == id
+        && isDay(f.baselineStart) && isDay(f.predictedStart)
+        && f.baselineSpread is int && f.baselineSpread >= 1 && f.baselineSpread <= 30
+        && f.shiftDays is int && f.shiftDays >= -3 && f.shiftDays <= 3
+        && f.spreadDays is int && f.spreadDays >= 2 && f.spreadDays <= 10
+        && f.reason is string && f.reason.size() > 0 && f.reason.size() <= 200
+        && f.model is string && f.model.size() <= 60
+        && f.inputsHash is string && f.inputsHash.size() <= 128
+        && f.createdAt is timestamp;
+    }
+
+    // Mirrors ForecastMemory in CycleStore.swift: the AI's pattern notes about this user.
+    function isValidForecastMemory(m) {
+      return m.keys().hasAll(['notes', 'basedOnCycles', 'updatedAt'])
+        && m.keys().hasOnly(['notes', 'basedOnCycles', 'updatedAt'])
+        && m.notes is list && m.notes.size() <= 5
+        && m.basedOnCycles is int && m.basedOnCycles >= 0 && m.basedOnCycles <= 100
+        && m.updatedAt is timestamp;
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
@@ -53,6 +81,15 @@ service cloud.firestore {
       // Cached AI output (today's plan, recipes) so it shows instantly next time.
       match /cache/{id} {
         allow read, write: if isOwner(uid);
+      }
+
+      // AI cycle predictions: one doc per cycle start, plus "memory" with the AI's pattern notes.
+      match /predictions/{id} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && (
+          (id == 'memory' && isValidForecastMemory(request.resource.data))
+          || (id.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isValidForecast(request.resource.data, id))
+        );
       }
     }
   }
