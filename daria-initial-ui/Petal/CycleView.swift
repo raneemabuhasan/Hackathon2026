@@ -327,6 +327,10 @@ struct CycleView: View {
     // MARK: Calendar
 
     private var monthPicker: some View {
+        let monthNames = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
         let currentYear = CycleStore.cal.component(.year, from: store.today)
         let displayedYear = CycleStore.cal.component(.year, from: month)
         let years = min(currentYear - 100, displayedYear)...max(currentYear + 100, displayedYear)
@@ -350,7 +354,7 @@ struct CycleView: View {
             HStack(spacing: 0) {
                 Picker("Month", selection: $pickerMonth) {
                     ForEach(1...12, id: \.self) { value in
-                        Text(Calendar.current.monthSymbols[value - 1]).tag(value)
+                        Text(monthNames[value - 1]).tag(value)
                     }
                 }
                 Picker("Year", selection: $pickerYear) {
