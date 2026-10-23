@@ -508,22 +508,36 @@ final class Assistant {
         var counts: [String: Int] = [:]
         for log in store.logs where log.date >= since { for s in log.symptoms { counts[s, default: 0] += 1 } }
         let top = counts.sorted { $0.value > $1.value }.prefix(5)
-        return [
+        var summary: JSONObject = [
             "ok": .bool(true),
-            "cycleDay": .number(Double(store.cycleDay)),
-            "phase": .string(store.currentPhase.name),
             "lastPeriodStart": .string(Self.dayFormatter.string(from: store.lastStart)),
-            "nextPeriodWindow": .object([
-                "from": .string(Self.dayFormatter.string(from: store.windowStart)),
-                "to": .string(Self.dayFormatter.string(from: store.windowEnd)),
-            ]),
-            "averageCycleLength": .number(Double(store.average)),
-            "estimateBasis": .string(store.completedCycles.isEmpty ? "configured cycle length; no completed cycles available" : "observed completed cycles"),
-            "limitations": .string("Phase and next-period window are estimates, not confirmation of ovulation or contraception."),
             "recentCycleLengths": .array(store.completedCycles.map { .number(Double($0.length)) }),
             "topSymptoms": .array(top.map { .object(["symptom": .string($0.key), "days": .number(Double($0.value))]) }),
             "symptomWindowDays": .number(Double(days)),
         ]
+        let window: JSONValue = .object([
+            "from": .string(Self.dayFormatter.string(from: store.windowStart)),
+            "to": .string(Self.dayFormatter.string(from: store.windowEnd)),
+        ])
+        guard let method = store.birthControl?.method, !store.tracksPhases else {
+            summary["cycleDay"] = .number(Double(store.cycleDay))
+            summary["phase"] = .string(store.currentPhase.name)
+            summary["nextPeriodWindow"] = window
+            summary["averageCycleLength"] = .number(Double(store.average))
+            summary["estimateBasis"] = .string(store.completedCycles.isEmpty ? "configured cycle length; no completed cycles available" : "observed completed cycles")
+            summary["limitations"] = .string("Phase and next-period window are estimates, not confirmation of ovulation or contraception.")
+            return summary
+        }
+        summary["birthControl"] = .string(method.name)
+        if let day = store.packDay { summary["packDay"] = .number(Double(day)) }
+        if store.predictsBleeds {
+            summary["nextBleedWindow"] = window
+            summary["estimateBasis"] = .string("pack, patch or ring schedule")
+        }
+        summary["limitations"] = .string("Hormonal birth control usually pauses ovulation, so there are no cycle phases. "
+            + (store.predictsBleeds ? "Bleeds in the break are withdrawal bleeds, not periods. " : "Bleeding can be irregular, so none is predicted. ")
+            + "Never advise on missed doses or contraceptive effectiveness; point to the leaflet, a pharmacist or a doctor.")
+        return summary
     }
 
     private func addReminder(_ args: JSONObject, _ store: CycleStore) async -> JSONObject {
@@ -545,7 +559,7 @@ final class Assistant {
         }
         var reminder = Reminder(title: title, kind: kind, hour: hour, minute: minute)
         switch kind {
-        case .daily:
+        case .daily, .everyWeeks:
             break
         case .once:
             guard let date = args.string("date").flatMap(Self.day), date >= store.today else {
@@ -567,26 +581,29 @@ final class Assistant {
 
     private func mealIdeas(_ args: JSONObject, _ store: CycleStore) -> JSONObject {
         guard store.profile != nil, store.profileError == nil else { return Self.failure("Preferences are unavailable; do not guess allergy or diet information.") }
-        let phase = args.string("phase").flatMap(Phase.init(rawValue:)) ?? store.currentPhase
+        let asked = args.string("phase").flatMap(Phase.init(rawValue:))
+        let phase = asked.flatMap { store.foodPhases.contains($0) ? $0 : nil } ?? store.foodPhase
         let meals = store.shownMeals(for: phase).map {
             JSONValue.object(["name": .string($0.name), "why": .string($0.why), "ingredients": .array($0.items.map(JSONValue.string))])
         }
-        return ["ok": .bool(true), "phase": .string(phase.name), "meals": .array(meals)]
+        return ["ok": .bool(true), "phase": .string(store.foodName(phase)), "meals": .array(meals)]
     }
 
     // MARK: Meal ideas (Nourish)
 
     /// Asks Gemini for recipes that suit a cycle phase and the user's diet. Callers should still
     /// re-check allergens: the model's own labels can be wrong.
-    static func mealIdeas(for phase: Phase, diets: Set<String>, avoid: Set<String>, dislikes: [String] = [], recentSymptoms: [String] = [],
+    /// `focus` replaces the phase (name, context) for someone on hormonal birth control.
+    static func mealIdeas(for phase: Phase, focus: (name: String, blurb: String)? = nil, diets: Set<String>, avoid: Set<String>, dislikes: [String] = [], recentSymptoms: [String] = [],
                           notLike previous: [String] = []) async throws -> [Meal] {
         let model = FirebaseAI.firebaseAI(backend: .vertexAI(location: location)).generativeModel(
             modelName: fastModelName,
             generationConfig: GenerationConfig(temperature: 0.9, responseMIMEType: "application/json", responseSchema: mealSchema)
         )
         let prompt = """
-        Suggest 4 different recipes for someone in the \(phase.name.lowercased()) phase of their menstrual cycle. \
-        Context: \(phase.blurb)
+        \(focus.map { "Suggest 4 different recipes for \($0.name.lowercased()) for someone on hormonal birth control. Don't mention cycle phases or ovulation." }
+            ?? "Suggest 4 different recipes for someone in the \(phase.name.lowercased()) phase of their menstrual cycle.") \
+        Context: \(focus?.blurb ?? phase.blurb)
 
         Requirements:
         - Every recipe must suit: \(diets.isEmpty ? "no particular diet" : diets.sorted().joined(separator: ", ")).
@@ -595,7 +612,7 @@ final class Assistant {
         \(dislikes.isEmpty ? "" : "- They don't like: \(dislikes.joined(separator: ", ")). Leave these out entirely.")
         \(recentSymptoms.isEmpty ? "" : "- Recently logged: \(recentSymptoms.joined(separator: ", ")). Where it fits naturally, favour comforting, gentle options for these, without claiming to treat them.")
         - One breakfast, one lunch, one dinner and one snack. Each under 45 minutes with common supermarket ingredients.
-        - why: one friendly sentence on why it fits this phase, in general nutrition terms (iron, fibre, protein, \
+        - why: one friendly sentence on why it fits\(focus == nil ? " this phase" : ""), in general nutrition terms (iron, fibre, protein, \
         hydration, warmth). Never claim food treats symptoms, cures anything or balances hormones.
         - diets: every listed diet the recipe fits. allergens: every listed allergen it contains. Be thorough.
         - ingredients: with metric quantities, e.g. "200 g red lentils". shopping: 3-6 plain item names for a \

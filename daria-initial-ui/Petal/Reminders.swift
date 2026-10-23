@@ -22,7 +22,23 @@ extension Reminder {
         case .daily: return nil
         case .once: return date
         case .beforePeriod: return CycleStore.add(windowStart, -(daysBefore ?? 2))
+        case .everyWeeks: return upcomingDays(count: 1).first
         }
+    }
+
+    /// The next repeats of an `.everyWeeks` reminder, today included until its time passes.
+    func upcomingDays(count: Int) -> [Date] {
+        guard kind == .everyWeeks, let anchor = date else { return [] }
+        let step = 7 * max(1, weeks ?? 1)
+        let today = CycleStore.cal.startOfDay(for: .now)
+        var n = max(0, Int((Double(CycleStore.days(today, from: anchor)) / Double(step)).rounded(.up)))
+        var days: [Date] = []
+        while days.count < count {
+            let day = CycleStore.add(anchor, n * step)
+            if let fire = CycleStore.cal.date(bySettingHour: hour, minute: minute, second: 0, of: day), fire > .now { days.append(day) }
+            n += 1
+        }
+        return days
     }
 
     func fireDate(windowStart: Date) -> Date? {
@@ -42,6 +58,10 @@ extension Reminder {
             let days = daysBefore ?? 2
             let when = fireDate(windowStart: windowStart).map { $0.formatted(.dateTime.month(.abbreviated).day()) } ?? ""
             return "\(days) day\(days == 1 ? "" : "s") before your period · \(when), \(time)"
+        case .everyWeeks:
+            let every = weeks ?? 1
+            let next = fireDate(windowStart: windowStart).map { " · next \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? ""
+            return "Every \(every == 1 ? "week" : "\(every) weeks")\(next), \(time)"
         }
     }
 
@@ -79,10 +99,11 @@ enum ReminderNotifications {
     }
 
     /// Replaces every pending Petal reminder with the current set. Call whenever reminders or predictions change.
-    static func sync(_ reminders: [Reminder], windowStart: Date, name: String) {
+    /// `bleed` words the period heads-up for someone on hormonal birth control.
+    static func sync(_ reminders: [Reminder], windowStart: Date, name: String, bleed: Bool) {
         generation += 1
         let currentGeneration = generation
-        let requests = reminders.filter(\.on).compactMap { request(for: $0, windowStart: windowStart, name: name) }
+        let requests = reminders.filter(\.on).flatMap { requests(for: $0, windowStart: windowStart, name: name, bleed: bleed) }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { pending in
             Task { @MainActor in
@@ -93,27 +114,42 @@ enum ReminderNotifications {
         }
     }
 
-    private static func request(for reminder: Reminder, windowStart: Date, name: String) -> UNNotificationRequest? {
+    /// iOS can't repeat every few weeks, so `.everyWeeks` queues its next few dates; each sync tops them up.
+    private static func requests(for reminder: Reminder, windowStart: Date, name: String, bleed: Bool) -> [UNNotificationRequest] {
+        if reminder.kind == .everyWeeks {
+            return reminder.upcomingDays(count: 6).enumerated().compactMap { i, day in
+                let parts = CycleStore.cal.dateComponents([.year, .month, .day], from: day)
+                let trigger = UNCalendarNotificationTrigger(
+                    dateMatching: DateComponents(year: parts.year, month: parts.month, day: parts.day, hour: reminder.hour, minute: reminder.minute),
+                    repeats: false)
+                return request(for: reminder, id: "\(prefix)\(reminder.id)-\(i)", trigger: trigger, name: name, bleed: bleed)
+            }
+        }
         let trigger: UNCalendarNotificationTrigger
         if reminder.kind == .daily {
             trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: reminder.hour, minute: reminder.minute), repeats: true)
         } else {
-            guard let fire = reminder.fireDate(windowStart: windowStart), fire > .now else { return nil }
+            guard let fire = reminder.fireDate(windowStart: windowStart), fire > .now else { return [] }
             let parts = CycleStore.cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
             trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
         }
+        return [request(for: reminder, id: prefix + reminder.id, trigger: trigger, name: name, bleed: bleed)]
+    }
+
+    private static func request(for reminder: Reminder, id: String, trigger: UNCalendarNotificationTrigger,
+                                name: String, bleed: Bool) -> UNNotificationRequest {
         // iOS banners don't show the app name, so it goes in the title and the reminder underneath.
         let content = UNMutableNotificationContent()
         content.title = appName
         if reminder.kind == .beforePeriod {
             let days = reminder.daysBefore ?? 2
             content.subtitle = reminder.title
-            content.body = "Your period may start in about \(days) day\(days == 1 ? "" : "s")."
+            content.body = "Your \(bleed ? "next bleed" : "period") may start in about \(days) day\(days == 1 ? "" : "s")."
         } else {
             content.body = reminder.text(name: name)
         }
         content.sound = .default
-        return UNNotificationRequest(identifier: prefix + reminder.id, content: content, trigger: trigger)
+        return UNNotificationRequest(identifier: id, content: content, trigger: trigger)
     }
 }
 
@@ -129,6 +165,7 @@ struct ReminderEditor: View {
     @State private var time: Date
     @State private var date: Date
     @State private var daysBefore: Int
+    @State private var weeks: Int
     @State private var confirmingDelete = false
 
     init(reminder: Reminder?) {
@@ -139,6 +176,7 @@ struct ReminderEditor: View {
         _time = State(initialValue: CycleStore.cal.date(bySettingHour: r.hour, minute: r.minute, second: 0, of: .now) ?? .now)
         _date = State(initialValue: r.date ?? CycleStore.add(.now, 1))
         _daysBefore = State(initialValue: r.daysBefore ?? 2)
+        _weeks = State(initialValue: r.weeks ?? 1)
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -188,6 +226,9 @@ struct ReminderEditor: View {
                         Stepper("\(daysBefore) day\(daysBefore == 1 ? "" : "s") before", value: $daysBefore, in: 1...7)
                         Text("Moves with your predicted window. Next: \(CycleStore.add(store.windowStart, -daysBefore).formatted(.dateTime.month(.abbreviated).day())).")
                             .font(.caption).foregroundStyle(Palette.inkFaint)
+                    case .everyWeeks:
+                        DatePicker("Starting", selection: $date, displayedComponents: .date)
+                        Stepper("Every \(weeks == 1 ? "week" : "\(weeks) weeks")", value: $weeks, in: 1...4)
                     }
                     DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                 }
@@ -242,8 +283,9 @@ struct ReminderEditor: View {
         r.kind = kind
         r.hour = parts.hour ?? 9
         r.minute = parts.minute ?? 0
-        r.date = kind == .once ? CycleStore.cal.startOfDay(for: date) : nil
+        r.date = kind == .once || kind == .everyWeeks ? CycleStore.cal.startOfDay(for: date) : nil
         r.daysBefore = kind == .beforePeriod ? daysBefore : nil
+        r.weeks = kind == .everyWeeks ? weeks : nil
         r.on = true
         store.saveReminder(r)
         dismiss()

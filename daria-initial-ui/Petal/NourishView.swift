@@ -11,7 +11,8 @@ struct NourishView: View {
     @State private var editingPreferences = false
     @Namespace private var tabs
 
-    private var selected: Phase { phase ?? store.currentPhase }
+    /// A tab picked before birth control changed may no longer be offered.
+    private var selected: Phase { phase.flatMap { store.foodPhases.contains($0) ? $0 : nil } ?? store.foodPhase }
 
     var body: some View {
         let key = store.mealKey(selected)
@@ -52,7 +53,7 @@ struct NourishView: View {
                         .accessibilityLabel("New meal ideas")
                     }
                 }
-                if !store.aiEnabled { AIOffNotice(feature: "recipes picked for your phase and preferences") }
+                if !store.aiEnabled { AIOffNotice(feature: store.tracksPhases ? "recipes picked for your phase and preferences" : "recipes picked for your preferences") }
                 if loading && generated == nil {
                     Text("Cooking up recipes for you…")
                         .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -151,10 +152,11 @@ struct NourishView: View {
     }
 
     private var title: String {
-        switch selected {
-        case .menstrual: "your period"
+        if !store.tracksPhases { return store.foodName(selected).lowercased() }
+        return switch selected {
+        case .menstrual: "menstrual phase"
         case .follicular: "follicular phase"
-        case .mid: "mid cycle"
+        case .ovulation: "ovulation phase"
         case .luteal: "luteal phase"
         }
     }
@@ -197,13 +199,13 @@ struct NourishView: View {
 
     /// Folder-style tabs: the selected phase opens into its tip, so the two read as one piece.
     private var phaseTabs: some View {
-        let isFirst = selected == Phase.allCases.first
-        let isLast = selected == Phase.allCases.last
+        let isFirst = selected == store.foodPhases.first
+        let isLast = selected == store.foodPhases.last
         return VStack(spacing: 0) {
             HStack(spacing: 4) {
-                ForEach(Phase.allCases) { p in
+                ForEach(store.foodPhases) { p in
                     Button { phase = p } label: {
-                        Text(p.name + (p == store.currentPhase ? " ·" : ""))
+                        Text(store.foodName(p) + (p == store.foodPhase ? " ·" : ""))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(p == selected ? Palette.accent : Palette.inkSoft)
                             .frame(maxWidth: .infinity)
@@ -221,8 +223,8 @@ struct NourishView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(text: "Eat for this phase")
-                Text(selected.foodTip).font(.system(size: 14, weight: .semibold))
+                Eyebrow(text: store.tracksPhases ? "Eat for this phase" : "Eat for these days")
+                Text(store.foodTip(selected)).font(.system(size: 14, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -290,7 +292,7 @@ struct RecipeSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
-                    Eyebrow(text: "Recipe · \(phase.name)")
+                    Eyebrow(text: "Recipe · \(store.foodName(phase))")
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))

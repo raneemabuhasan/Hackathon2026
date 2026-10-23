@@ -61,8 +61,10 @@ struct ContentView: View {
                 .presentationBackground(Palette.bg)
         }
         .environment(store)
-        .fullScreenCover(isPresented: $store.showCycleSetup) {
-            CycleSetupView().environment(store)
+        .sheet(isPresented: $store.showCycleSetup) {
+            CycleSetupView()
+                .environment(store)
+                .presentationCornerRadius(32)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.today = Calendar.current.startOfDay(for: Date()) }

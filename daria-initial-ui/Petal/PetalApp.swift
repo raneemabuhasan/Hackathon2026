@@ -45,7 +45,7 @@ struct RootView: View {
         Group {
             if let error = store?.profileError, store?.loaded != true {
                 loadError(error)
-            } else if showingLaunchAnimation || loading {
+            } else if showingLaunchAnimation || loading || auth.deletingAccount {
                 launchSplash
             } else if auth.user == nil {
                 SignInView()

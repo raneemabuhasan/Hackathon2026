@@ -15,6 +15,11 @@ struct OnboardingView: View {
     @State private var diets: Set<String> = []
     @State private var avoid: Set<String> = []
     @State private var dislikes: [String] = []
+    @State private var method: BirthControl.Method?
+    @State private var packStart = CycleStore.add(.now, -7)
+    @State private var activeDays: Int? = 21
+    @State private var pillTime = CycleStore.cal.date(bySettingHour: 9, minute: 0, second: 0, of: .now) ?? .now
+    @State private var changeWeeks = 1
     @FocusState private var nameFocused: Bool
 
     private enum Step: Int, CaseIterable {
@@ -23,6 +28,15 @@ struct OnboardingView: View {
 
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+
+    /// What the rest of onboarding is based on, from the birth-control answer.
+    private var birthControl: BirthControl? {
+        method.map { m in
+            m.hasSchedule ? BirthControl(method: m, packStart: CycleStore.cal.startOfDay(for: packStart), activeDays: activeDays)
+                          : BirthControl(method: m)
+        }
+    }
+    private var mode: CycleMode { birthControl?.mode ?? .natural }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,11 +158,27 @@ struct OnboardingView: View {
 
     private func finish(aiConsent: Bool) {
         let log = CycleStore.cal.dateComponents([.hour, .minute], from: logTime)
-        store.completeOnboarding(name: trimmedName, lastPeriodStart: lastStart,
-                                 cycleLength: cycleLength, periodLength: periodLength,
+        let pill = CycleStore.cal.dateComponents([.hour, .minute], from: pillTime)
+        var reminders: [Reminder] = []
+        if let method, method.isPill {
+            reminders.append(Reminder(title: "Time for your pill", kind: .daily, hour: pill.hour ?? 9, minute: pill.minute ?? 0))
+        } else if let method, method == .patch || method == .ring {
+            reminders.append(Reminder(title: method == .patch ? "Time to change your patch" : "Time for your ring change",
+                                      kind: .everyWeeks, hour: pill.hour ?? 9, minute: pill.minute ?? 0,
+                                      date: CycleStore.add(CycleStore.cal.startOfDay(for: packStart), changeWeeks * 7), weeks: changeWeeks))
+        }
+        // On a pack, the last bleed is the latest break that has started; it seeds the period history.
+        var lastBleed = lastStart
+        if mode == .pack, let active = activeDays {
+            lastBleed = CycleStore.add(packStart, active)
+            while lastBleed > .now { lastBleed = CycleStore.add(lastBleed, -BirthControl.packLength) }
+        }
+        store.completeOnboarding(name: trimmedName, lastPeriodStart: lastBleed,
+                                 cycleLength: mode == .pack ? BirthControl.packLength : cycleLength, periodLength: periodLength,
                                  logHour: log.hour ?? 20, logMinute: log.minute ?? 30,
                                  periodDaysBefore: periodDaysBefore,
-                                 diets: diets, avoid: avoid, dislikes: dislikes, aiConsent: aiConsent)
+                                 diets: diets, avoid: avoid, dislikes: dislikes, aiConsent: aiConsent,
+                                 birthControl: birthControl, birthControlReminders: reminders)
     }
 
     // MARK: Slides
@@ -177,15 +207,64 @@ struct OnboardingView: View {
                         .submitLabel(.done)
                 }
                 Divider()
-                row {
-                    DatePicker("Last period started", selection: $lastStart, in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
+                row { birthControlPicker }
+                if let method, method.hasSchedule {
+                    Divider()
+                    row {
+                        DatePicker("\(method.scheduleNoun.prefix(1).uppercased() + method.scheduleNoun.dropFirst()) started",
+                                   selection: $packStart, in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
+                    }
+                    Divider()
+                    row {
+                        LabeledContent("Breaks") {
+                            Picker("Breaks", selection: $activeDays) {
+                                ForEach(birthControl?.regimens ?? [], id: \.label) { Text($0.label).tag($0.days) }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                        }
+                    }
                 }
-                Divider()
-                row { stepper("Cycle length", value: $cycleLength, range: 18...45) }
-                Divider()
-                row { stepper("Period length", value: $periodLength, range: 2...10) }
+                if mode != .pack {
+                    Divider()
+                    row {
+                        DatePicker(mode == .natural ? "Last period started" : "Last bleed started", selection: $lastStart,
+                                   in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
+                    }
+                }
+                if mode == .natural {
+                    Divider()
+                    row { stepper("Cycle length", value: $cycleLength, range: 18...45) }
+                }
+                if mode != .steady {
+                    Divider()
+                    row { stepper(mode == .natural ? "Period length" : "Period length", value: $periodLength, range: 2...10) }
+                }
             }
             .background(Palette.surface.opacity(0.75), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .animation(.easeOut(duration: 0.2), value: method)
+
+            if mode != .natural {
+                Text("Hormonal birth control usually pauses ovulation, so Sync won't show cycle phases. You can change this in Settings.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var birthControlPicker: some View {
+        LabeledContent("Birth control") {
+            Picker("Birth control", selection: Binding(get: { method }, set: { picked in
+                method = picked
+                // Patches are usually changed weekly; rings stay in for three weeks.
+                changeWeeks = picked == .ring ? 3 : 1
+                if let picked, !picked.hasSchedule || (picked != .combinedPill && activeDays == 24) { activeDays = 21 }
+            })) {
+                Text("No").tag(BirthControl.Method?.none)
+                ForEach(BirthControl.Method.allCases) { Text($0.name).tag(Optional($0)) }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
         }
     }
 
@@ -196,18 +275,49 @@ struct OnboardingView: View {
             heading("A gentle ", "nudge", "Here's what Sync will send you. Change or turn these off anytime.")
             OnboardingArt(animation: "bell", height: 120)
 
-            reminderPreview(when: "\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s") before",
-                            title: "Period may start soon",
-                            message: "Your period may start in about \(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s").") {
-                Text("Heads-up")
-                Spacer()
-                roundButton("minus", label: "Fewer days") { periodDaysBefore = max(1, periodDaysBefore - 1) }
-                    .disabled(periodDaysBefore == 1)
-                Text("\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s")")
-                    .fontWeight(.semibold).monospacedDigit()
-                    .frame(minWidth: 58)
-                roundButton("plus", label: "More days") { periodDaysBefore = min(7, periodDaysBefore + 1) }
-                    .disabled(periodDaysBefore == 7)
+            if let method, method.isPill {
+                reminderPreview(when: pillTime.formatted(date: .omitted, time: .shortened), title: nil, message: "Time for your pill") {
+                    DatePicker("Remind me at", selection: $pillTime, displayedComponents: .hourAndMinute)
+                }
+            } else if let method, method == .patch || method == .ring {
+                let first = CycleStore.add(packStart, changeWeeks * 7)
+                reminderPreview(when: first.formatted(.dateTime.month(.abbreviated).day()), title: nil,
+                                message: method == .patch ? "Time to change your patch" : "Time for your ring change") {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("How often")
+                            Spacer()
+                            roundButton("minus", label: "Less often") { changeWeeks = max(1, changeWeeks - 1) }
+                                .disabled(changeWeeks == 1)
+                            Text(changeWeeks == 1 ? "Weekly" : "\(changeWeeks) weeks")
+                                .fontWeight(.semibold).monospacedDigit()
+                                .frame(minWidth: 70)
+                            roundButton("plus", label: "More weeks apart") { changeWeeks = min(4, changeWeeks + 1) }
+                                .disabled(changeWeeks == 4)
+                        }
+                        .frame(minHeight: 54)
+                        Divider()
+                        DatePicker("Remind me at", selection: $pillTime, displayedComponents: .hourAndMinute)
+                            .frame(minHeight: 54)
+                    }
+                }
+            }
+
+            if mode != .steady {
+                let noun = mode == .natural ? "period" : "next bleed"
+                reminderPreview(when: "\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s") before",
+                                title: mode == .natural ? "Period may start soon" : "Bleed may start soon",
+                                message: "Your \(noun) may start in about \(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s").") {
+                    Text("Heads-up")
+                    Spacer()
+                    roundButton("minus", label: "Fewer days") { periodDaysBefore = max(1, periodDaysBefore - 1) }
+                        .disabled(periodDaysBefore == 1)
+                    Text("\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s")")
+                        .fontWeight(.semibold).monospacedDigit()
+                        .frame(minWidth: 58)
+                    roundButton("plus", label: "More days") { periodDaysBefore = min(7, periodDaysBefore + 1) }
+                        .disabled(periodDaysBefore == 7)
+                }
             }
 
             reminderPreview(when: logTime.formatted(date: .omitted, time: .shortened),

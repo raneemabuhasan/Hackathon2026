@@ -350,7 +350,7 @@ struct CycleView: View {
             HStack(spacing: 0) {
                 Picker("Month", selection: $pickerMonth) {
                     ForEach(1...12, id: \.self) { value in
-                        Text(CycleStore.cal.monthSymbols[value - 1]).tag(value)
+                        Text(Calendar.current.monthSymbols[value - 1]).tag(value)
                     }
                 }
                 Picker("Year", selection: $pickerYear) {

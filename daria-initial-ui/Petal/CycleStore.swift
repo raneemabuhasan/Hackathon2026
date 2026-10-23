@@ -5,14 +5,15 @@ import FirebaseFirestore
 enum Tab { case today, cycle, nourish, companion }
 
 enum Phase: String, CaseIterable, Identifiable {
-    case menstrual, follicular, mid, luteal
+    case menstrual, follicular, ovulation, luteal
     var id: String { rawValue }
 
     var name: String {
         switch self {
-        case .menstrual: "Period"
+        // "Period" stays for bleeding itself (logging, predictions); the phase is "Menstrual".
+        case .menstrual: "Menstrual"
         case .follicular: "Follicular"
-        case .mid: "Mid-cycle"
+        case .ovulation: "Ovulation"
         case .luteal: "Luteal"
         }
     }
@@ -21,7 +22,7 @@ enum Phase: String, CaseIterable, Identifiable {
         switch self {
         case .menstrual: Palette.rose
         case .follicular: Palette.blush
-        case .mid: Palette.pink
+        case .ovulation: Palette.pink
         case .luteal: Palette.berry
         }
     }
@@ -30,7 +31,7 @@ enum Phase: String, CaseIterable, Identifiable {
         switch self {
         case .menstrual: [Palette.rose, Palette.pink]
         case .follicular: [Palette.blush, Palette.mist]
-        case .mid: [Palette.pink, Palette.blush]
+        case .ovulation: [Palette.pink, Palette.blush]
         case .luteal: [Palette.berry, Palette.petal]
         }
     }
@@ -39,7 +40,7 @@ enum Phase: String, CaseIterable, Identifiable {
         switch self {
         case .menstrual: "Iron-rich foods, warm meals and plenty of fluids are good general choices while you bleed. Rest counts too."
         case .follicular: "Many people feel lighter and more energetic now. Fresh, colourful meals with protein and fibre keep you going."
-        case .mid: "A good time for whatever feels good: balanced plates, lots of veg, and staying hydrated if you're active."
+        case .ovulation: "A good time for whatever feels good: balanced plates, lots of veg, and staying hydrated if you're active."
         case .luteal: "Cravings and lower energy are common before a period. Regular meals with slow-release carbs can help you feel steadier."
         }
     }
@@ -49,7 +50,7 @@ enum Phase: String, CaseIterable, Identifiable {
         switch self {
         case .menstrual: "Iron-rich, warm meals and plenty of fluids."
         case .follicular: "Fresh, colourful meals with protein and fibre."
-        case .mid: "Balanced plates, lots of veg, and stay hydrated."
+        case .ovulation: "Balanced plates, lots of veg, and stay hydrated."
         case .luteal: "Slow-release carbs help with cravings and low energy."
         }
     }
@@ -81,6 +82,75 @@ struct Profile: Codable {
     var palette: String? = nil
     /// Whether the user agreed to send their data to Gemini. nil means never asked, which counts as no.
     var aiConsent: Bool? = nil
+    /// nil means no birth control. Optional so older profiles still decode.
+    var birthControl: BirthControl? = nil
+}
+
+/// How Sync reads the cycle: hormonal methods usually pause ovulation, so phases stop applying.
+enum CycleMode {
+    /// Four phases and period predictions.
+    case natural
+    /// Withdrawal bleeds predicted from the pack, patch or ring schedule. No phases.
+    case pack
+    /// No phases or predictions; bleeding can be irregular, so it's only logged.
+    case steady
+}
+
+/// Stored on the profile as `birthControl`.
+struct BirthControl: Codable, Equatable {
+    enum Method: String, Codable, CaseIterable, Identifiable {
+        case combinedPill, miniPill, patch, ring, shot, implant, hormonalIUD, copperIUD, other
+        var id: String { rawValue }
+
+        var name: String {
+            switch self {
+            case .combinedPill: "Combined pill"
+            case .miniPill: "Mini-pill"
+            case .patch: "Patch"
+            case .ring: "Ring"
+            case .shot: "Shot"
+            case .implant: "Implant"
+            case .hormonalIUD: "Hormonal IUD"
+            case .copperIUD: "Copper IUD"
+            case .other: "Other"
+            }
+        }
+
+        /// Methods with a pack, patch or ring schedule that can include a planned break.
+        var hasSchedule: Bool { [.combinedPill, .patch, .ring].contains(self) }
+        var isPill: Bool { self == .combinedPill || self == .miniPill }
+        /// What the schedule is called in "… started".
+        var scheduleNoun: String {
+            switch self {
+            case .patch: "first patch"
+            case .ring: "ring"
+            default: "pack"
+            }
+        }
+    }
+
+    var method: Method
+    /// First day of the current pack, patch or ring cycle. Later cycles repeat every 28 days from here.
+    var packStart: Date? = nil
+    /// Days before the break: 21 or 24. nil means no break, so no planned bleed.
+    var activeDays: Int? = nil
+
+    static let packLength = 28
+
+    var mode: CycleMode {
+        switch method {
+        case .copperIUD, .other: .natural
+        case .combinedPill, .patch, .ring: packStart != nil && activeDays != nil ? .pack : .steady
+        case .miniPill, .shot, .implant, .hormonalIUD: .steady
+        }
+    }
+
+    /// Break options shown for this method, as (active days, label).
+    var regimens: [(days: Int?, label: String)] {
+        method == .combinedPill
+            ? [(21, "21 + 7 break"), (24, "24 + 4 break"), (nil, "No breaks")]
+            : [(21, "3 weeks + 1 off"), (nil, "No breaks")]
+    }
 }
 
 /// One suggestion on Today's "Your plan for today" card.
@@ -341,7 +411,7 @@ final class CycleStore {
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
-    static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping"]
+    static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping", "Low sex drive", "High sex drive"]
     static let moodOptions = ["Calm", "Happy", "Confident", "Tired", "Anxious", "Irritable", "Low", "Sensitive"]
     static let dietOptions = ["vegetarian", "vegan", "gluten-free", "dairy-free"]
     static let allergenOptions = ["nuts", "dairy", "gluten", "soy", "eggs", "fish", "sesame"]
@@ -487,19 +557,26 @@ final class CycleStore {
 
     /// Writes the profile plus a few default reminders the first time someone signs in.
     func completeOnboarding(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int, logHour: Int, logMinute: Int, periodDaysBefore: Int,
-                            diets: Set<String>, avoid: Set<String>, dislikes: [String], aiConsent: Bool) {
+                            diets: Set<String>, avoid: Set<String>, dislikes: [String], aiConsent: Bool,
+                            birthControl: BirthControl? = nil, birthControlReminders: [Reminder] = []) {
         let profile = Profile(name: name, lastPeriodStart: Self.cal.startOfDay(for: lastPeriodStart),
                               cycleLength: cycleLength, periodLength: periodLength,
-                              diets: diets.sorted(), avoid: avoid.sorted(), dislikes: dislikes, aiConsent: aiConsent)
+                              diets: diets.sorted(), avoid: avoid.sorted(), dislikes: dislikes, aiConsent: aiConsent,
+                              birthControl: birthControl)
         let batch = db.batch()
         try? batch.setData(from: profile, forDocument: userRef)
-        addDefaultReminders(to: batch, logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore)
+        addDefaultReminders(to: batch, logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore,
+                            mode: birthControl?.mode ?? .natural, first: birthControlReminders)
         batch.commit { error in if let error { print("Onboarding write failed:", error) } }
         ReminderNotifications.requestPermission()
     }
 
-    private func addDefaultReminders(to batch: WriteBatch, logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2) {
-        for (i, var r) in Reminder.defaults(logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore).enumerated() {
+    /// `first` goes above the defaults, e.g. the pill reminder picked during onboarding.
+    private func addDefaultReminders(to batch: WriteBatch, logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2,
+                                     mode: CycleMode = .natural, first: [Reminder] = []) {
+        let all = first + Reminder.defaults(logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore,
+                                            bleed: mode != .natural, predicts: mode != .steady)
+        for (i, var r) in all.enumerated() {
             r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
             try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
         }
@@ -514,7 +591,9 @@ final class CycleStore {
 
     private func syncNotifications() {
         guard profile != nil else { return }
-        ReminderNotifications.sync(reminders, windowStart: windowStart, name: name)
+        // Without predictions there's no window for "before period" reminders to count back from.
+        ReminderNotifications.sync(reminders.filter { predictsBleeds || $0.kind != .beforePeriod },
+                                   windowStart: windowStart, name: name, bleed: !tracksPhases)
     }
 
     // MARK: Cycle maths
@@ -543,12 +622,13 @@ final class CycleStore {
     var lastStart: Date { starts[0] }
     private var mean: Double { Double(pastLengths.reduce(0, +)) / Double(pastLengths.count) }
     var average: Int { Int(mean.rounded()) }
-    /// Uncertainty in days either side of the predicted start, never less than 2.
+    /// Uncertainty in days either side of the predicted start, never less than 2. A pack bleed is tighter.
     var spread: Int {
+        if packBleedStart != nil { return 1 }
         let variance = pastLengths.map { pow(Double($0) - mean, 2) }.reduce(0, +) / Double(pastLengths.count)
         return max(2, Int((sqrt(variance) * 1.5).rounded()))
     }
-    var nextStart: Date { Self.add(lastStart, average) }
+    var nextStart: Date { packBleedStart ?? Self.add(lastStart, average) }
     var windowStart: Date { Self.add(nextStart, -spread) }
     var windowEnd: Date { Self.add(nextStart, spread) }
     var cycleDay: Int { Self.days(today, from: lastStart) + 1 }
@@ -559,7 +639,7 @@ final class CycleStore {
         let length = max(1, cycleLength)
         let bleedingEnd = min(length, max(1, periodLength))
         let follicularEnd = max(bleedingEnd, length - min(length, 16))
-        let midEnd = max(follicularEnd, length - min(length, 12))
+        let ovulationEnd = max(follicularEnd, length - min(length, 12))
 
         switch phase {
         case .menstrual:
@@ -567,12 +647,12 @@ final class CycleStore {
         case .follicular:
             guard follicularEnd > bleedingEnd else { return nil }
             return (bleedingEnd + 1)...follicularEnd
-        case .mid:
-            guard midEnd > follicularEnd else { return nil }
-            return (follicularEnd + 1)...midEnd
+        case .ovulation:
+            guard ovulationEnd > follicularEnd else { return nil }
+            return (follicularEnd + 1)...ovulationEnd
         case .luteal:
-            guard length > midEnd else { return nil }
-            return (midEnd + 1)...length
+            guard length > ovulationEnd else { return nil }
+            return (ovulationEnd + 1)...length
         }
     }
 
@@ -585,15 +665,79 @@ final class CycleStore {
     }
     var currentPhase: Phase { phase(forDay: cycleDay) }
 
+    // MARK: Birth control
+
+    var birthControl: BirthControl? { profile?.birthControl }
+    var cycleMode: CycleMode { birthControl?.mode ?? .natural }
+    /// Phases only mean something without hormonal birth control.
+    var tracksPhases: Bool { cycleMode == .natural }
+    /// Whether Sync predicts the next period or bleed at all.
+    var predictsBleeds: Bool { cycleMode != .steady }
+
+    /// Day 1–28 of the current pack, patch or ring cycle.
+    var packDay: Int? {
+        guard cycleMode == .pack, let start = birthControl?.packStart else { return nil }
+        let length = BirthControl.packLength
+        return ((Self.days(today, from: start) % length) + length) % length + 1
+    }
+
+    /// The next withdrawal bleed after today's pack day, from the break in the schedule.
+    private var packBleedStart: Date? {
+        guard let day = packDay, let active = birthControl?.activeDays else { return nil }
+        let offset = day <= active ? active + 1 - day : BirthControl.packLength + active + 1 - day
+        return Self.add(today, offset)
+    }
+
+    /// Nourish tabs: the four phases, or just bleed days and every day when birth control pauses them.
+    var foodPhases: [Phase] { tracksPhases ? Phase.allCases : [.menstrual, .ovulation] }
+
+    /// Which meal set fits today.
+    var foodPhase: Phase {
+        if tracksPhases { return currentPhase }
+        return isPeriod(today) ? .menstrual : .ovulation
+    }
+
+    func foodName(_ phase: Phase) -> String {
+        guard !tracksPhases else { return phase.name }
+        return phase == .menstrual ? "Bleed days" : "Every day"
+    }
+
+    func foodTip(_ phase: Phase) -> String {
+        guard !tracksPhases else { return phase.foodTip }
+        return phase == .menstrual ? Phase.menstrual.foodTip : "Balanced plates, lots of veg, and stay hydrated."
+    }
+
+    func foodBlurb(_ phase: Phase) -> String {
+        guard !tracksPhases else { return phase.blurb }
+        return phase == .menstrual ? Phase.menstrual.blurb
+            : "Everyday balanced eating: plenty of veg, protein and fibre, regular meals and enough water."
+    }
+
+    /// One line on where the user is, for the AI plan and companion.
+    var cycleContext: String {
+        guard let method = birthControl?.method, !tracksPhases else {
+            return "Cycle day \(cycleDay), \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb)"
+        }
+        let pack = packDay.map { " Pack day \($0) of \(BirthControl.packLength)." } ?? ""
+        return "Uses \(method.name.lowercased()) birth control, so cycle phases don't apply.\(pack) \(foodBlurb(foodPhase))"
+    }
+
+    func saveBirthControl(_ value: BirthControl?) {
+        let field: Any = (try? value.map { try Firestore.Encoder().encode($0) }) ?? FieldValue.delete()
+        userRef.updateData(["birthControl": field]) { error in if let error { print("Birth control update failed:", error) } }
+        showToast("Settings saved")
+    }
+
     func isPeriod(_ date: Date) -> Bool {
         date <= today && (periodHistory.contains(date) || logs.contains { $0.flow != "None" && Self.cal.isDate($0.date, inSameDayAs: date) }
             || starts.contains { let x = Self.days(date, from: $0); return x >= 0 && x < periodLength })
     }
     func isPredicted(_ date: Date) -> Bool {
+        guard predictsBleeds else { return false }
         let x = Self.days(date, from: nextStart); return x >= 0 && x < periodLength
     }
     func isMaybe(_ date: Date) -> Bool {
-        !isPredicted(date) && date >= windowStart && date <= Self.add(windowEnd, periodLength - 1)
+        predictsBleeds && !isPredicted(date) && date >= windowStart && date <= Self.add(windowEnd, periodLength - 1)
     }
 
     var comparisonCycles: [ComparedCycle] {
@@ -1013,7 +1157,7 @@ final class CycleStore {
         reminderDeletion.clear()
         reminderClarification.clear()
         assistant = nil
-        ReminderNotifications.sync([], windowStart: windowStart, name: name)
+        ReminderNotifications.sync([], windowStart: windowStart, name: name, bleed: false)
         tab = .today
         showToast("Your data was deleted")
     }
@@ -1034,7 +1178,7 @@ final class CycleStore {
             Meal(name: "Egg & avocado toast", why: "Quick protein and healthy fats.", diets: ["vegetarian", "dairy-free"], allergens: ["eggs", "gluten"], items: ["Eggs", "Avocados", "Sourdough"]),
             Meal(name: "Tofu veggie stir-fry", why: "Lots of veg, ready in 15 minutes.", diets: ["vegetarian", "vegan", "dairy-free"], allergens: ["soy"], items: ["Firm tofu", "Peppers", "Soy sauce"]),
         ],
-        .mid: [
+        .ovulation: [
             Meal(name: "Rainbow grain bowl", why: "As many colours as you can fit.", diets: ["vegetarian", "vegan", "gluten-free", "dairy-free"], allergens: ["sesame"], items: ["Tahini", "Red cabbage", "Carrots"]),
             Meal(name: "Chicken & veg traybake", why: "One tray, minimal washing up.", diets: ["gluten-free", "dairy-free"], allergens: [], items: ["Chicken thighs", "Courgette", "Red onion"]),
             Meal(name: "Berry spinach smoothie", why: "Hydrating and easy on the go.", diets: ["vegetarian", "vegan", "gluten-free", "dairy-free"], allergens: [], items: ["Frozen berries", "Spinach", "Bananas"]),
@@ -1072,7 +1216,8 @@ final class CycleStore {
     private static let mealCacheDays = 7
 
     func mealKey(_ phase: Phase) -> String {
-        "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
+        // Birth-control meal sets are prompted differently, so they're cached separately.
+        (tracksPhases ? "" : "bc-") + "\(phase.rawValue)|\(diets.sorted().joined(separator: ","))|\(avoid.sorted().joined(separator: ","))"
             + (dislikes.isEmpty ? "" : "|" + dislikes.sorted().joined(separator: ","))
     }
 
@@ -1093,7 +1238,7 @@ final class CycleStore {
             return
         }
         do {
-            let ideas = try await Assistant.mealIdeas(for: phase, diets: diets, avoid: avoid, dislikes: dislikes, recentSymptoms: recentSymptoms,
+            let ideas = try await Assistant.mealIdeas(for: phase, focus: tracksPhases ? nil : (foodName(phase), foodBlurb(phase)), diets: diets, avoid: avoid, dislikes: dislikes, recentSymptoms: recentSymptoms,
                                                       notLike: aiMeals[key]?.map(\.name) ?? [])
             guard ideas.count == 4, ideas.allSatisfy(Self.validMeal) else { throw ContractError.invalid("Invalid recipe response.") }
             let safe = ideas.filter(fitsPreferences)
@@ -1140,7 +1285,7 @@ final class CycleStore {
         let todayEntry = log(for: today)
         let yesterday = log(for: Self.add(today, -1))
         var lines = [
-            "Date: \(today.formatted(.dateTime.weekday(.wide).month(.wide).day())). Cycle day \(cycleDay), \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb)",
+            "Date: \(today.formatted(.dateTime.weekday(.wide).month(.wide).day())). \(cycleContext)",
             "Diet: \(diets.isEmpty ? "no restrictions" : diets.sorted().joined(separator: ", ")). Avoid: \(avoid.isEmpty ? "nothing" : avoid.sorted().joined(separator: ", ")).",
         ]
         if let e = todayEntry {
@@ -1186,7 +1331,7 @@ final class CycleStore {
         guard profile != nil, aiEnabled, !deletingData else { return }
         Task {
             await loadPlan()
-            await loadMeals(for: currentPhase)
+            await loadMeals(for: foodPhase)
         }
     }
 
@@ -1383,11 +1528,16 @@ final class CycleStore {
             ai("Some things people find helpful for period pain: a heat pad on your tummy, a warm bath, gentle exercise like walking or yoga, and over-the-counter pain relief if it's suitable for you (check with a pharmacist).",
                note: "Source: NHS period pain. If pain stops you doing everyday things, talk to a GP.", link: Self.nhsPeriodPain, actions: [.logCramps])
         } else if has(["eat", "food", "hungry", "meal", "craving", "snack"]) {
-            let meal = meals(for: currentPhase).first ?? Self.meals[currentPhase]![0]
-            ai("You're in your \(currentPhase.name.lowercased()) phase. \(currentPhase.blurb) One idea that fits your preferences: \(meal.name).",
+            let meal = meals(for: foodPhase).first ?? Self.meals[foodPhase]![0]
+            ai((tracksPhases ? "You're in your \(currentPhase.name.lowercased()) phase. " : "") + "\(foodBlurb(foodPhase)) One idea that fits your preferences: \(meal.name).",
                note: "General nutrition ideas, not treatment.", actions: [.seeMeals])
         } else if has(["tired", "energy", "exhaust", "sleep"]) {
             ai("I couldn't verify an explanation right now. Please try again.")
+        } else if has(["when", "next period", "late"]), !tracksPhases {
+            ai(predictsBleeds
+               ? "Your next bleed is expected around \(fmt(windowStart)) to \(fmt(windowEnd)), from your \(birthControl?.method.scheduleNoun ?? "pack") schedule. On hormonal birth control this is a withdrawal bleed, not a period."
+               : "Bleeding can be irregular on your birth control, so I don't predict it. Logging any bleeding or spotting helps you spot patterns.",
+               note: "Not for contraception or fertility planning.")
         } else if has(["when", "next period", "late"]) {
             ai("Your next period is most likely between \(fmt(windowStart)) and \(fmt(windowEnd)). Your cycles have ranged from \(pastLengths.min()!) to \(pastLengths.max()!) days, so I give a window instead of one date.",
                note: "Not for contraception or fertility planning.")
