@@ -64,7 +64,6 @@ struct TodayView: View {
 
     private var hero: some View {
         let period = store.period(on: ringDate)
-        let word = store.tracksPhases ? "Period" : "Bleed"
         return VStack(spacing: 26) {
             switch store.cycleMode {
             case .natural: CycleRing(previewDay: $previewDay)
@@ -75,7 +74,7 @@ struct TodayView: View {
                 Button {
                     showPeriodEntry = true
                 } label: {
-                    Text(period == nil ? "\(word) started" : "\(word) ended")
+                    Text("Period started")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 22)
@@ -304,13 +303,29 @@ struct CycleRing: View {
     private var selectedDay: Int { min(cycleLength, shownDay) }
 
     private var selectedPhase: Phase { store.phase(forDay: selectedDay) }
+    private var actualDay: Int { max(1, store.cycleDay) }
+    private var actualRingDay: Int { min(cycleLength, actualDay) }
+    private var actualPhase: Phase { store.phase(forDay: actualRingDay) }
+
+    // Keep the reference's rose tones in the default theme; other themes retain their palette.
+    private func ringColor(_ phase: Phase) -> Color {
+        guard PalettePreferences.shared.theme == .blush else { return phase.color }
+        switch phase {
+        case .menstrual: return Color(hex: 0xD50046)
+        case .follicular: return Color(hex: 0xF5B2C7)
+        case .ovulation: return Color(hex: 0xEF709D)
+        case .luteal: return Color(hex: 0xB90040)
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             GeometryReader { geometry in
                 let size = min(geometry.size.width, geometry.size.height)
                 let radius = size / 2 - 16
                 let angle = (Double(selectedDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
+
+                let todayAngle = (Double(actualRingDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
 
                 ZStack {
                     ForEach(Phase.allCases) { phase in
@@ -319,29 +334,48 @@ struct CycleRing: View {
                             Circle()
                                 .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
                                       to: Double(range.upperBound) / Double(cycleLength) - 0.012)
-                                .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
+                                .stroke(ringColor(phase), style: StrokeStyle(lineWidth: 17,
                                                                       lineCap: .round))
                                 .rotationEffect(.degrees(-90))
                                 .padding(16)
                         }
                     }
 
-                    VStack(spacing: 4) {
-                        Eyebrow(text: "Cycle day")
+                    VStack(spacing: 5) {
+                        Text("CYCLE DAY")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(2.2)
+                            .foregroundStyle(Palette.inkSoft)
                         Text("\(shownDay)")
-                            .font(.display(68)).monospacedDigit()
+                            .font(.display(82)).monospacedDigit()
                             .contentTransition(.numericText())
-                        Text("of about \(cycleLength) days")
-                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                        Text("\(selectedPhase.name) phase")
+                            .font(.display(24))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        Text("of your \(cycleLength)-day cycle")
+                            .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     }
+                    .padding(.horizontal, 36)
                     .allowsHitTesting(false)
+
+                    if selectedDay != actualRingDay {
+                        Circle()
+                            .fill(Color(white: 0.88))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
+                            .frame(width: 34, height: 34)
+                            .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+                            .position(x: size / 2 + radius * cos(todayAngle),
+                                      y: size / 2 + radius * sin(todayAngle))
+                            .allowsHitTesting(false)
+                    }
 
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
                             .fill(.white)
                             .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
-                            .frame(width: 28, height: 28)
+                            .frame(width: 34, height: 34)
                             .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
                     }
                     .frame(width: 48, height: 48)
@@ -354,10 +388,11 @@ struct CycleRing: View {
                 .frame(width: size, height: size)
                 .coordinateSpace(name: "cyclePreviewRing")
             }
-            .frame(width: 230, height: 230)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 320)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Cycle day preview")
-            .accessibilityValue("Day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase")
+            .accessibilityValue("Exploring day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase. Today is day \(actualDay), \(actualPhase.name) phase.")
             .accessibilityHint("Adjust to explore a day without changing your saved cycle")
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -367,24 +402,15 @@ struct CycleRing: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Circle().fill(selectedPhase.color).frame(width: 8, height: 8)
-                Text("\(selectedPhase.name) phase")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Palette.surface.opacity(0.8), in: Capsule())
-
             ViewThatFits(in: .horizontal) {
                 legend(spacing: 12)
                 legend(spacing: 5)
             }
 
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
-            }
+            Label("Drag the circle to explore your cycle", systemImage: "hand.draw")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.inkFaint)
+                .multilineTextAlignment(.center)
         }
     }
 
@@ -392,9 +418,9 @@ struct CycleRing: View {
         HStack(spacing: spacing) {
             ForEach(Phase.allCases) { phase in
                 HStack(spacing: 4) {
-                    Circle().fill(phase.color).frame(width: 6, height: 6)
-                    Text(phase.name)
-                        .font(.system(size: 10, weight: phase == selectedPhase ? .bold : .regular))
+                    Circle().fill(ringColor(phase)).frame(width: 7, height: 7)
+                    Text(phase == .menstrual ? "Period" : phase == .ovulation ? "Mid-cycle" : phase.name)
+                        .font(.system(size: 11, weight: phase == selectedPhase ? .bold : .regular))
                 }
                 .foregroundStyle(phase == selectedPhase ? Palette.ink : Palette.inkSoft)
             }
@@ -421,7 +447,9 @@ struct PackRing: View {
     var body: some View {
         let length = BirthControl.packLength
         let active = store.birthControl?.activeDays ?? length
-        let day = previewDay ?? store.packDay ?? 1
+        let actualDay = min(length, max(1, store.packDay ?? 1))
+        let day = previewDay ?? actualDay
+        let todayAngle = (Double(actualDay) - 0.5) / Double(length) * 2 * .pi - .pi / 2
         let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
         VStack(spacing: 16) {
             GeometryReader { geometry in
@@ -439,6 +467,16 @@ struct PackRing: View {
                         Text("of \(length)").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     }
                     .allowsHitTesting(false)
+                    if day != actualDay {
+                        Circle()
+                            .fill(Color(white: 0.88))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
+                            .frame(width: 28, height: 28)
+                            .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+                            .position(x: size / 2 + radius * cos(todayAngle),
+                                      y: size / 2 + radius * sin(todayAngle))
+                            .allowsHitTesting(false)
+                    }
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
@@ -459,7 +497,7 @@ struct PackRing: View {
             .frame(width: 230, height: 230)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Pack day preview")
-            .accessibilityValue("Day \(day) of \(length), \(day <= active ? "active days" : "break")")
+            .accessibilityValue("Exploring day \(day) of \(length), \(day <= active ? "active days" : "break"). Today is day \(actualDay).")
             .accessibilityHint("Adjust to explore a day without changing anything")
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -472,12 +510,6 @@ struct PackRing: View {
             HStack(spacing: 12) {
                 legend(Palette.blush, "Active", bold: day <= active)
                 legend(Palette.rose, "Break", bold: day > active)
-            }
-
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
             }
         }
     }
