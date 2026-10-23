@@ -586,7 +586,7 @@ struct CycleView: View {
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
                             + (predicted ? ", predicted period" : period ? ", period" : "")
                             + (periodDay.map { ", period day \($0)" } ?? ""))
-        .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date")
+        .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date. Activate again to open period start and end controls.")
         .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
