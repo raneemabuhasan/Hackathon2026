@@ -1,5 +1,63 @@
 import SwiftUI
 
+// A visual companion only: messaging, data access and tool calls still belong to CycleStore.
+// This deliberately lives in CompanionView.swift so the first PR avoids editing project.pbxproj.
+@MainActor
+private struct PixelRobotCompanion: View {
+    var thinking = false
+    var width: CGFloat = 108
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var floating = false
+    @State private var blink = false
+    @State private var smiling = false
+
+    private var imageName: String {
+        if smiling { return "CompanionRobotHappy" }
+        if blink && !thinking { return "CompanionRobotBlink" }
+        return "CompanionRobotIdle"
+    }
+
+    var body: some View {
+        Button { smiling = true } label: {
+            Image(imageName)
+                .resizable()
+                .interpolation(.none) // Keep the pixel-art outline crisp.
+                .scaledToFit()
+                .frame(width: width, height: width * 1.23)
+                .offset(y: reduceMotion ? 0 : (floating ? -3 : 2))
+                .rotationEffect(.degrees(reduceMotion ? 0 : (floating ? (thinking ? 5 : 1) : (thinking ? -5 : -1))))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Sync robot companion")
+        .accessibilityHint("Tap to see the robot smile")
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                floating = true
+            }
+        }
+        .onDisappear { floating = false }
+        .task(id: thinking) {
+            blink = false
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3.8)) } catch { return }
+                if thinking { continue }
+                blink = true
+                do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
+                blink = false
+            }
+        }
+        .task(id: smiling) {
+            guard smiling else { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            smiling = false
+        }
+    }
+}
+
 @MainActor
 struct CompanionView: View {
     @Environment(CycleStore.self) private var store
@@ -25,6 +83,10 @@ struct CompanionView: View {
                 HStack {
                     Eyebrow(text: "Companion")
                     Spacer()
+                    // Keep a small avatar visible once the chat has started.
+                    if !store.messages.isEmpty {
+                        PixelRobotCompanion(thinking: store.thinking, width: 38)
+                    }
                     Button { showReminders = true } label: {
                         Image(systemName: "bell")
                             .font(.system(size: 18))
@@ -43,6 +105,7 @@ struct CompanionView: View {
                         VStack(spacing: 0) {
                             Spacer(minLength: 28)
                             VStack(spacing: 24) {
+                                PixelRobotCompanion(thinking: store.thinking, width: 104)
                                 VStack(spacing: 10) {
                                     DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
                                         .multilineTextAlignment(.center)
