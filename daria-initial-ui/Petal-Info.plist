@@ -21,5 +21,11 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Match the native iOS launch screen to the animated Sync splash background. -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>SyncLaunchCream</string>
+	</dict>
 </dict>
 </plist>
