@@ -113,7 +113,7 @@ struct RootView: View {
                         ProgressView().tint(Palette.accent).padding(.bottom, 80)
                     }
                 }
-                .background(Color.white.ignoresSafeArea())
+                .background(Color(hex: 0xFAF0E6).ignoresSafeArea())
                 .ignoresSafeArea()
                 .accessibilityLabel("Sync")
             }
@@ -126,7 +126,7 @@ struct RootView: View {
             .italic()
             .foregroundStyle(Palette.accent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.bg.ignoresSafeArea())
+            .background(Color(hex: 0xFAF0E6).ignoresSafeArea())
     }
 
     private func loadError(_ message: String) -> some View {
