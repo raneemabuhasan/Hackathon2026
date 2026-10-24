@@ -64,7 +64,6 @@ struct TodayView: View {
 
     private var hero: some View {
         let period = store.period(on: ringDate)
-        let word = store.tracksPhases ? "Period" : "Bleed"
         return VStack(spacing: 26) {
             switch store.cycleMode {
             case .natural: CycleRing(previewDay: $previewDay)
@@ -75,7 +74,7 @@ struct TodayView: View {
                 Button {
                     showPeriodEntry = true
                 } label: {
-                    Text(period == nil ? "\(word) started" : "\(word) ended")
+                    Text("Period started")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 22)
@@ -294,6 +293,9 @@ struct TodayView: View {
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
     @Binding var previewDay: Int?
+    @State private var showsPhaseExplanation = false
+    @GestureState private var isDraggingHandle = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Same length and phases as the prediction card, calendar and Nourish.
     private var cycleLength: Int { store.average }
@@ -304,49 +306,122 @@ struct CycleRing: View {
     private var selectedDay: Int { min(cycleLength, shownDay) }
 
     private var selectedPhase: Phase { store.phase(forDay: selectedDay) }
+    private var actualDay: Int { max(1, store.cycleDay) }
+    private var actualRingDay: Int { min(cycleLength, actualDay) }
+    private var actualPhase: Phase { store.phase(forDay: actualRingDay) }
+
+    private var phaseExplanation: String {
+        switch selectedPhase {
+        case .menstrual:
+            "During menstruation, the uterus sheds its lining. Rest and gentle movement may feel supportive."
+        case .follicular:
+            "During the follicular phase, follicles develop in the ovaries and the uterine lining begins to build again."
+        case .ovulation:
+            "Ovulation is when an ovary releases an egg. This calendar estimate cannot confirm when ovulation happens."
+        case .luteal:
+            "After ovulation, the uterine lining prepares for a possible pregnancy. Some people notice PMS symptoms before their period."
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             GeometryReader { geometry in
                 let size = min(geometry.size.width, geometry.size.height)
                 let radius = size / 2 - 16
                 let angle = (Double(selectedDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
 
+                let todayAngle = (Double(actualRingDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
+
                 ZStack {
-                    ForEach(Phase.allCases) { phase in
-                        // A very short cycle can leave a phase with no days; skip its arc.
-                        if let range = store.range(of: phase) {
-                            Circle()
-                                .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
-                                      to: Double(range.upperBound) / Double(cycleLength) - 0.012)
-                                .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
-                                                                      lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                                .padding(16)
-                        }
+                    ForEach(1...cycleLength, id: \.self) { day in
+                        let phase = store.phase(forDay: day)
+                        let iconAngle = (Double(day) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
+                        // Leave room for both current-phase emphasis and the drag pop.
+                        let iconSize = min(23, 2 * .pi * radius / Double(cycleLength) / 1.45)
+                        PhaseRingIcon(phase: phase)
+                            .frame(width: iconSize, height: iconSize)
+                            .scaleEffect(iconScale(day: day, phase: phase))
+                            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.78),
+                                       value: iconScale(day: day, phase: phase))
+                            .position(x: size / 2 + radius * cos(iconAngle),
+                                      y: size / 2 + radius * sin(iconAngle))
+                            .allowsHitTesting(false)
                     }
 
-                    VStack(spacing: 4) {
-                        Eyebrow(text: "Cycle day")
-                        Text("\(shownDay)")
-                            .font(.display(68)).monospacedDigit()
-                            .contentTransition(.numericText())
-                        Text("of about \(cycleLength) days")
-                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    ZStack {
+                        if showsPhaseExplanation {
+                            VStack(spacing: 14) {
+                                Text("\(selectedPhase.name.uppercased()) PHASE")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .tracking(1.5)
+                                    .foregroundStyle(Palette.inkSoft)
+                                PhaseRingIcon(phase: selectedPhase)
+                                    .frame(width: 36, height: 36)
+                                Text(phaseExplanation)
+                                    .font(.system(size: 13))
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.horizontal, 12)
+                        } else {
+                            VStack(spacing: 5) {
+                                Text("CYCLE DAY")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .tracking(2.2)
+                                    .foregroundStyle(Palette.inkSoft)
+                                Text("\(shownDay)")
+                                    .font(.display(82)).monospacedDigit()
+                                    .contentTransition(.numericText())
+                                Text("\(selectedPhase.name) phase")
+                                    .font(.display(24))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                Text("of your \(cycleLength)-day cycle")
+                                    .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                            }
+                        }
                     }
-                    .allowsHitTesting(false)
+                    .frame(width: max(0, size - 88), height: max(0, size - 88))
+                    .contentShape(Circle())
+                    .gesture(DragGesture(minimumDistance: 20)
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height),
+                                  abs(value.translation.width) > 30 else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showsPhaseExplanation = value.translation.width > 0
+                            }
+                        })
+                    .overlay(alignment: .bottom) {
+                        HStack(spacing: 7) {
+                            Circle().fill(showsPhaseExplanation ? Palette.accent.opacity(0.2) : Palette.accent)
+                            Circle().fill(showsPhaseExplanation ? Palette.accent : Palette.accent.opacity(0.2))
+                        }
+                        .frame(width: 22, height: 7)
+                        .offset(y: 9)
+                        .allowsHitTesting(false)
+                    }
+
+                    if selectedDay != actualRingDay {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.55), lineWidth: 2.5)
+                            .frame(width: 34, height: 34)
+                            .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+                            .position(x: size / 2 + radius * cos(todayAngle),
+                                      y: size / 2 + radius * sin(todayAngle))
+                            .allowsHitTesting(false)
+                    }
 
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .fill(.white)
-                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
-                            .frame(width: 28, height: 28)
+                            .stroke(Palette.ink, lineWidth: 2.5)
+                            .frame(width: 34, height: 34)
                             .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cyclePreviewRing"))
+                        .updating($isDraggingHandle) { _, dragging, _ in dragging = true }
                         .onChanged { value in selectDay(at: value.location, size: size) })
                     .position(x: size / 2 + radius * cos(angle),
                               y: size / 2 + radius * sin(angle))
@@ -354,11 +429,16 @@ struct CycleRing: View {
                 .frame(width: size, height: size)
                 .coordinateSpace(name: "cyclePreviewRing")
             }
-            .frame(width: 230, height: 230)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 320)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Cycle day preview")
-            .accessibilityValue("Day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase")
+            .accessibilityValue("Exploring day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase. Today is day \(actualDay), \(actualPhase.name) phase.")
             .accessibilityHint("Adjust to explore a day without changing your saved cycle")
+            .accessibilityAction(named: showsPhaseExplanation ? "Show cycle day" : "Show phase explanation") {
+                showsPhaseExplanation.toggle()
+            }
+            .accessibilityCustomContent("Phase explanation", showsPhaseExplanation ? phaseExplanation : "Swipe right inside the circle to read about this phase")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: previewDay = min(cycleLength, selectedDay + 1)
@@ -367,24 +447,11 @@ struct CycleRing: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Circle().fill(selectedPhase.color).frame(width: 8, height: 8)
-                Text("\(selectedPhase.name) phase")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Palette.surface.opacity(0.8), in: Capsule())
-
             ViewThatFits(in: .horizontal) {
                 legend(spacing: 12)
                 legend(spacing: 5)
             }
 
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
-            }
         }
     }
 
@@ -392,13 +459,22 @@ struct CycleRing: View {
         HStack(spacing: spacing) {
             ForEach(Phase.allCases) { phase in
                 HStack(spacing: 4) {
-                    Circle().fill(phase.color).frame(width: 6, height: 6)
-                    Text(phase.name)
-                        .font(.system(size: 10, weight: phase == selectedPhase ? .bold : .regular))
+                    PhaseRingIcon(phase: phase).frame(width: 14, height: 14)
+                    Text(phase == .menstrual ? "Period" : phase == .ovulation ? "Mid-cycle" : phase.name)
+                        .font(.system(size: 11, weight: phase == selectedPhase ? .bold : .regular))
                 }
                 .foregroundStyle(phase == selectedPhase ? Palette.ink : Palette.inkSoft)
             }
         }
+    }
+
+    private func iconScale(day: Int, phase: Phase) -> CGFloat {
+        let emphasis: CGFloat = phase == actualPhase ? 1.12 : 1
+        guard isDraggingHandle, !reduceMotion else { return emphasis }
+        let distance = abs(day - selectedDay)
+        let circularDistance = min(distance, cycleLength - distance)
+        let pop: CGFloat = circularDistance == 0 ? 1.15 : circularDistance == 1 ? 1.07 : 1
+        return emphasis * pop
     }
 
     private func selectDay(at point: CGPoint, size: CGFloat) {
@@ -412,6 +488,125 @@ struct CycleRing: View {
     }
 }
 
+/// Reference-matched vector artwork; backgrounds and the flower's center are transparent.
+struct PhaseRingIcon: View {
+    let phase: Phase
+
+    private var colors: [Color] {
+        switch phase {
+        case .menstrual: [Color(hex: 0xCF1753), Color(hex: 0xBD1248)]
+        case .follicular: [Color(hex: 0xF6A8C7), Color(hex: 0xF095B9)]
+        case .ovulation: [Color(hex: 0xD85281), Color(hex: 0xCE4776)]
+        case .luteal: [Color(hex: 0x872044), Color(hex: 0x731237)]
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            PhaseIconSilhouette(phase: phase)
+                .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                      style: FillStyle(eoFill: phase == .ovulation))
+            if phase == .follicular {
+                // Normalized geometry keeps the seed proportional at ring and legend sizes.
+                PhaseIconDetail(phase: phase).fill(Color(hex: 0xCC1852))
+            } else if phase == .menstrual || phase == .luteal {
+                PhaseIconDetail(phase: phase)
+                    .fill(phase == .menstrual ? Color(hex: 0xF2759E) : Color(hex: 0xF5BCD3))
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Unit-coordinate paths keep each silhouette reusable at any display resolution.
+struct PhaseIconSilhouette: Shape {
+    let phase: Phase
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        switch phase {
+        case .menstrual:
+            p.move(to: CGPoint(x: 0.48, y: 0.025))
+            p.addQuadCurve(to: CGPoint(x: 0.52, y: 0.025), control: CGPoint(x: 0.5, y: -0.005))
+            p.addCurve(to: CGPoint(x: 0.88, y: 0.61), control1: CGPoint(x: 0.63, y: 0.19), control2: CGPoint(x: 0.86, y: 0.46))
+            p.addCurve(to: CGPoint(x: 0.5, y: 0.99), control1: CGPoint(x: 0.99, y: 0.88), control2: CGPoint(x: 0.77, y: 0.99))
+            p.addCurve(to: CGPoint(x: 0.12, y: 0.61), control1: CGPoint(x: 0.23, y: 0.99), control2: CGPoint(x: 0.01, y: 0.88))
+            p.addCurve(to: CGPoint(x: 0.48, y: 0.025), control1: CGPoint(x: 0.14, y: 0.46), control2: CGPoint(x: 0.37, y: 0.19))
+            p.closeSubpath()
+        case .follicular:
+            var left = Path()
+            left.move(to: CGPoint(x: 0.33, y: 0.025))
+            left.addCurve(to: CGPoint(x: 0.47, y: 0.98), control1: CGPoint(x: -0.21, y: 0.38), control2: CGPoint(x: -0.01, y: 0.91))
+            left.addQuadCurve(to: CGPoint(x: 0.46, y: 0.91), control: CGPoint(x: 0.5, y: 0.99))
+            left.addCurve(to: CGPoint(x: 0.37, y: 0.08), control1: CGPoint(x: 0.18, y: 0.56), control2: CGPoint(x: 0.19, y: 0.37))
+            left.addQuadCurve(to: CGPoint(x: 0.33, y: 0.025), control: CGPoint(x: 0.4, y: 0.015))
+            left.closeSubpath()
+            p.addPath(left)
+            p.addPath(left, transform: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 1, ty: 0))
+        case .ovulation:
+            // Smooth five-lobed flower with a genuine transparent center.
+            for step in 0...240 {
+                let angle = Double(step) / 240 * 2 * .pi - .pi / 2
+                let radius = 0.405 + 0.085 * cos(5 * (angle + .pi / 2))
+                let point = CGPoint(x: 0.5 + radius * cos(angle), y: 0.5 + radius * sin(angle))
+                if step == 0 { p.move(to: point) } else { p.addLine(to: point) }
+            }
+            p.closeSubpath()
+            p.addEllipse(in: CGRect(x: 0.385, y: 0.385, width: 0.23, height: 0.23))
+        case .luteal:
+            // Rounded plum with the shallow upper-right bite from the reference.
+            p.move(to: CGPoint(x: 0.65, y: 0.045))
+            p.addCurve(to: CGPoint(x: 0.89, y: 0.245), control1: CGPoint(x: 0.68, y: 0.16), control2: CGPoint(x: 0.8, y: 0.23))
+            p.addCurve(to: CGPoint(x: 0.99, y: 0.56), control1: CGPoint(x: 0.97, y: 0.34), control2: CGPoint(x: 0.99, y: 0.43))
+            p.addCurve(to: CGPoint(x: 0.5, y: 0.99), control1: CGPoint(x: 0.99, y: 0.82), control2: CGPoint(x: 0.78, y: 0.99))
+            p.addCurve(to: CGPoint(x: 0.01, y: 0.52), control1: CGPoint(x: 0.22, y: 0.99), control2: CGPoint(x: 0.01, y: 0.8))
+            p.addCurve(to: CGPoint(x: 0.65, y: 0.045), control1: CGPoint(x: 0.01, y: 0.19), control2: CGPoint(x: 0.34, y: -0.055))
+            p.closeSubpath()
+        }
+        if phase == .menstrual {
+            p = p.applying(CGAffineTransform(a: 0.78, b: 0, c: 0, d: 1, tx: 0.11, ty: 0))
+        }
+        return fitted(p, in: rect)
+    }
+}
+
+struct PhaseIconDetail: Shape {
+    let phase: Phase
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        switch phase {
+        case .menstrual:
+            p.move(to: CGPoint(x: 0.75, y: 0.58))
+            p.addCurve(to: CGPoint(x: 0.57, y: 0.86), control1: CGPoint(x: 0.82, y: 0.69), control2: CGPoint(x: 0.7, y: 0.84))
+            p.addQuadCurve(to: CGPoint(x: 0.59, y: 0.81), control: CGPoint(x: 0.53, y: 0.85))
+            p.addCurve(to: CGPoint(x: 0.71, y: 0.59), control1: CGPoint(x: 0.71, y: 0.74), control2: CGPoint(x: 0.71, y: 0.68))
+            p.addQuadCurve(to: CGPoint(x: 0.75, y: 0.58), control: CGPoint(x: 0.71, y: 0.54))
+            p.closeSubpath()
+        case .follicular:
+            p.addEllipse(in: CGRect(x: 0.32, y: 0.32, width: 0.36, height: 0.36))
+        case .luteal:
+            p.move(to: CGPoint(x: 0.65, y: 0.045))
+            p.addCurve(to: CGPoint(x: 0.89, y: 0.245), control1: CGPoint(x: 0.68, y: 0.16), control2: CGPoint(x: 0.8, y: 0.23))
+            p.addCurve(to: CGPoint(x: 0.67, y: 0.31), control1: CGPoint(x: 0.83, y: 0.32), control2: CGPoint(x: 0.75, y: 0.33))
+            p.addCurve(to: CGPoint(x: 0.65, y: 0.045), control1: CGPoint(x: 0.59, y: 0.29), control2: CGPoint(x: 0.58, y: 0.17))
+            p.closeSubpath()
+        case .ovulation: break
+        }
+        if phase == .menstrual {
+            p = p.applying(CGAffineTransform(a: 0.78, b: 0, c: 0, d: 1, tx: 0.11, ty: 0))
+        }
+        return fitted(p, in: rect)
+    }
+}
+
+private func fitted(_ path: Path, in rect: CGRect) -> Path {
+    let side = min(rect.width, rect.height)
+    return path.applying(CGAffineTransform(a: side, b: 0, c: 0, d: side,
+                                         tx: rect.midX - side / 2, ty: rect.midY - side / 2))
+}
+
 /// Today's place in a 28-day pack, patch or ring cycle, with the break marked.
 /// Like CycleRing, dragging only previews a day and never writes anything.
 struct PackRing: View {
@@ -421,7 +616,9 @@ struct PackRing: View {
     var body: some View {
         let length = BirthControl.packLength
         let active = store.birthControl?.activeDays ?? length
-        let day = previewDay ?? store.packDay ?? 1
+        let actualDay = min(length, max(1, store.packDay ?? 1))
+        let day = previewDay ?? actualDay
+        let todayAngle = (Double(actualDay) - 0.5) / Double(length) * 2 * .pi - .pi / 2
         let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
         VStack(spacing: 16) {
             GeometryReader { geometry in
@@ -439,6 +636,16 @@ struct PackRing: View {
                         Text("of \(length)").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     }
                     .allowsHitTesting(false)
+                    if day != actualDay {
+                        Circle()
+                            .fill(Color(white: 0.88))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
+                            .frame(width: 28, height: 28)
+                            .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+                            .position(x: size / 2 + radius * cos(todayAngle),
+                                      y: size / 2 + radius * sin(todayAngle))
+                            .allowsHitTesting(false)
+                    }
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
@@ -459,7 +666,7 @@ struct PackRing: View {
             .frame(width: 230, height: 230)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Pack day preview")
-            .accessibilityValue("Day \(day) of \(length), \(day <= active ? "active days" : "break")")
+            .accessibilityValue("Exploring day \(day) of \(length), \(day <= active ? "active days" : "break"). Today is day \(actualDay).")
             .accessibilityHint("Adjust to explore a day without changing anything")
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -472,12 +679,6 @@ struct PackRing: View {
             HStack(spacing: 12) {
                 legend(Palette.blush, "Active", bold: day <= active)
                 legend(Palette.rose, "Break", bold: day > active)
-            }
-
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
             }
         }
     }
