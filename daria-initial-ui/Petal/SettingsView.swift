@@ -161,7 +161,12 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Use the AI companion", isOn: Binding(get: { store.aiEnabled }, set: { store.setAIConsent($0) }))
                             .font(.system(size: 15))
-                        Text("Powers chat, AI meal ideas and your daily plan using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results.")
+                        Toggle("Use AI for period predictions", isOn: Binding(get: { store.aiPredictionsEnabled }, set: { store.setAIPredictions($0) }))
+                            .font(.system(size: 15))
+                            .disabled(!store.aiEnabled)
+                        Text("Sync's average-based prediction is always used offline, when this is off, and until you've logged 3 cycles.")
+                            .font(.caption).foregroundStyle(Palette.inkSoft)
+                        Text("Powers chat, AI meal ideas, your daily plan and optional period predictions using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results.")
                             .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     }
                 }
