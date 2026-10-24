@@ -4,11 +4,22 @@ import SwiftUI
 struct TodayView: View {
     @Environment(CycleStore.self) private var store
     @Environment(AuthModel.self) private var auth
+    @State private var showMood = false
+    @State private var showSymptoms = false
+    @State private var showFlow = false
     @State private var showSettings = false
     @State private var showPeriodEntry = false
     @State private var headerHeight: CGFloat = 0
     /// Day picked on the cycle ring; nil means today.
     @State private var previewDay: Int?
+
+    @State private var editing: ReminderSheet?
+
+    /// Which reminder the editor sheet is open for.
+    private enum ReminderSheet: Identifiable {
+        case new, edit(Reminder)
+        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
+    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -49,13 +60,98 @@ struct TodayView: View {
                 quickActions
                 Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
                 plan
+                reminders
             }
+        }
+        .sheet(isPresented: $showFlow) {
+            LogSheet(flowOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+        .sheet(isPresented: $showSymptoms) {
+            LogSheet(symptomsOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+        .sheet(isPresented: $showMood) {
+            LogSheet(moodOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
         }
         .onPreferenceChange(TodayHeaderHeight.self) { headerHeight = $0 }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environment(store)
                 .environment(auth)
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+    }
+
+    private var reminders: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.badge")
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 40, height: 40)
+                    .background(Palette.accentSoft, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reminders").font(.cardSubheading).foregroundStyle(Palette.wine)
+                    Text("Little nudges for your routine")
+                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+            }
+            if let error = store.remindersError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            } else if !store.remindersLoaded {
+                ProgressView("Loading reminders")
+            } else if store.reminders.isEmpty {
+                Text("Add a reminder for your daily routine or a day that works for you.")
+                    .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+            }
+            ForEach(store.reminders) { r in
+                HStack(spacing: 12) {
+                    Button { editing = .edit(r) } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(r.title).font(.system(size: 14, weight: .semibold))
+                                Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Edit reminder")
+                    Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+                .padding(12)
+            }
+            Button { editing = .new } label: {
+                Text("New reminder")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+            .buttonStyle(.plain)
+        }
+        .card()
+        .sheet(item: $editing) { target in
+            ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                .environment(store)
+                .presentationDetents([.large])
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
         }
@@ -73,7 +169,10 @@ struct TodayView: View {
 
     /// The date the ring is showing so the button acts on that day.
     private var ringDate: Date {
-        CycleStore.add(store.lastStart, (previewDay ?? max(1, store.cycleDay)) - 1)
+        if let packDay = store.packDay {
+            return CycleStore.add(store.today, (previewDay ?? packDay) - packDay)
+        }
+        return CycleStore.add(store.lastStart, (previewDay ?? max(1, store.cycleDay)) - 1)
     }
 
     // MARK: Cycle ring
@@ -82,12 +181,16 @@ struct TodayView: View {
         // A completed period can include today; only an unfinished record can be ended.
         let period = store.ongoingPeriod
         return VStack(spacing: 12) {
-            CycleRing(previewDay: $previewDay)
+            switch store.cycleMode {
+            case .natural: CycleRing(previewDay: $previewDay)
+            case .pack: PackRing(previewDay: $previewDay)
+            case .steady: steadySummary
+            }
             VStack(spacing: 12) {
                 Button {
                     showPeriodEntry = true
                 } label: {
-                    Text(period == nil ? "Period started" : "Period ended")
+                    Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
                 }
                 .buttonStyle(PeriodEntryPressStyle())
 
@@ -114,17 +217,30 @@ struct TodayView: View {
         }
     }
 
+    /// Hero for methods with no predictable bleed: just the method, and why there's no ring.
+    private var steadySummary: some View {
+        VStack(spacing: 10) {
+            Eyebrow(text: "Birth control")
+            Text(store.birthControl?.method.name ?? "")
+                .font(.display(40))
+            Text("Bleeding can be irregular or stop on this method, so Sync doesn't show phases or predict bleeds. Log any bleeding or spotting to see your own pattern.")
+                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 12)
+    }
+
     // MARK: Prediction
 
+    @ViewBuilder
     private var prediction: some View {
+        if store.predictsBleeds { predictionCard }
+    }
+
+    private var predictionCard: some View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
-        let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
-        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
-        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
-        let pct = { (d: Date) in
-            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
-        }
         return Button {
             store.tab = .cycle
         } label: {
@@ -136,7 +252,7 @@ struct TodayView: View {
                     .fill(Palette.rose.opacity(0.25))
                     .frame(width: 1, height: 36)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Next period, estimated".uppercased())
+                    Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
                         .font(.system(size: 9, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(Palette.inkSoft)
@@ -203,7 +319,12 @@ struct TodayView: View {
     }
 
     private func quick(_ title: String, _ icon: String) -> some View {
-        Button { store.showLog = true } label: {
+        Button {
+            if title == "Mood" { showMood = true }
+            else if title == "Symptoms" { showSymptoms = true }
+            else if title == "Flow" { showFlow = true }
+            else { store.showLog = true }
+        } label: {
             VStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundStyle(Palette.accent)
                 Text(title).font(.system(size: 12, weight: .semibold))
@@ -219,14 +340,14 @@ struct TodayView: View {
     // MARK: Plan
 
     private var planItems: [(icon: String, title: String, detail: String, nhs: Bool)] {
-        switch store.currentPhase {
+        switch store.foodPhase {
         case .menstrual: [("leaf", "Warm lentil & spinach dal", "Iron-rich and easy on low-appetite days.", false),
                           ("drop", "Heat pad + water bottle", "Heat on your lower tummy is a common comfort.", true),
                           ("moon", "Early night", "Aim for a wind-down by 10 pm.", false)]
         case .follicular: [("leaf", "Chickpea quinoa salad", "Protein and fibre for busy days.", false),
                            ("figure.walk", "Try something new", "A class or a longer walk, if you feel like it.", false),
                            ("moon", "Evening check-in", "Two taps to log your mood.", false)]
-        case .mid: [("leaf", "Rainbow grain bowl", "Lots of colour, tahini dressing.", false),
+        case .ovulation: [("leaf", "Rainbow grain bowl", "Lots of colour, tahini dressing.", false),
                     ("figure.walk", "30-minute walk", "Regular exercise can help with period pain over time.", true),
                     ("drop", "Refill your water", "You've logged high energy this week.", false)]
         case .luteal: [("leaf", "Sweet potato & bean chili", "Slow-release carbs for steadier energy.", false),
@@ -239,7 +360,7 @@ struct TodayView: View {
         let ai = store.plan
         return VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Your plan for today").font(.system(size: 15, weight: .semibold))
+                Text("Your plan for today").font(.cardSubheading)
                 if ai != nil {
                     Text("AI").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -252,6 +373,7 @@ struct TodayView: View {
                     Text(ai == nil ? "optional" : "from today's log").font(.caption).foregroundStyle(Palette.inkFaint)
                 }
             }
+            if !store.aiEnabled { AIOffNotice(feature: "a daily plan based on your logs") }
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: item.icon)
@@ -435,6 +557,104 @@ private struct CycleHandlePosition: AnimatableModifier {
     }
 }
 
+/// Today's place in a 28-day pack, patch or ring cycle, with the break marked.
+/// Like CycleRing, dragging only previews a day and never writes anything.
+struct PackRing: View {
+    @Environment(CycleStore.self) private var store
+    @Binding var previewDay: Int?
+
+    var body: some View {
+        let length = BirthControl.packLength
+        let active = store.birthControl?.activeDays ?? length
+        let day = previewDay ?? store.packDay ?? 1
+        let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
+        VStack(spacing: 16) {
+            GeometryReader { geometry in
+                let size = min(geometry.size.width, geometry.size.height)
+                let radius = size / 2 - 16
+                ZStack {
+                    arc(from: 0, to: active, length: length, color: Palette.blush, current: day <= active)
+                    if active < length {
+                        arc(from: active, to: length, length: length, color: Palette.rose, current: day > active)
+                    }
+                    VStack(spacing: 4) {
+                        Eyebrow(text: store.birthControl?.method == .combinedPill ? "Pack day" : "Day")
+                        Text("\(day)").font(.display(68)).monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text("of \(length)").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    }
+                    .allowsHitTesting(false)
+                    ZStack {
+                        Circle().fill(.clear)
+                        Circle()
+                            .fill(.white)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
+                            .frame(width: 28, height: 28)
+                            .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
+                    }
+                    .frame(width: 48, height: 48)
+                    .contentShape(Circle())
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("packPreviewRing"))
+                        .onChanged { value in selectDay(at: value.location, size: size, length: length) })
+                    .position(x: size / 2 + radius * cos(angle), y: size / 2 + radius * sin(angle))
+                }
+                .frame(width: size, height: size)
+                .coordinateSpace(name: "packPreviewRing")
+            }
+            .frame(width: 230, height: 230)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Pack day preview")
+            .accessibilityValue("Day \(day) of \(length), \(day <= active ? "active days" : "break")")
+            .accessibilityHint("Adjust to explore a day without changing anything")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: previewDay = min(length, day + 1)
+                case .decrement: previewDay = max(1, day - 1)
+                @unknown default: break
+                }
+            }
+
+            HStack(spacing: 12) {
+                legend(Palette.blush, "Active", bold: day <= active)
+                legend(Palette.rose, "Break", bold: day > active)
+            }
+
+            if previewDay != nil {
+                Button("Preview · Back to today") { previewDay = nil }
+                    .font(.system(size: 11, weight: .medium))
+                    .tint(Palette.inkSoft)
+            }
+        }
+    }
+
+    private func selectDay(at point: CGPoint, size: CGFloat, length: Int) {
+        let x = point.x - size / 2
+        let y = point.y - size / 2
+        guard hypot(x, y) > 20 else { return }
+        let fullTurn = 2 * Double.pi
+        let angle = (atan2(Double(y), Double(x)) + Double.pi / 2 + fullTurn)
+            .truncatingRemainder(dividingBy: fullTurn)
+        let picked = min(length, max(1, Int(angle / fullTurn * Double(length)) + 1))
+        previewDay = picked == store.packDay ? nil : picked
+    }
+
+    private func arc(from start: Int, to end: Int, length: Int, color: Color, current: Bool) -> some View {
+        Circle()
+            .trim(from: Double(start) / Double(length) + 0.012, to: Double(end) / Double(length) - 0.012)
+            .stroke(color, style: StrokeStyle(lineWidth: current ? 16 : 14, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(16)
+    }
+
+    private func legend(_ color: Color, _ label: String, bold: Bool) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label).font(.system(size: 10, weight: bold ? .bold : .regular))
+        }
+        .foregroundStyle(bold ? Palette.ink : Palette.inkSoft)
+    }
+}
+
 @MainActor
 struct PeriodQuickEntry: View {
     @Environment(CycleStore.self) private var store
@@ -454,11 +674,38 @@ struct PeriodQuickEntry: View {
 
     private var needsEndDate: Bool { period == nil && laterPeriod != nil }
 
+    /// An end can't come before its start.
+    private var earliest: Date { period.map { CycleStore.cal.startOfDay(for: $0.start) } ?? .distantPast }
+
+    /// One-tap answers for the usual case: today or the two days before.
+    private var recentDays: [Date] {
+        (0..<3).map { CycleStore.add(store.today, -$0) }.filter { $0 >= earliest }
+    }
+
+    private func label(_ day: Date) -> String {
+        if CycleStore.cal.isDateInToday(day) { return "Today" }
+        if CycleStore.cal.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.abbreviated))
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                if let period { Text("Started \(store.fmt(period.start))") }
-                DatePicker("Actual date", selection: $date, in: ...Date(), displayedComponents: .date)
+        VStack(alignment: .leading, spacing: 18) {
+            SheetHeader(eyebrow: period.map { "Period · day \(CycleStore.days(store.today, from: $0.start) + 1)" } ?? "Period") {
+                dismiss()
+            } title: {
+                DisplayTitle(before: "When did it ", accent: period == nil ? "start?" : "end?", size: 30)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    ForEach(recentDays, id: \.self) { day in
+                        Chip(label: label(day), selected: CycleStore.cal.isDate(day, inSameDayAs: date)) { date = day }
+                    }
+                }
+                Divider()
+                DatePicker("Another day", selection: $date, in: earliest...Date(), displayedComponents: .date)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.inkSoft)
                 if period == nil {
                     Toggle("This period has ended", isOn: $hasEndDate)
                     if hasEndDate {
@@ -470,27 +717,52 @@ struct PeriodQuickEntry: View {
                             .foregroundStyle(Palette.inkSoft)
                     }
                 }
-                Text("Choose today or a previous date. Changes can also be corrected on the Cycle calendar.")
-                if let error { Text(error).foregroundStyle(.red) }
-                Button("Save") {
-                    do {
-                        if let period {
-                            try store.savePeriod(id: period.id, start: period.start, end: date)
-                        } else { try store.savePeriod(start: date, end: hasEndDate ? endDate : nil) }
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }.disabled(store.periodStorageError != nil || (needsEndDate && !hasEndDate))
-                if let error = store.periodStorageError { Text(error).foregroundStyle(.red) }
+                if let period {
+                    Text("Started \(store.fmt(period.start)).").font(.caption).foregroundStyle(Palette.inkFaint)
+                }
             }
-            .navigationTitle(period == nil ? "Period started" : "Period ended")
-            .toolbar { Button("Cancel") { dismiss() } }
-            .onChange(of: date) { _, newDate in
-                if endDate < newDate { endDate = newDate }
-                error = nil
+            .card()
+
+            if let error = error ?? store.periodStorageError {
+                Text(error).font(.caption).foregroundStyle(.red)
             }
-            .onChange(of: endDate) { _, _ in error = nil }
-            .onChange(of: hasEndDate) { _, _ in error = nil }
+
+            Button(action: save) {
+                Text(period == nil ? "Start period on \(store.fmt(date))" : "End period on \(store.fmt(date))")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Palette.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.periodStorageError != nil || (needsEndDate && !hasEndDate))
+
+            Text("You can fix dates anytime on the Cycle calendar.")
+                .font(.caption).foregroundStyle(Palette.inkFaint)
+                .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
+        .fittedSheet()
+        .onChange(of: date) { _, newDate in
+            if endDate < newDate { endDate = newDate }
+            error = nil
+        }
+        .onChange(of: endDate) { _, _ in error = nil }
+        .onChange(of: hasEndDate) { _, _ in error = nil }
+    }
+
+    private func save() {
+        do {
+            if let period {
+                try store.savePeriod(id: period.id, start: period.start, end: date)
+            } else { try store.savePeriod(start: date, end: hasEndDate ? endDate : nil) }
+            dismiss()
+        } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -502,49 +774,102 @@ struct CycleSetupView: View {
     @State private var periodDays = 5
     @State private var cycleDays = 28
     @State private var knowsCycle = false
-    @State private var ongoing = false
     @State private var error: String?
+    /// What the sheet opened with, so Save only lights up after an edit.
+    @State private var original: CycleBaseline?
+
+    /// The answers as they'd be saved. Fields behind an "I don't know" toggle don't count.
+    private var edited: CycleBaseline {
+        CycleBaseline(lastStart: knowsStart ? CycleStore.cal.startOfDay(for: start) : nil,
+                      periodDays: periodDays, cycleDays: knowsCycle ? cycleDays : nil)
+    }
+    private var changed: Bool { edited != original }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Most recent period") {
-                    Toggle("I know the start date", isOn: $knowsStart)
-                    if knowsStart {
-                        DatePicker("Started", selection: $start, in: ...Date(), displayedComponents: .date)
-                        if store.ongoingPeriod == nil { Toggle("This period is still ongoing", isOn: $ongoing) }
-                    }
-                    Text("Used as a baseline for estimates. We never infer an actual end date.").font(.caption)
-                }
-                Section("Typical bleeding length") {
-                    Stepper("\(periodDays) days", value: $periodDays, in: 2...10)
-                    Text("Your usual number of bleeding days, not a limit on your records.").font(.caption)
-                }
-                Section("Typical cycle length") {
-                    Toggle("I know my usual cycle length", isOn: $knowsCycle)
-                    if knowsCycle { Stepper("\(cycleDays) days", value: $cycleDays, in: 18...45) }
-                    Text("Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.").font(.caption)
-                }
-                if let error { Text(error).foregroundStyle(.red) }
-                Button("Save and continue") {
-                    do {
-                        try store.saveBaseline(CycleBaseline(lastStart: knowsStart ? start : nil,
-                            periodDays: periodDays, cycleDays: knowsCycle ? cycleDays : nil), ongoing: knowsStart && ongoing)
-                    } catch { self.error = error.localizedDescription }
+        VStack(alignment: .leading, spacing: 18) {
+            SheetHeader(eyebrow: "Cycle details") {
+                store.showCycleSetup = false
+            } title: {
+                DisplayTitle(before: "Your cycle ", accent: "basics", size: 30)
+            }
+
+            section("Most recent period", note: "Used as a baseline for estimates. We never infer an actual end date.") {
+                Toggle("I know the start date", isOn: $knowsStart)
+                if knowsStart {
+                    Divider().overlay(Palette.line)
+                    DatePicker("Started", selection: $start, in: ...Date(), displayedComponents: .date)
                 }
             }
-            .navigationTitle("Your cycle basics")
-            .toolbar {
-                if store.baseline != nil { Button("Cancel") { store.showCycleSetup = false } }
+
+            section("Typical bleeding length", note: "Your usual number of bleeding days, not a limit on your records.") {
+                stepper("Bleeding days", value: $periodDays, range: 2...10)
             }
-            .onAppear {
-                let saved = store.baseline
-                start = saved?.lastStart ?? store.periodHistory.records.first?.start ?? store.today
-                knowsStart = saved == nil || saved?.lastStart != nil
-                periodDays = saved?.periodDays ?? 5
-                cycleDays = saved?.cycleDays ?? 28
-                knowsCycle = saved?.cycleDays != nil
+
+            section("Typical cycle length", note: "Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.") {
+                Toggle("I know my usual cycle length", isOn: $knowsCycle)
+                if knowsCycle {
+                    Divider().overlay(Palette.line)
+                    stepper("Cycle length", value: $cycleDays, range: 18...45)
+                }
             }
-        }.interactiveDismissDisabled()
+
+            if let error { Text(error).font(.caption).foregroundStyle(.red) }
+
+            Button {
+                do {
+                    try store.saveBaseline(edited, ongoing: false)
+                } catch { self.error = error.localizedDescription }
+            } label: {
+                // Say why it's disabled instead of just fading out, like Settings.
+                Text(changed ? "Save changes" : "No changes to save")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Palette.accent.opacity(changed ? 1 : 0.4), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!changed)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
+        .animation(.easeOut(duration: 0.2), value: knowsStart)
+        .animation(.easeOut(duration: 0.2), value: knowsCycle)
+        .fittedSheet()
+        .onAppear {
+            let saved = store.baseline
+            start = saved?.lastStart ?? store.periodHistory.records.first?.start ?? store.today
+            knowsStart = saved == nil || saved?.lastStart != nil
+            periodDays = saved?.periodDays ?? 5
+            cycleDays = saved?.cycleDays ?? 28
+            knowsCycle = saved?.cycleDays != nil
+            original = edited
+        }
+    }
+
+    private func section<C: View>(_ title: String, note: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.system(size: 15, weight: .semibold))
+            VStack(spacing: 12) { content() }
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.inkSoft)
+            Text(note).font(.caption).foregroundStyle(Palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+    }
+
+    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        Stepper(value: value, in: range) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(value.wrappedValue) days").fontWeight(.semibold).foregroundStyle(Palette.ink).monospacedDigit()
+            }
+        }
     }
 }
 

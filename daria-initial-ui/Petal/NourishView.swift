@@ -8,8 +8,11 @@ struct NourishView: View {
     @State private var confirmingClearGrocery = false
     @State private var clearingGrocery = false
     @State private var groceryClearError: String?
+    @State private var editingPreferences = false
+    @Namespace private var tabs
 
-    private var selected: Phase { phase ?? store.currentPhase }
+    /// A tab picked before birth control changed may no longer be offered.
+    private var selected: Phase { phase.flatMap { store.foodPhases.contains($0) ? $0 : nil } ?? store.foodPhase }
 
     var body: some View {
         let key = store.mealKey(selected)
@@ -23,54 +26,25 @@ struct NourishView: View {
                 DisplayTitle(before: "Food ideas for ", accent: title)
             }
 
-            HStack(spacing: 2) {
-                ForEach(Phase.allCases) { p in
-                    Button { phase = p } label: {
-                        Text(p.name + (p == store.currentPhase ? " ·" : ""))
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(p == selected ? Color.white : Palette.inkSoft)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(p == selected ? Palette.accent : Color.clear, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(4)
-            .background(Palette.surface, in: Capsule())
-            .shadow(color: Palette.berry.opacity(0.07), radius: 12, y: 6)
-            .animation(.easeOut(duration: 0.2), value: selected)
+            preferencesButton
 
-            Text(selected.blurb).font(.system(size: 13.5)).foregroundStyle(Palette.inkSoft)
-
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Your preferences", trailing: "filters meals")
-                FlowLayout {
-                    ForEach(CycleStore.dietOptions, id: \.self) { d in
-                        Chip(label: d, selected: store.diets.contains(d), small: true, icon: AnyView(FoodCategoryIcon(category: d))) { store.toggleDiet(d) }
-                    }
-                }
-                Eyebrow(text: "Avoid")
-                FlowLayout {
-                    ForEach(CycleStore.allergenOptions, id: \.self) { a in
-                        Chip(label: a, selected: store.avoid.contains(a), small: true, icon: AnyView(FoodCategoryIcon(category: a))) { store.toggleAvoid(a) }
-                    }
-                }
-            }
-            .card()
+            phaseTabs
 
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("Meal ideas").font(.system(size: 15, weight: .semibold))
+                HStack(spacing: 8) {
+                    Text("Meal ideas").font(.display(22))
                     if generated != nil {
-                        Text("AI").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                        Text("AI")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Palette.accent)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
                             .background(Palette.accentSoft, in: Capsule())
+                            .accessibilityLabel("AI generated")
                     }
                     Spacer()
                     if loading {
                         ProgressView().controlSize(.small)
-                    } else {
+                    } else if store.aiEnabled {
                         Button { Task { await store.loadMeals(for: selected, refresh: true) } } label: {
                             Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .semibold))
                         }
@@ -79,6 +53,7 @@ struct NourishView: View {
                         .accessibilityLabel("New meal ideas")
                     }
                 }
+                if !store.aiEnabled { AIOffNotice(feature: store.tracksPhases ? "recipes picked for your phase and preferences" : "recipes picked for your preferences") }
                 if loading && generated == nil {
                     Text("Cooking up recipes for you…")
                         .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -104,7 +79,9 @@ struct NourishView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 10) {
-                    SectionHeader(title: "Grocery list", trailing: "\(store.grocery.filter { !$0.done }.count) to buy")
+                    Text("Grocery list").font(.display(22))
+                    Spacer()
+                    Text("\(store.grocery.filter { !$0.done }.count) to buy").font(.caption).foregroundStyle(Palette.inkFaint)
                     if clearingGrocery {
                         ProgressView().controlSize(.small)
                     } else {
@@ -162,6 +139,9 @@ struct NourishView: View {
             Text(groceryClearError ?? "Please try again.")
         }
         .task(id: key) { await store.loadMeals(for: selected) }
+        .sheet(isPresented: $editingPreferences) {
+            PreferencesEditor(diets: store.diets, avoid: store.avoid, dislikes: store.dislikes).environment(store)
+        }
         .sheet(item: $openMeal) { meal in
             RecipeSheet(meal: meal, phase: selected)
                 .environment(store)
@@ -172,8 +152,88 @@ struct NourishView: View {
     }
 
     private var title: String {
-        if selected == store.currentPhase { return "right now" }
-        return selected == .menstrual ? "your period" : "the \(selected.name.lowercased()) phase"
+        if !store.tracksPhases { return store.foodName(selected).lowercased() }
+        return switch selected {
+        case .menstrual: "menstrual phase"
+        case .follicular: "follicular phase"
+        case .ovulation: "ovulation phase"
+        case .luteal: "luteal phase"
+        }
+    }
+
+    /// A filter-style chip row: the preferences button, then what's selected. Any chip opens PreferencesEditor.
+    private var preferencesButton: some View {
+        let picked = CycleStore.dietOptions.filter(store.diets.contains).map { ($0, PreferencesEditor.label($0)) }
+            + CycleStore.allergenOptions.filter(store.avoid.contains).map { ($0, "No \($0)") }
+        return ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                Button { editingPreferences = true } label: {
+                    Label(picked.isEmpty ? "Add preferences" : "Preferences", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Palette.mist, in: Capsule())
+                }
+                ForEach(picked, id: \.0) { category, label in
+                    Button { editingPreferences = true } label: {
+                        HStack(spacing: 6) {
+                            FoodCategoryIcon(category: category).frame(width: 13, height: 13).accessibilityHidden(true)
+                            Text(label).font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Palette.surface, in: Capsule())
+                        .overlay(Capsule().stroke(Palette.line))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 1)
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Food preferences: \(picked.isEmpty ? "none set" : picked.map(\.1).joined(separator: ", "))")
+        .accessibilityHint("Opens the preferences editor")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Folder-style tabs: the selected phase opens into its tip, so the two read as one piece.
+    private var phaseTabs: some View {
+        let isFirst = selected == store.foodPhases.first
+        let isLast = selected == store.foodPhases.last
+        return VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                ForEach(store.foodPhases) { p in
+                    Button { phase = p } label: {
+                        Text(store.foodName(p) + (p == store.foodPhase ? " ·" : ""))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(p == selected ? Palette.accent : Palette.inkSoft)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 11).padding(.bottom, 9)
+                            .background {
+                                if p == selected {
+                                    UnevenRoundedRectangle(topLeadingRadius: 16, topTrailingRadius: 16, style: .continuous)
+                                        .fill(Palette.mist)
+                                        .matchedGeometryEffect(id: "tab", in: tabs)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(p == selected ? .isSelected : [])
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Eyebrow(text: store.tracksPhases ? "Eat for this phase" : "Eat for these days")
+                Text(store.foodTip(selected)).font(.system(size: 14, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .background(Palette.mist, in: UnevenRoundedRectangle(topLeadingRadius: isFirst ? 0 : 18, bottomLeadingRadius: 18,
+                                                                 bottomTrailingRadius: 18, topTrailingRadius: isLast ? 0 : 18,
+                                                                 style: .continuous))
+        }
+        .animation(.easeOut(duration: 0.25), value: selected)
     }
 
     private func mealRow(_ meal: Meal) -> some View {
@@ -208,8 +268,8 @@ struct NourishView: View {
                         FoodCategoryIcon(category: d)
                             .frame(width: 14, height: 14)
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Palette.surface2, in: Capsule())
-                            .foregroundStyle(Palette.accent)
+                            .background(Palette.secondarySurface, in: Capsule())
+                            .foregroundStyle(Palette.secondaryAccent)
                             .accessibilityLabel(d)
                             .help(d)
                     }
@@ -232,7 +292,7 @@ struct RecipeSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
-                    Eyebrow(text: "Recipe · \(phase.name)")
+                    Eyebrow(text: "Recipe · \(store.foodName(phase))")
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
@@ -311,6 +371,164 @@ struct RecipeSheet: View {
 }
 
 /// Shared artwork for the filter pills and meal badges; category strings stay unchanged.
+/// Diet, avoid and dislikes. Edits stay local until Save, so closing discards them.
+private struct PreferencesEditor: View {
+    @Environment(CycleStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    private let original: (diets: Set<String>, avoid: Set<String>, dislikes: [String])
+    @State private var diets: Set<String>
+    @State private var avoid: Set<String>
+    @State private var dislikes: [String]
+
+    init(diets: Set<String>, avoid: Set<String>, dislikes: [String]) {
+        original = (diets, avoid, dislikes)
+        _diets = State(initialValue: diets)
+        _avoid = State(initialValue: avoid)
+        _dislikes = State(initialValue: dislikes)
+    }
+
+    static func label(_ option: String) -> String { FoodPreferencesForm.label(option) }
+
+    private var changed: Bool { diets != original.diets || avoid != original.avoid || dislikes != original.dislikes }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            SheetHeader(eyebrow: "Nourish") {
+                dismiss()
+            } title: {
+                DisplayTitle(before: "Your ", accent: "preferences", size: 30)
+            }
+            Text("Meal ideas only show recipes that fit.")
+                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                .padding(.top, -14)
+            FoodPreferencesForm(diets: $diets, avoid: $avoid, dislikes: $dislikes)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, changed ? 90 : 16)
+        .foregroundStyle(Palette.ink)
+        .fittedSheet()
+        .scrollDismissesKeyboard(.interactively)
+        .overlay(alignment: .bottom) {
+            if changed {
+                Button {
+                    store.savePreferences(diets: diets, avoid: avoid, dislikes: dislikes)
+                    dismiss()
+                } label: {
+                    Text("Save")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Palette.accent, in: Capsule())
+                        .shadow(color: Palette.berry.opacity(0.2), radius: 12, y: 4)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20).padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: changed)
+    }
+}
+
+/// The diet, avoid and dislike lists, shared by PreferencesEditor and onboarding.
+struct FoodPreferencesForm: View {
+    @Binding var diets: Set<String>
+    @Binding var avoid: Set<String>
+    @Binding var dislikes: [String]
+    @State private var newDislike = ""
+
+    static func label(_ option: String) -> String { option.prefix(1).uppercased() + option.dropFirst() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            section("Diet", options: CycleStore.dietOptions, selected: diets) { diets.formSymmetricDifference([$0]) }
+            section("Avoid", options: CycleStore.allergenOptions, selected: avoid) { avoid.formSymmetricDifference([$0]) }
+            dislikesSection
+        }
+    }
+
+    private func section(_ title: String, options: [String], selected: Set<String>, toggle: @escaping (String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Eyebrow(text: title).padding(.bottom, 4)
+            ForEach(Array(options.enumerated()), id: \.element) { index, option in
+                let on = selected.contains(option)
+                if index > 0 { Divider() }
+                Button { toggle(option) } label: {
+                    HStack(spacing: 14) {
+                        FoodCategoryIcon(category: option)
+                            .frame(width: 18, height: 18)
+                            .foregroundStyle(Palette.inkSoft)
+                            .accessibilityHidden(true)
+                        Text(Self.label(option)).font(.system(size: 16))
+                        Spacer()
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(on ? Palette.accent : Palette.inkFaint.opacity(0.4))
+                    }
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .sensoryFeedback(.selection, trigger: on)
+            }
+        }
+    }
+
+    private var dislikesSection: some View {
+        let cleaned = CycleStore.cleanDislike(newDislike)
+        let canAdd = !cleaned.isEmpty && !dislikes.contains(cleaned) && dislikes.count < 20
+        return VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(text: "Don't like")
+            Text("Foods to leave out of meal ideas")
+                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+            HStack(spacing: 8) {
+                TextField("Add a food", text: $newDislike)
+                    .font(.system(size: 15))
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.done)
+                    .onSubmit { if canAdd { addDislike(cleaned) } }
+                Button { addDislike(cleaned) } label: {
+                    Image(systemName: "plus.circle.fill").font(.system(size: 24))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.accent)
+                .opacity(canAdd ? 1 : 0.35)
+                .disabled(!canAdd)
+                .accessibilityLabel("Add food")
+            }
+            .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
+            .background(Palette.surface, in: Capsule())
+            .overlay(Capsule().stroke(Palette.line))
+            if !dislikes.isEmpty {
+                FlowLayout {
+                    ForEach(dislikes, id: \.self) { food in
+                        Button { dislikes.removeAll { $0 == food } } label: {
+                            HStack(spacing: 6) {
+                                Text(Self.label(food)).font(.system(size: 14, weight: .medium))
+                                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.inkSoft)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Palette.surface, in: Capsule())
+                            .overlay(Capsule().stroke(Palette.line))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(food)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func addDislike(_ food: String) {
+        dislikes.append(food)
+        newDislike = ""
+    }
+}
+
+
 private struct FoodCategoryIcon: View {
     let category: String
 

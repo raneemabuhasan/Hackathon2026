@@ -3,19 +3,25 @@ import SwiftUI
 @MainActor
 struct SymptomComparisonView: View {
     @Environment(CycleStore.self) private var store
+    /// Exact tool result attached to this Companion response.
+    var snapshot: CycleComparison? = nil
     @State private var first: Date?
     @State private var second: Date?
     @State private var showingDetails = false
 
-    private var cycles: [ComparedCycle] { Array(store.comparisonCycles.reversed()) }
+    private var cycles: [ComparedCycle] {
+        if let snapshot { return [snapshot.later, snapshot.earlier] }
+        return Array(store.comparisonCycles.reversed())
+    }
     private var comparison: CycleComparison? {
+        if let snapshot { return snapshot }
         guard cycles.count >= 2 else { return nil }
         let a = cycles.first { $0.start == first } ?? cycles[0]
         let b = cycles.first { $0.start == second } ?? cycles[1]
         return SymptomComparisonEngine.compare(a, b)
     }
 
-    /// A short preview for the Calendar carousel; the full breakdown opens in a sheet.
+    /// An on-demand Companion preview; the full breakdown opens in a sheet.
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Compare cycles")
@@ -29,9 +35,14 @@ struct SymptomComparisonView: View {
                 Text("Mark the start of at least two periods on the calendar. Then you can compare what you logged in each cycle.")
                     .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
             } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
-                    selector("Compare with", selection: $second, fallback: cycles[1].start)
+                if let snapshot {
+                    Text("\(label(snapshot.earlier)) · \(label(snapshot.later))")
+                        .font(.caption).foregroundStyle(Palette.inkSoft)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
+                        selector("Compare with", selection: $second, fallback: cycles[1].start)
+                    }
                 }
                 if let result = comparison {
                     if result.observations.isEmpty {
@@ -82,7 +93,7 @@ struct SymptomComparisonView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Choose two cycles to see what you logged in each one.")
+            Text(snapshot == nil ? "Choose two cycles to see what you logged in each one." : "Saved entries for the two cycles you requested.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
             if !store.logsLoaded {
                 ProgressView("Loading symptom history")
@@ -93,10 +104,12 @@ struct SymptomComparisonView: View {
             } else if cycles.count < 2 {
                 Text("Add a little more history")
                     .font(.headline)
-                Text("Mark the start of at least two periods on the calendar above. Then you can compare what you logged in each cycle.")
+                Text("Mark the start of at least two periods on the calendar. Then you can compare what you logged in each cycle.")
             } else {
-                selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
-                selector("Compare with", selection: $second, fallback: cycles[1].start)
+                if snapshot == nil {
+                    selector("Choose a cycle", selection: $first, fallback: cycles[0].start)
+                    selector("Compare with", selection: $second, fallback: cycles[1].start)
+                }
                 if let result = comparison {
                     if result.later.isOngoing {
                         Label("The cycle starting \(label(result.later)) is still in progress.", systemImage: "clock")
@@ -179,7 +192,7 @@ struct SymptomComparisonView: View {
         .accessibilityElement(children: .combine)
     }
     private func label(_ cycle: ComparedCycle) -> String {
-        cycle.start.formatted(date: .abbreviated, time: .omitted)
+        cycle.start.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))
     }
     private func selector(_ title: String, selection: Binding<Date?>, fallback: Date) -> some View {
         Picker(title, selection: Binding<Date>(get: {
@@ -199,7 +212,7 @@ struct SymptomComparisonView: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.date.formatted(date: .abbreviated, time: .omitted)).bold()
+                Text(entry.date.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))).bold()
                 Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
                 Text("Daily pain: \(rating(entry.pain))")
                 if !entry.note.isEmpty { Text(entry.note) }

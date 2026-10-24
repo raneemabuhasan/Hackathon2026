@@ -13,6 +13,8 @@ final class AuthModel {
     private(set) var ready = false
     var busy = false
     var error: String?
+    /// True while an account is being erased, so the app shows the splash instead of onboarding.
+    private(set) var deletingAccount = false
 
     private var handle: AuthStateDidChangeListenerHandle?
 
@@ -67,17 +69,22 @@ final class AuthModel {
     // MARK: Delete account
 
     /// Erases the user's data, then the sign-in itself. Firebase only deletes an account after a
-    /// recent sign-in, so Google users confirm with Google first; that way nothing is half-deleted.
-    func deleteAccount(_ store: CycleStore) async {
+    /// recent sign-in, so users confirm with Google or their password first; that way nothing is half-deleted.
+    func deleteAccount(_ store: CycleStore, password: String? = nil) async {
+        deletingAccount = true
+        defer { deletingAccount = false }
         await run {
             guard let user = Auth.auth().currentUser else { return }
             if user.providerData.contains(where: { $0.providerID == GoogleAuthProviderID }) {
                 try await user.reauthenticate(with: try await googleCredential())
+            } else if let email = user.email, let password {
+                try await user.reauthenticate(with: EmailAuthProvider.credential(withEmail: email, password: password))
             }
             try await store.deleteAllData()
             store.stop()
+            // Sign out even if the delete fails: the data is gone, so an empty account would land in onboarding.
+            defer { signOut() }
             try await user.delete()
-            GIDSignIn.sharedInstance.signOut()
         }
     }
 
@@ -110,7 +117,7 @@ final class AuthModel {
         case .wrongPassword, .invalidCredential, .userNotFound: return "Email or password is incorrect."
         case .networkError: return "Couldn't reach the server. Check your connection."
         case .accountExistsWithDifferentCredential: return "This email is already linked to another sign-in method."
-        case .requiresRecentLogin: return "Your data was deleted. To remove the account too, sign out, sign back in and delete it again."
+        case .requiresRecentLogin: return "Your data was deleted, but the account needs a fresh sign-in to remove. Sign in, then delete it again from Settings."
         default: return error.localizedDescription
         }
     }

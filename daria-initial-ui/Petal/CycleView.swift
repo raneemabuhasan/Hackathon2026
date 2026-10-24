@@ -100,23 +100,15 @@ struct CycleView: View {
     }
 
     private var periodControlsSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    if let entry = store.log(for: selectedDate) { calendarLogPreview(entry) }
-                    periodControls
-                }.padding(16)
-            }
-            .background(Palette.bg)
-            .navigationTitle("Track your period")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showingPeriodControls = false }
-                }
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            periodControls
+            if let entry = store.log(for: selectedDate) { calendarLogPreview(entry) }
         }
-        .presentationDetents([.large])
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .foregroundStyle(Palette.ink)
+        .fittedSheet()
         .sheet(item: $addingPastPeriod) { draft in
             PastPeriodEditor(start: draft.start).environment(store)
         }
@@ -185,12 +177,15 @@ struct CycleView: View {
 
     private var periodControls: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: selectedDate.formatted(.dateTime.weekday(.wide)))
-                Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                    .font(.display(30))
-                    .accessibilityAddTraits(.isHeader)
-                statusPill
+            SheetHeader(eyebrow: selectedDate.formatted(.dateTime.weekday(.wide))) {
+                showingPeriodControls = false
+            } title: {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
+                        .font(.display(28))
+                        .accessibilityAddTraits(.isHeader)
+                    statusPill
+                }
             }
 
             if let error = store.periodStorageError {
@@ -235,28 +230,12 @@ struct CycleView: View {
                     .font(.caption).foregroundStyle(Palette.inkSoft)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Your periods",
-                              trailing: store.periodHistory.records.isEmpty ? nil : "\(store.periodHistory.records.count) recorded")
-                if store.periodHistory.records.isEmpty {
-                    Text("No periods recorded yet. Mark a start above, or add one from the past.")
-                        .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+            // Only the period this day belongs to; any other day is one tap away on the calendar.
+            if let record = displayedStartPeriod {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: "This period")
+                    periodRow(record)
                 }
-                ForEach(store.periodHistory.records) { record in periodRow(record) }
-                Button {
-                    addingPastPeriod = PeriodRecord(start: min(selectedDate, store.today))
-                } label: {
-                    Label("Add a past period", systemImage: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .overlay(Capsule().stroke(Palette.rose.opacity(0.3)))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Palette.accent)
-                .disabled(store.periodStorageError != nil)
-                .padding(.top, 4)
             }
         }
         .tint(Palette.accent)
@@ -348,6 +327,10 @@ struct CycleView: View {
     // MARK: Calendar
 
     private var monthPicker: some View {
+        let monthNames = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
         let currentYear = CycleStore.cal.component(.year, from: store.today)
         let displayedYear = CycleStore.cal.component(.year, from: month)
         let years = min(currentYear - 100, displayedYear)...max(currentYear + 100, displayedYear)
@@ -371,7 +354,7 @@ struct CycleView: View {
             HStack(spacing: 0) {
                 Picker("Month", selection: $pickerMonth) {
                     ForEach(1...12, id: \.self) { value in
-                        Text(CycleStore.cal.monthSymbols[value - 1]).tag(value)
+                        Text(monthNames[value - 1]).tag(value)
                     }
                 }
                 Picker("Year", selection: $pickerYear) {
@@ -414,9 +397,9 @@ struct CycleView: View {
                     showingMonthPicker = true
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(month.formatted(.dateTime.month(.wide))).font(.display(30))
-                        Text(month.formatted(.dateTime.year())).font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Palette.inkFaint)
+                        Text(month.formatted(.dateTime.month(.wide).year()))
+                            .font(.display(30))
+                            .foregroundStyle(Palette.ink)
                         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Palette.inkSoft)
                     }
@@ -553,8 +536,12 @@ struct CycleView: View {
         let isToday = CycleStore.cal.isDate(day, inSameDayAs: store.today)
         let isSelected = hasSelectedDate && CycleStore.cal.isDate(day, inSameDayAs: selectedDate)
         return Button {
-            store.selectedCalendarDate = day
-            showingPeriodControls = true
+            // First tap selects the day; tapping the selected day again opens its period controls.
+            if isSelected {
+                showingPeriodControls = true
+            } else {
+                store.selectedCalendarDate = day
+            }
         } label: {
             // A stable row height prevents two-digit dates from being compressed
             // by an aspect-ratio proposal. The entire cell accepts taps.
@@ -599,7 +586,8 @@ struct CycleView: View {
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
                             + (predicted ? ", predicted period" : period ? ", period" : "")
                             + (periodDay.map { ", period day \($0)" } ?? ""))
-        .accessibilityHint("Opens period start and end controls for this date")
+        .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date. Activate again to open period start and end controls.")
+        .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -622,7 +610,7 @@ struct CycleView: View {
         RecordedCycle.recent(from: store.periodHistory.records)
     }
 
-    /// Cycle length, symptom summary and cycle comparison, swiped through one at a time.
+    /// Cycle length and symptom summary, swiped through one at a time.
     private var insights: some View {
         let current = insightPage ?? 0
         return VStack(spacing: 10) {
@@ -632,11 +620,10 @@ struct CycleView: View {
                         Group {
                             switch page {
                             case 0: lengths
-                            case 1: symptoms
-                            default: SymptomComparisonView()
+                            default: symptoms
                             }
                         }
-                        // Stretch to the tallest card so all three match, without a fixed height.
+                        // Stretch to the tallest card so both match, without a fixed height.
                         .frame(maxHeight: .infinity, alignment: .top)
                         .card()
                         .containerRelativeFrame(.horizontal)
@@ -668,7 +655,7 @@ struct CycleView: View {
         }
     }
 
-    private static let insightCount = 3
+    private static let insightCount = 2
 
     private func carouselArrow(_ icon: String, label: String, enabled: Bool, to page: @escaping () -> Int) -> some View {
         Button {

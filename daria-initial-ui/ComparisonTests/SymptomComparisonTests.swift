@@ -2,6 +2,28 @@ import XCTest
 @testable import PetalComparison
 
 final class SymptomComparisonTests: XCTestCase {
+    func testRequestedCycleScopeIncludesAllLatestRangeAndExactStarts() {
+        let history = cycles([], starts: [day(0), day(10), day(20), day(30)])
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .all)?.count, 4)
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .latest(3))?.map(\.start),
+                       [day(10), day(20), day(30)])
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .range(day(10), day(20)))?.map(\.start),
+                       [day(10), day(20)])
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .starts([day(30), day(0), day(0)]))?.map(\.start),
+                       [day(0), day(30)])
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .latest(10))?.count, 4)
+    }
+
+    func testInvalidCycleScopeDoesNotSilentlyChooseDifferentCycles() {
+        let history = cycles([])
+        XCTAssertNil(SymptomComparisonEngine.select(history, matching: .latest(0)))
+        XCTAssertNil(SymptomComparisonEngine.select(history, matching: .range(day(20), day(10))))
+        XCTAssertNil(SymptomComparisonEngine.select(history, matching: .starts([day(5)])))
+        XCTAssertNil(SymptomComparisonEngine.select(history, matching: .starts([])))
+        XCTAssertEqual(SymptomComparisonEngine.select(history, matching: .range(day(50), day(60)))?.count, 0)
+        XCTAssertEqual(SymptomComparisonEngine.select([], matching: .all)?.count, 0)
+    }
+
     func testDatabaseAdapterPreservesDocumentIdentityAndDoesNotInventZeroPain() {
         let missing = ComparisonEntry.databaseEntry(id: "2026-10-01", date: day(0), symptoms: ["Cramps"], pain: 0, note: "strong")
         XCTAssertEqual(missing.id, "2026-10-01")

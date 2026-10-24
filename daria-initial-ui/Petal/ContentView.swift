@@ -26,16 +26,16 @@ struct ContentView: View {
             TabBar()
                 .background {
                     Rectangle()
-                        .fill(.regularMaterial)
-                        .overlay(Palette.bg.opacity(0.35))
+                        .fill(.thickMaterial)
+                        .overlay(Palette.bg.opacity(0.45))
                         .mask {
                             LinearGradient(stops: [
                                 .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.25),
-                                .init(color: .black, location: 1)
+                                .init(color: .white, location: 0.24),
+                                .init(color: .white, location: 1)
                             ], startPoint: .top, endPoint: .bottom)
                         }
-                        .padding(.top, -18)
+                        .padding(.top, -24)
                         .ignoresSafeArea(edges: .bottom)
                         .allowsHitTesting(false)
                 }
@@ -61,8 +61,10 @@ struct ContentView: View {
                 .presentationBackground(Palette.bg)
         }
         .environment(store)
-        .fullScreenCover(isPresented: $store.showCycleSetup) {
-            CycleSetupView().environment(store)
+        .sheet(isPresented: $store.showCycleSetup) {
+            CycleSetupView()
+                .environment(store)
+                .presentationCornerRadius(32)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.today = Calendar.current.startOfDay(for: Date()) }
@@ -75,6 +77,7 @@ struct ContentView: View {
 @MainActor
 struct TabBar: View {
     @Environment(CycleStore.self) private var store
+    @Namespace private var activeTab
 
     var body: some View {
         HStack(spacing: 0) {
@@ -112,13 +115,27 @@ struct TabBar: View {
             VStack(spacing: 3) {
                 // Symbols differ in height; a fixed slot keeps every label on the same line.
                 Image(systemName: icon).font(.system(size: 19, weight: selected ? .semibold : .regular))
+                    .symbolVariant(selected ? .fill : .none)
                     .frame(height: 24)
                 Text(title).font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
+            .background {
+                // One pill that slides to whichever tab is active.
+                if selected {
+                    Capsule().fill(Palette.mist).matchedGeometryEffect(id: "pill", in: activeTab)
+                }
+            }
+            .padding(.horizontal, 2)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .animation(.spring(duration: 0.3, bounce: 0.2), value: store.tab)
     }
 }
 
