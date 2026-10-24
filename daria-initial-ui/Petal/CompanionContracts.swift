@@ -104,6 +104,22 @@ struct Reminder: Identifiable, Codable {
     var daysBefore: Int? = nil
     /// Repeat interval for `.everyWeeks`, counted from `date`, e.g. a patch change.
     var weeks: Int? = nil
+    /// Optional weekdays for daily reminders: Calendar weekday values, Sunday = 1.
+    /// nil retains the original every-day schedule for older reminders.
+    var weekdays: [Int]? = nil
+
+    var repeatWeekdays: [Int]? {
+        weekdays.map { values in [2, 3, 4, 5, 6, 7, 1].filter { values.contains($0) } }
+    }
+
+    /// Calendar triggers shared by the existing notification scheduler and contract tests.
+    var dailyNotificationComponents: [DateComponents] {
+        guard kind == .daily else { return [] }
+        if let weekdays = repeatWeekdays {
+            return weekdays.map { DateComponents(hour: hour, minute: minute, weekday: $0) }
+        }
+        return [DateComponents(hour: hour, minute: minute)]
+    }
     var on = true
     var created = Date()
     /// Opens with a greeting for the time of day and the user's name, e.g. "Good evening, Maya."
@@ -135,6 +151,7 @@ extension ReminderPatch {
         if let schedule {
             guard let kind = Reminder.Kind(rawValue: schedule == "before_period" ? "beforePeriod" : schedule) else { throw ContractError.invalid("Unknown schedule.") }
             reminder.kind = kind
+            reminder.weekdays = nil
         }
         if reminder.kind == .once {
             guard let resolved = date.flatMap({ LogDate.parse($0) }) ?? reminder.date,

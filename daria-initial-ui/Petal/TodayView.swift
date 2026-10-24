@@ -4,41 +4,87 @@ import SwiftUI
 struct TodayView: View {
     @Environment(CycleStore.self) private var store
     @Environment(AuthModel.self) private var auth
+    @State private var showMood = false
+    @State private var showSymptoms = false
+    @State private var showFlow = false
     @State private var showSettings = false
     @State private var showPeriodEntry = false
+    @State private var headerHeight: CGFloat = 0
     /// Day picked on the cycle ring; nil means today.
     @State private var previewDay: Int?
 
+    @State private var editing: ReminderSheet?
+
+    /// Which reminder the editor sheet is open for.
+    private enum ReminderSheet: Identifiable {
+        case new, edit(Reminder)
+        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
+    }
+
     var body: some View {
-        Page {
-            HStack(alignment: .top) {
-                // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
-                TimelineView(.everyMinute) { context in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                        DisplayTitle(before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
-                                     accent: store.name)
+        GeometryReader { viewport in
+            Page {
+                HStack(alignment: .top) {
+                    // Re-checks every minute so the greeting moves on from morning to afternoon by itself.
+                    TimelineView(.everyMinute) { context in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                            DisplayTitle(
+                                before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                accent: store.name
+                            )
+                        }
+                    }
+
+                    Spacer()
+
+                    Button { showSettings = true } label: {
+                        Text(String(store.name.prefix(1)).uppercased())
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Palette.accent)
+                            .frame(width: 42, height: 42)
+                            .background(Palette.accentSoft, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings")
+                }
+                .background {
+                    GeometryReader { header in
+                        Color.clear.preference(key: TodayHeaderHeight.self, value: header.size.height)
                     }
                 }
-                Spacer()
-                Button { showSettings = true } label: {
-                    Text(String(store.name.prefix(1)).uppercased())
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 42, height: 42)
-                        .background(Palette.accentSoft, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
-            }
 
-            hero
-            prediction
-            week
-            quickActions
-            Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
-            plan
+                hero(minHeight: max(0, viewport.size.height - headerHeight - 34))
+                    .padding(.top, -10)
+                week
+                quickActions
+                Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
+                plan
+                reminders
+            }
         }
+        .sheet(isPresented: $showFlow) {
+            LogSheet(flowOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+        .sheet(isPresented: $showSymptoms) {
+            LogSheet(symptomsOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+        .sheet(isPresented: $showMood) {
+            LogSheet(moodOnly: true)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+        .onPreferenceChange(TodayHeaderHeight.self) { headerHeight = $0 }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environment(store)
@@ -48,13 +94,80 @@ struct TodayView: View {
         }
     }
 
+    private var reminders: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.badge")
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 40, height: 40)
+                    .background(Palette.accentSoft, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reminders").font(.cardSubheading).foregroundStyle(Palette.wine)
+                    Text("Little nudges for your routine")
+                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                }
+                Spacer(minLength: 0)
+            }
+            if let error = store.remindersError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            } else if !store.remindersLoaded {
+                ProgressView("Loading reminders")
+            } else if store.reminders.isEmpty {
+                Text("Add a reminder for your daily routine or a day that works for you.")
+                    .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+            }
+            ForEach(store.reminders) { r in
+                HStack(spacing: 12) {
+                    Button { editing = .edit(r) } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(r.title).font(.system(size: 14, weight: .semibold))
+                                Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Edit reminder")
+                    Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
+                        .labelsHidden()
+                        .tint(Palette.accent)
+                }
+                .padding(12)
+            }
+            Button { editing = .new } label: {
+                Text("New reminder")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+            .buttonStyle(.plain)
+        }
+        .card()
+        .sheet(item: $editing) { target in
+            ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+                .presentationBackground(Palette.bg)
+        }
+    }
+
     static func greeting(at date: Date) -> String {
-        Reminder.greeting(hour: Calendar.current.component(.hour, from: date))
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        default: "Good evening"
+        }
     }
 
     // MARK: Cycle ring
 
-    /// The date the ring is showing, so the button acts on that day.
+    /// The date the ring is showing so the button acts on that day.
     private var ringDate: Date {
         if let packDay = store.packDay {
             return CycleStore.add(store.today, (previewDay ?? packDay) - packDay)
@@ -62,43 +175,45 @@ struct TodayView: View {
         return CycleStore.add(store.lastStart, (previewDay ?? max(1, store.cycleDay)) - 1)
     }
 
-    private var hero: some View {
-        let period = store.period(on: ringDate)
-        let word = store.tracksPhases ? "Period" : "Bleed"
-        return VStack(spacing: 26) {
+    // MARK: Cycle ring
+
+    private func hero(minHeight: CGFloat) -> some View {
+        // A completed period can include today; only an unfinished record can be ended.
+        let period = store.ongoingPeriod
+        return VStack(spacing: 12) {
             switch store.cycleMode {
             case .natural: CycleRing(previewDay: $previewDay)
             case .pack: PackRing(previewDay: $previewDay)
             case .steady: steadySummary
             }
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 Button {
                     showPeriodEntry = true
                 } label: {
-                    Text(period == nil ? "\(word) started" : "\(word) ended")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 10)
-                        .background(Palette.accent, in: Capsule())
+                    Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PeriodEntryPressStyle())
 
                 Button("Edit cycle details") { store.showCycleSetup = true }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
+                    .font(.system(size: 13, weight: .medium))
+                    .tint(Palette.wine)
                     .frame(minHeight: 44)
             }
+            prediction
+                .padding(.horizontal, -16)
+                .padding(.bottom, -14)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 24)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(colors: [Palette.blushPink, Palette.mist, Palette.cream],
-                           startPoint: .top, endPoint: .bottom),
-            in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .bottom)
+        .background {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(LinearGradient(colors: [Color(hex: 0xFAC8D4), Palette.mist, Palette.cream],
+                                     startPoint: .top, endPoint: .bottom))
+                .shadow(color: Palette.wine.opacity(0.09), radius: 10, x: 0, y: 6)
+        }
         .sheet(isPresented: $showPeriodEntry) {
-            PeriodQuickEntry(period: period, date: min(ringDate, store.today)).environment(store)
+            PeriodQuickEntry(period: period, date: store.today).environment(store)
         }
     }
 
@@ -123,59 +238,49 @@ struct TodayView: View {
         if store.predictsBleeds { predictionCard }
     }
 
-       private var predictionCard: some View {
-        let daysTo = max(0, CycleStore.days(store.windowStart, from: store.today))
-        // Old predictions may end in the past. Never divide by zero or give SwiftUI NaN frames.
-        let total = Double(max(1, CycleStore.days(store.windowEnd, from: store.today) + 4))
-        let pct = { (d: Date) in
-            min(1.0, max(0.0, Double(CycleStore.days(d, from: store.today)) / total))
-        }
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Eyebrow(text: store.tracksPhases ? "Next period, likely" : "Next bleed, likely")
-                Spacer()
-                Text("in \(daysTo)–\(daysTo + store.spread * 2) days").font(.caption).foregroundStyle(Palette.inkFaint)
-            }
-            Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
-                .font(.display(30))
-                .monospacedDigit()
-
-            GeometryReader { geo in
-                let w = geo.size.width
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Palette.surface2).frame(height: 6)
-                    Capsule()
-                        .fill(LinearGradient(colors: [Palette.blush.opacity(0), Palette.pink, Palette.blush.opacity(0)],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: w * (pct(store.windowEnd) - pct(store.windowStart) + 0.08), height: 14)
-                        .offset(x: w * (pct(store.windowStart) - 0.04))
-                    RoundedRectangle(cornerRadius: 2).fill(Palette.ink).frame(width: 3, height: 22)
+    private var predictionCard: some View {
+        let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
+        let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
+        return Button {
+            store.tab = .cycle
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 25, weight: .medium))
+                    .foregroundStyle(Palette.rose)
+                Rectangle()
+                    .fill(Palette.rose.opacity(0.25))
+                    .frame(width: 1, height: 36)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(Palette.inkSoft)
+                    Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
+                        .font(.display(19))
+                        .foregroundStyle(Palette.wine)
+                        .monospacedDigit()
                 }
-                .frame(height: 24)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+                Text("in \(earliest)–\(latest) days")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.inkSoft)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.inkSoft)
             }
-            .frame(height: 24)
-            HStack {
-                Text("Today")
-                Spacer()
-                Text(store.fmt(CycleStore.add(store.today, Int(total))))
-            }
-            .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
-
-            if store.tracksPhases {
-                Text(store.completedCycles.isEmpty
-                     ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
-                     : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
-                    .font(.caption).foregroundStyle(Palette.inkFaint)
-                // From Raneem's version: be clear this is an estimate, and never for contraception.
-                Text("This is an approximate window, not a guaranteed date. Calendar-only ovulation estimate: around cycle day \(max(1, store.average - 14)). Ovulation isn't confirmed; don't use this for contraception.")
-                    .font(.caption).foregroundStyle(Palette.inkSoft)
-            } else {
-                Text("Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule. A bleed in the break is a withdrawal bleed, not a period, and it can be lighter, later or skipped.")
-                    .font(.caption).foregroundStyle(Palette.inkFaint)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
-        .card()
+        .buttonStyle(EstimatePressStyle())
+        .accessibilityHint("Opens the Calendar page. Dates are estimates.")
     }
 
 
@@ -214,7 +319,12 @@ struct TodayView: View {
     }
 
     private func quick(_ title: String, _ icon: String) -> some View {
-        Button { store.showLog = true } label: {
+        Button {
+            if title == "Mood" { showMood = true }
+            else if title == "Symptoms" { showSymptoms = true }
+            else if title == "Flow" { showFlow = true }
+            else { store.showLog = true }
+        } label: {
             VStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundStyle(Palette.accent)
                 Text(title).font(.system(size: 12, weight: .semibold))
@@ -250,7 +360,7 @@ struct TodayView: View {
         let ai = store.plan
         return VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Your plan for today").font(.system(size: 15, weight: .semibold))
+                Text("Your plan for today").font(.cardSubheading)
                 if ai != nil {
                     Text("AI").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -293,6 +403,7 @@ struct TodayView: View {
 /// Explores the user's cycle day by day. Selection never writes to the recorded cycle.
 struct CycleRing: View {
     @Environment(CycleStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var previewDay: Int?
 
     /// Same length and phases as the prediction card, calendar and Nourish.
@@ -306,7 +417,7 @@ struct CycleRing: View {
     private var selectedPhase: Phase { store.phase(forDay: selectedDay) }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             GeometryReader { geometry in
                 let size = min(geometry.size.width, geometry.size.height)
                 let radius = size / 2 - 16
@@ -327,12 +438,19 @@ struct CycleRing: View {
                     }
 
                     VStack(spacing: 4) {
-                        Eyebrow(text: "Cycle day")
+                        Text("Cycle day".uppercased())
+                            .font(.system(size: 13, weight: .semibold))
+                            .tracking(1.5)
+                            .foregroundStyle(Palette.inkSoft)
                         Text("\(shownDay)")
-                            .font(.display(68)).monospacedDigit()
+                            .font(.display(74)).monospacedDigit()
                             .contentTransition(.numericText())
-                        Text("of about \(cycleLength) days")
-                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                        Text(selectedPhase == .menstrual ? "Menstrual phase" : "\(selectedPhase.name) phase")
+                            .font(.display(19))
+                            .foregroundStyle(Palette.wine)
+                        Text("of your \(cycleLength)-day cycle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.inkSoft)
                     }
                     .allowsHitTesting(false)
 
@@ -341,23 +459,22 @@ struct CycleRing: View {
                         Circle()
                             .fill(.white)
                             .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
-                            .frame(width: 28, height: 28)
-                            .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
+                            .frame(width: 32, height: 32)
+                            .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 2)
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cyclePreviewRing"))
                         .onChanged { value in selectDay(at: value.location, size: size) })
-                    .position(x: size / 2 + radius * cos(angle),
-                              y: size / 2 + radius * sin(angle))
+                    .modifier(CycleHandlePosition(angle: angle, radius: radius, center: size / 2))
                 }
                 .frame(width: size, height: size)
                 .coordinateSpace(name: "cyclePreviewRing")
             }
-            .frame(width: 230, height: 230)
+            .frame(width: 280, height: 280)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Cycle day preview")
-            .accessibilityValue("Day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase")
+            .accessibilityValue("Day \(shownDay) of your \(cycleLength)-day cycle, \(selectedPhase.name) phase")
             .accessibilityHint("Adjust to explore a day without changing your saved cycle")
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -367,38 +484,49 @@ struct CycleRing: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Circle().fill(selectedPhase.color).frame(width: 8, height: 8)
-                Text("\(selectedPhase.name) phase")
-                    .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 0) {
+                ForEach(Phase.allCases) { phase in
+                    phaseLabel(phase)
+                    if phase != Phase.allCases.last {
+                        Spacer(minLength: 6)
+                    }
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Palette.surface.opacity(0.8), in: Capsule())
+            .frame(width: 280)
 
-            ViewThatFits(in: .horizontal) {
-                legend(spacing: 12)
-                legend(spacing: 5)
+            ZStack {
+                if previewDay != nil {
+                    Button("Return to today") {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
+                            previewDay = nil
+                        }
+                    }
+                        .font(.system(size: 13, weight: .medium))
+                        .tint(Palette.inkSoft)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .transition(.opacity)
+                } else {
+                    Label("Drag the circle to explore your cycle", systemImage: "hand.draw")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.inkFaint)
+                        .transition(.opacity)
+                }
             }
-
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
-            }
+            .frame(height: 44)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: previewDay != nil)
         }
     }
 
-    private func legend(spacing: CGFloat) -> some View {
-        HStack(spacing: spacing) {
-            ForEach(Phase.allCases) { phase in
-                HStack(spacing: 4) {
-                    Circle().fill(phase.color).frame(width: 6, height: 6)
-                    Text(phase.name)
-                        .font(.system(size: 10, weight: phase == selectedPhase ? .bold : .regular))
-                }
-                .foregroundStyle(phase == selectedPhase ? Palette.ink : Palette.inkSoft)
-            }
+    private func phaseLabel(_ phase: Phase) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(phase.color).frame(width: 7, height: 7)
+            Text(phase.name)
+                .font(.system(size: 12, weight: phase == selectedPhase ? .bold : .regular))
+                .fixedSize()
         }
+        .foregroundStyle(phase == selectedPhase ? Palette.ink : Palette.inkSoft)
+        .accessibilityAddTraits(phase == selectedPhase ? .isSelected : [])
     }
 
     private func selectDay(at point: CGPoint, size: CGFloat) {
@@ -409,6 +537,23 @@ struct CycleRing: View {
         let angle = (atan2(Double(y), Double(x)) + Double.pi / 2 + fullTurn)
             .truncatingRemainder(dividingBy: fullTurn)
         previewDay = min(cycleLength, max(1, Int(angle / fullTurn * Double(cycleLength)) + 1))
+    }
+}
+
+/// Interpolate the angle so the handle follows the ring instead of crossing its center.
+private struct CycleHandlePosition: AnimatableModifier {
+    var angle: Double
+    let radius: CGFloat
+    let center: CGFloat
+
+    var animatableData: Double {
+        get { angle }
+        set { angle = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.position(x: center + radius * cos(angle),
+                         y: center + radius * sin(angle))
     }
 }
 
@@ -517,7 +662,17 @@ struct PeriodQuickEntry: View {
     /// The period being ended, or nil to start a new one.
     let period: PeriodRecord?
     @State var date: Date
+    @State private var hasEndDate = false
+    @State private var endDate = Date.now
     @State private var error: String?
+
+    private var laterPeriod: PeriodRecord? {
+        store.periodHistory.records
+            .filter { CycleStore.cal.startOfDay(for: $0.start) > CycleStore.cal.startOfDay(for: date) }
+            .min { $0.start < $1.start }
+    }
+
+    private var needsEndDate: Bool { period == nil && laterPeriod != nil }
 
     /// An end can't come before its start.
     private var earliest: Date { period.map { CycleStore.cal.startOfDay(for: $0.start) } ?? .distantPast }
@@ -551,6 +706,17 @@ struct PeriodQuickEntry: View {
                 DatePicker("Another day", selection: $date, in: earliest...Date(), displayedComponents: .date)
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.inkSoft)
+                if period == nil {
+                    Toggle("This period has ended", isOn: $hasEndDate)
+                    if hasEndDate {
+                        DatePicker("Ended", selection: $endDate, in: date...Date.now, displayedComponents: .date)
+                    }
+                    if needsEndDate, let laterPeriod {
+                        Text("You have a later period starting \(store.fmt(laterPeriod.start)). Enter the end date for this earlier period so it isn't saved as still ongoing.")
+                            .font(.caption)
+                            .foregroundStyle(Palette.inkSoft)
+                    }
+                }
                 if let period {
                     Text("Started \(store.fmt(period.start)).").font(.caption).foregroundStyle(Palette.inkFaint)
                 }
@@ -570,7 +736,7 @@ struct PeriodQuickEntry: View {
                     .background(Palette.accent, in: Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(store.periodStorageError != nil)
+            .disabled(store.periodStorageError != nil || (needsEndDate && !hasEndDate))
 
             Text("You can fix dates anytime on the Cycle calendar.")
                 .font(.caption).foregroundStyle(Palette.inkFaint)
@@ -582,13 +748,19 @@ struct PeriodQuickEntry: View {
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
         .fittedSheet()
+        .onChange(of: date) { _, newDate in
+            if endDate < newDate { endDate = newDate }
+            error = nil
+        }
+        .onChange(of: endDate) { _, _ in error = nil }
+        .onChange(of: hasEndDate) { _, _ in error = nil }
     }
 
     private func save() {
         do {
             if let period {
                 try store.savePeriod(id: period.id, start: period.start, end: date)
-            } else { try store.savePeriod(start: date, end: nil) }
+            } else { try store.savePeriod(start: date, end: hasEndDate ? endDate : nil) }
             dismiss()
         } catch { self.error = error.localizedDescription }
     }
@@ -698,5 +870,37 @@ struct CycleSetupView: View {
                 Text("\(value.wrappedValue) days").fontWeight(.semibold).foregroundStyle(Palette.ink).monospacedDigit()
             }
         }
+    }
+}
+
+private struct EstimatePressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 1.025 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct PeriodEntryPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(configuration.isPressed ? Palette.rose : Color.white)
+            .padding(.horizontal, 34)
+            .padding(.vertical, 12)
+            .background(configuration.isPressed ? Color.white : Palette.accent, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(configuration.isPressed ? Palette.rose : .clear, lineWidth: 1.5)
+            }
+            .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 3)
+    }
+}
+
+private struct TodayHeaderHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

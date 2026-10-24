@@ -15,8 +15,11 @@ struct SettingsView: View {
     @State private var activeDays: Int? = 21
     @State private var confirmingDelete = false
     @State private var confirmingAccountDelete = false
+    @State private var saving = false
+    @State private var saveError: String?
     @State private var deletePassword = ""
     @State private var confirmingSignOut = false
+
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -112,13 +115,22 @@ struct SettingsView: View {
                 }
 
                 Button {
-                    if birthControl != store.profile?.birthControl { store.saveBirthControl(birthControl) }
-                    store.updateProfile(name: trimmedName, lastPeriodStart: lastStart,
-                                        cycleLength: cycleLength, periodLength: periodLength)
-                    dismiss()
+                    saving = true
+                    saveError = nil
+                    Task {
+                        defer { saving = false }
+                        do {
+                            try await store.updateProfile(name: trimmedName, lastPeriodStart: lastStart,
+                                                          cycleLength: cycleLength, periodLength: periodLength)
+                            if birthControl != store.profile?.birthControl { store.saveBirthControl(birthControl) }
+                            dismiss()
+                        } catch {
+                            saveError = error.localizedDescription
+                        }
+                    }
                 } label: {
                     // Say why it's disabled instead of just fading out.
-                    Text(trimmedName.isEmpty ? "Add your name to save" : changed ? "Save changes" : "No changes to save")
+                    Text(saving ? "Saving…" : trimmedName.isEmpty ? "Add your name to save" : changed ? "Save changes" : "No changes to save")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -126,7 +138,13 @@ struct SettingsView: View {
                         .background(Palette.accent.opacity(changed && !trimmedName.isEmpty ? 1 : 0.4), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!changed || trimmedName.isEmpty)
+                .disabled(saving || !changed || trimmedName.isEmpty)
+
+                if let saveError {
+                    Text(saveError)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.wine)
+                }
 
                 section("Appearance") {
                     Text("Choose your colors")
