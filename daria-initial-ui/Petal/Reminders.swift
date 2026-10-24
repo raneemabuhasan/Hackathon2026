@@ -50,6 +50,10 @@ extension Reminder {
         let time = Self.time(hour, minute)
         switch kind {
         case .daily:
+            if let weekdays = repeatWeekdays {
+                let labels = [1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat"]
+                return "Every \(weekdays.compactMap { labels[$0] }.joined(separator: ", ")) · \(time)"
+            }
             return "Every day · \(time)"
         case .once:
             guard let fire = fireDate(windowStart: windowStart) else { return "Once · \(time)" }
@@ -125,14 +129,16 @@ enum ReminderNotifications {
                 return request(for: reminder, id: "\(prefix)\(reminder.id)-\(i)", trigger: trigger, name: name, bleed: bleed)
             }
         }
-        let trigger: UNCalendarNotificationTrigger
         if reminder.kind == .daily {
-            trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: reminder.hour, minute: reminder.minute), repeats: true)
-        } else {
-            guard let fire = reminder.fireDate(windowStart: windowStart), fire > .now else { return [] }
-            let parts = CycleStore.cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
-            trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
+            return reminder.dailyNotificationComponents.map { components in
+                let suffix = components.weekday.map { "-weekday-\($0)" } ?? ""
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                return request(for: reminder, id: prefix + reminder.id + suffix, trigger: trigger, name: name, bleed: bleed)
+            }
         }
+        guard let fire = reminder.fireDate(windowStart: windowStart), fire > .now else { return [] }
+        let parts = CycleStore.cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
         return [request(for: reminder, id: prefix + reminder.id, trigger: trigger, name: name, bleed: bleed)]
     }
 
@@ -166,6 +172,8 @@ struct ReminderEditor: View {
     @State private var date: Date
     @State private var daysBefore: Int
     @State private var weeks: Int
+    @State private var selectedDays = false
+    @State private var weekdays: Set<Int> = []
     @State private var confirmingDelete = false
 
     init(reminder: Reminder?) {
@@ -177,6 +185,8 @@ struct ReminderEditor: View {
         _date = State(initialValue: r.date ?? CycleStore.add(.now, 1))
         _daysBefore = State(initialValue: r.daysBefore ?? 2)
         _weeks = State(initialValue: r.weeks ?? 1)
+        _selectedDays = State(initialValue: r.kind == .daily && r.weekdays != nil)
+        _weekdays = State(initialValue: Set(r.repeatWeekdays ?? []))
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -185,7 +195,7 @@ struct ReminderEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Eyebrow(text: original == nil ? "New reminder" : "Edit reminder")
+                    DisplayTitle(before: original == nil ? "New " : "Edit ", accent: "Reminder", size: 32)
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
@@ -197,8 +207,11 @@ struct ReminderEditor: View {
                     .accessibilityLabel("Close")
                 }
 
+                Text("A little nudge, on your schedule.")
+                    .font(.system(size: 16)).foregroundStyle(Palette.inkSoft)
+
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Remind me to…").font(.system(size: 15, weight: .semibold))
+                    Text("Remind me to…").font(.cardSubheading)
                     TextField("Reminder title", text: $title, prompt: Text(""))
                         .font(.system(size: 15))
                         .padding(.horizontal, 14).padding(.vertical, 12)
@@ -211,15 +224,37 @@ struct ReminderEditor: View {
                 .card()
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("When").font(.system(size: 15, weight: .semibold))
-                    Picker("Schedule", selection: $kind) {
-                        ForEach(Reminder.Kind.allCases, id: \.self) { Text($0.label).tag($0) }
+                    Text("When").font(.cardSubheading)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 10) {
+                        scheduleTile("Every day", icon: "sun.max", selected: kind == .daily && !selectedDays) {
+                            kind = .daily; selectedDays = false
+                        }
+                        scheduleTile("Selected days", icon: "calendar.badge.clock", selected: kind == .daily && selectedDays) {
+                            kind = .daily; selectedDays = true
+                        }
+                        scheduleTile("Once", icon: "calendar", selected: kind == .once) { kind = .once; selectedDays = false }
+                        scheduleTile("Before period", icon: "drop", selected: kind == .beforePeriod) { kind = .beforePeriod; selectedDays = false }
                     }
-                    .pickerStyle(.segmented)
+                    // Preserve pack/patch/ring repeat intervals supported by the existing scheduler.
+                    scheduleTile("Every few weeks", icon: "repeat", selected: kind == .everyWeeks) {
+                        kind = .everyWeeks; selectedDays = false
+                    }
 
                     switch kind {
                     case .daily:
-                        EmptyView()
+                        if selectedDays {
+                            Text("Repeat on").font(.cardSubheading)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                                ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in
+                                    scheduleTile([1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat"][day]!,
+                                                 selected: weekdays.contains(day)) {
+                                        if !weekdays.insert(day).inserted { weekdays.remove(day) }
+                                    }
+                                }
+                            }
+                            Text("Repeats every week on the days you select.")
+                                .font(.caption).foregroundStyle(Palette.inkSoft)
+                        }
                     case .once:
                         DatePicker("Date", selection: $date, in: Date.now..., displayedComponents: .date)
                     case .beforePeriod:
@@ -238,13 +273,13 @@ struct ReminderEditor: View {
                 Button(action: save) {
                     Text("Save reminder")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.surface)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Palette.accent.opacity(trimmedTitle.isEmpty ? 0.4 : 1), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(trimmedTitle.isEmpty)
+                .disabled(trimmedTitle.isEmpty || (kind == .daily && selectedDays && weekdays.isEmpty))
 
                 if let original {
                     Button { confirmingDelete = true } label: {
@@ -273,7 +308,25 @@ struct ReminderEditor: View {
         .scrollDismissesKeyboard(.interactively)
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
+        .background(Palette.bg.ignoresSafeArea())
         .animation(.easeOut(duration: 0.2), value: kind)
+    }
+
+    private func scheduleTile(_ title: String, icon: String? = nil, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if let icon { Image(systemName: icon).font(.system(size: 18)) }
+                Text(title).font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.leading)
+                if icon != nil && selected { Spacer(minLength: 0); Image(systemName: "checkmark.circle.fill") }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(10)
+            .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Palette.accent : Palette.line, lineWidth: selected ? 1.5 : 1))
+            .foregroundStyle(selected ? Palette.accent : Palette.ink)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func save() {
@@ -286,6 +339,7 @@ struct ReminderEditor: View {
         r.date = kind == .once || kind == .everyWeeks ? CycleStore.cal.startOfDay(for: date) : nil
         r.daysBefore = kind == .beforePeriod ? daysBefore : nil
         r.weeks = kind == .everyWeeks ? weeks : nil
+        r.weekdays = kind == .daily && selectedDays ? [2, 3, 4, 5, 6, 7, 1].filter { weekdays.contains($0) } : nil
         r.on = true
         store.saveReminder(r)
         dismiss()
