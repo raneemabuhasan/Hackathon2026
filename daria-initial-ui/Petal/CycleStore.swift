@@ -2,6 +2,26 @@ import SwiftUI
 import Observation
 import FirebaseFirestore
 
+/// Exactly the deployed predictions/{cycleStart} schema; no encoded ID or accuracy fields.
+struct AIForecast: Codable, Equatable {
+    var cycleStart: String
+    var baselineStart: String
+    var baselineSpread: Int
+    var shiftDays: Int
+    var spreadDays: Int
+    var predictedStart: String
+    var reason: String
+    var model: String
+    var inputsHash: String
+    @ServerTimestamp var createdAt: Date?
+}
+
+struct ForecastMemory: Codable {
+    var notes: [String]
+    var basedOnCycles: Int
+    @ServerTimestamp var updatedAt: Date?
+}
+
 enum Tab { case today, cycle, nourish, companion }
 
 enum Phase: String, CaseIterable, Identifiable {
@@ -80,6 +100,8 @@ struct Profile: Codable {
     var baseline: CycleBaseline? = nil
     /// CoordinatedTheme raw value, so the palette follows the account across devices.
     var palette: String? = nil
+    /// Optional for older profiles: enabled by default, but only with AI consent.
+    var aiPredictions: Bool? = nil
     /// Whether the user agreed to send their data to Gemini. nil means never asked, which counts as no.
     var aiConsent: Bool? = nil
     /// nil means no birth control. Optional so older profiles still decode.
@@ -382,6 +404,15 @@ final class CycleStore {
     private var loggingConversation = LoggingConversation()
     /// True while the companion is waiting on the model.
     private(set) var thinking = false
+    private(set) var forecasts: [String: AIForecast] = [:]
+    private(set) var forecastMemory: ForecastMemory?
+    private(set) var forecastLoading = false
+    private var forecastsAvailable = false
+    private var forecastStopped = false
+    private var forecastGeneration = 0
+    private var forecastAttemptedHash: String?
+    @ObservationIgnored private var forecastTask: Task<Void, Never>?
+    @ObservationIgnored private var forecastTaskID: UUID?
 
     @ObservationIgnored private var listeners: [ListenerRegistration] = []
     @ObservationIgnored private let db = Firestore.firestore()
@@ -433,11 +464,11 @@ final class CycleStore {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.profileError = error.map { "Could not load profile: \($0.localizedDescription)" }
-                    if error != nil { return }
+                    if error != nil { self.syncNotifications(); return }
                     // A brand-new account has no document yet: that's "needs onboarding", not an error.
                     if let snap, snap.exists {
                         do { self.profile = try snap.data(as: Profile.self) }
-                        catch { self.profileError = "Could not read profile."; return }
+                        catch { self.profileError = "Could not read profile."; self.syncNotifications(); return }
                     } else {
                         self.profile = nil
                     }
@@ -454,6 +485,7 @@ final class CycleStore {
                     self.logsLoaded = true
                     if let error {
                         self.logsError = "Could not load symptom history: \(error.localizedDescription)"
+                        self.syncNotifications()
                         return
                     }
                     guard snap?.metadata.hasPendingWrites != true else { return }
@@ -462,6 +494,7 @@ final class CycleStore {
                         self.logsError = nil
                     } catch {
                         self.logsError = "Some saved entries could not be read. Comparison is unavailable until history can be loaded."
+                        self.syncNotifications()
                         return
                     }
                     self.invalidateComparisonConversation()
@@ -472,7 +505,7 @@ final class CycleStore {
             periodsRef.addSnapshotListener(includeMetadataChanges: true) { [weak self] snap, error in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if let error { self.periodsError = error.localizedDescription; return }
+                    if let error { self.periodsError = error.localizedDescription; self.syncNotifications(); return }
                     guard let snap, !snap.metadata.hasPendingWrites else { return }
                     do {
                         self.periodHistory = PeriodHistory(records: try snap.documents.map { try $0.data(as: PeriodRecord.self) })
@@ -481,7 +514,7 @@ final class CycleStore {
                         self.invalidateComparisonConversation()
                         self.syncNotifications()
                         self.prefetchAI()
-                    } catch { self.periodsError = "Some period history could not be read." }
+                    } catch { self.periodsError = "Some period history could not be read."; self.syncNotifications() }
                 }
             },
             userRef.collection("reminders").order(by: "created", descending: true).addSnapshotListener(includeMetadataChanges: true) { [weak self] snap, error in
@@ -508,6 +541,39 @@ final class CycleStore {
                     } catch { self.remindersError = "Some reminders could not be read. Try again after reloading." }
                 }
             },
+            userRef.collection("predictions").addSnapshotListener(includeMetadataChanges: true) { [weak self] snap, error in
+                MainActor.assumeIsolated {
+                    guard let self, !self.forecastStopped, !self.deletingData else { return }
+                    if let error {
+                        print("Cycle forecast listener:", error)
+                        self.forecasts = [:]
+                        self.forecastMemory = nil
+                        self.forecastsAvailable = false
+                        self.syncNotifications()
+                        return
+                    }
+                    guard let snap, !snap.metadata.hasPendingWrites else { return }
+                    var forecasts: [String: AIForecast] = [:]
+                    var memory: ForecastMemory?
+                    for doc in snap.documents {
+                        do {
+                            if doc.documentID == "memory" {
+                                let value = try doc.data(as: ForecastMemory.self)
+                                memory = ForecastMemory(notes: Array(value.notes.prefix(5)).map { String($0.prefix(200)) },
+                                                        basedOnCycles: min(100, max(0, value.basedOnCycles)))
+                            } else {
+                                let value = try doc.data(as: AIForecast.self)
+                                if self.validStoredForecast(value, id: doc.documentID) { forecasts[doc.documentID] = value }
+                            }
+                        } catch { print("Could not read cycle forecast:", error) }
+                    }
+                    self.forecasts = forecasts
+                    self.forecastMemory = memory
+                    self.forecastsAvailable = true
+                    self.syncNotifications()
+                    self.prefetchAI()
+                }
+            },
             userRef.collection("grocery").order(by: "created").addSnapshotListener { [weak self] snap, error in
                 MainActor.assumeIsolated {
                     if let error { print("Grocery listener:", error) }
@@ -519,6 +585,8 @@ final class CycleStore {
 
     /// Detach listeners; call when the user signs out.
     func stop() {
+        forecastStopped = true
+        invalidateForecastRequest()
         loggingConversation.clear()
         reminderDeletion.clear()
         reminderClarification.clear()
@@ -625,10 +693,9 @@ final class CycleStore {
     /// Uncertainty in days either side of the predicted start, never less than 2. A pack bleed is tighter.
     var spread: Int {
         if packBleedStart != nil { return 1 }
-        let variance = pastLengths.map { pow(Double($0) - mean, 2) }.reduce(0, +) / Double(pastLengths.count)
-        return max(2, Int((sqrt(variance) * 1.5).rounded()))
+        return activeAIForecast?.spreadDays ?? baselineSpread
     }
-    var nextStart: Date { packBleedStart ?? Self.add(lastStart, average) }
+    var nextStart: Date { packBleedStart ?? activeAIForecast.flatMap { LogDate.parse($0.predictedStart) } ?? baselineNextStart }
     var windowStart: Date { Self.add(nextStart, -spread) }
     var windowEnd: Date { Self.add(nextStart, spread) }
     var cycleDay: Int { Self.days(today, from: lastStart) + 1 }
@@ -1082,6 +1149,9 @@ final class CycleStore {
 
     func setAIConsent(_ on: Bool) {
         if !on {
+            profile?.aiConsent = false
+            invalidateForecastRequest()
+            syncNotifications()
             plan = nil
             aiMeals = [:]
             messages = []
@@ -1124,12 +1194,14 @@ final class CycleStore {
     /// The profile goes too, so they land back on onboarding.
     func deleteAllData() async throws {
         deletingData = true
+        invalidateForecastRequest()
+        if let forecastTask { await forecastTask.value }
         defer { deletingData = false }
         backfillTask?.cancel()
         if let backfillTask { await backfillTask.value }
         let cached = try await cacheRef.getDocuments(source: .server).documents.map(\.reference)
         var refs = cached
-        for collection in ["logs", "reminders", "grocery", "periods"] {
+        for collection in ["logs", "reminders", "grocery", "periods", "predictions"] {
             refs += try await userRef.collection(collection).getDocuments(source: .server).documents.map(\.reference)
         }
         refs.append(userRef)
@@ -1139,6 +1211,10 @@ final class CycleStore {
             chunk.forEach { batch.deleteDocument($0) }
             try await batch.commit()
         }
+        forecasts = [:]
+        forecastMemory = nil
+        forecastsAvailable = false
+        forecastAttemptedHash = nil
         periodHistory = PeriodHistory()
         profile = nil
         logs = []
@@ -1329,6 +1405,7 @@ final class CycleStore {
     /// Start AI work early so Today and Nourish are ready by the time the user looks.
     private func prefetchAI() {
         guard profile != nil, aiEnabled, !deletingData else { return }
+        scheduleForecast()
         Task {
             await loadPlan()
             await loadMeals(for: foodPhase)
@@ -1573,5 +1650,155 @@ private extension ReminderPatch {
         if date != nil, let date = saved.date { fields["date"] = Timestamp(date: date) }
         if daysBefore != nil, let days = saved.daysBefore { fields["daysBefore"] = days }
         return fields
+    }
+}
+
+// MARK: AI cycle forecast
+
+extension CycleStore {
+    var aiPredictionsEnabled: Bool { profile?.aiPredictions ?? true }
+
+    var forecastScores: [ForecastScore] {
+        Self.scoreForecasts(Array(forecasts.values), starts: starts)
+    }
+
+    var aiForecastEligible: Bool {
+        ForecastEligibility(consent: aiEnabled, predictionsEnabled: aiPredictionsEnabled,
+                            naturalCycle: tracksPhases, completedCycles: completedCycles.count,
+                            dataReady: loaded && profile != nil && profileError == nil && logsLoaded && logsError == nil
+                                && periodsLoaded && periodsError == nil,
+                            predictionsReady: forecastsAvailable, deletingData: deletingData,
+                            stopped: forecastStopped, benched: ForecastMath.isBenched(forecastScores)).allowed
+    }
+
+    var baselineNextStart: Date { Self.add(lastStart, average) }
+    var baselineSpread: Int {
+        let variance = pastLengths.map { pow(Double($0) - mean, 2) }.reduce(0, +) / Double(pastLengths.count)
+        return max(2, Int((sqrt(variance) * 1.5).rounded()))
+    }
+
+    private var completedForecastLogs: [DayLog] {
+        logs.filter { log in
+            completedCycles.contains { log.date >= $0.start && log.date < Self.add($0.start, $0.length) }
+        }
+    }
+
+    var currentForecastInputsHash: String {
+        ForecastMath.inputsHash(lastStart: lastStart, cycles: completedCycles, average: average,
+                                spread: baselineSpread, completedLogCount: completedForecastLogs.count)
+    }
+
+    var activeAIForecast: AIForecast? {
+        guard aiForecastEligible, let forecast = forecasts[Self.key(lastStart)],
+              forecast.inputsHash == currentForecastInputsHash,
+              forecast.baselineStart == Self.key(baselineNextStart), forecast.baselineSpread == baselineSpread,
+              validStoredForecast(forecast, id: Self.key(lastStart)) else { return nil }
+        return forecast
+    }
+
+    private func validStoredForecast(_ forecast: AIForecast, id: String) -> Bool {
+        guard forecast.cycleStart == id, let start = LogDate.parse(id),
+              let baseline = LogDate.parse(forecast.baselineStart), let predicted = LogDate.parse(forecast.predictedStart),
+              (1...30).contains(forecast.baselineSpread), (-3...3).contains(forecast.shiftDays),
+              (2...10).contains(forecast.spreadDays),
+              forecast.spreadDays >= max(2, forecast.baselineSpread - 1),
+              forecast.spreadDays <= min(10, forecast.baselineSpread + 3),
+              Self.days(predicted, from: baseline) == forecast.shiftDays,
+              (18...45).contains(Self.days(predicted, from: start)),
+              !forecast.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              forecast.reason.count <= 200, forecast.model.count <= 60, forecast.inputsHash.count <= 128 else { return false }
+        return true
+    }
+
+    /// Structured summaries only: never include a daily log's private note text.
+    var forecastContext: String {
+        var lines = ["Baseline: lastStart=\(Self.key(lastStart)); average=\(average); spread=\(baselineSpread); baselineStart=\(Self.key(baselineNextStart))."]
+        for cycle in completedCycles.reversed() {
+            let entries = logs.filter { $0.date >= cycle.start && $0.date < Self.add(cycle.start, cycle.length) }
+            let periodLength = periodHistory.records.first { Self.key($0.start) == Self.key(cycle.start) }?.end
+                .map { Self.days($0, from: cycle.start) + 1 }
+            lines.append("Completed cycle: start=\(Self.key(cycle.start)); length=\(cycle.length); periodLength=\(periodLength.map(String.init) ?? "unknown"). \(ForecastMath.symptomSummary(entries))")
+        }
+        lines.append("Current cycle: day=\(cycleDay). \(ForecastMath.symptomSummary(logs.filter { $0.date >= lastStart && $0.date <= today }))")
+        for score in forecastScores.reversed() {
+            lines.append("Past forecast: cycleStart=\(score.cycleStart); predictedStart=\(score.predictedStart); baselineStart=\(score.baselineStart); actualStart=\(score.actualStart); aiError=\(score.aiError); mathError=\(score.mathError).")
+        }
+        for note in forecastMemory?.notes.prefix(5) ?? [] {
+            lines.append("Pattern note: \(String(note.prefix(200)))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    nonisolated static func clampForecast(_ response: ForecastResponse, baselineStart: Date, baselineSpread: Int,
+                                         lastStart: Date) -> (start: Date, spread: Int, reason: String, notes: [String])? {
+        ForecastMath.clamp(response, baselineStart: baselineStart, baselineSpread: baselineSpread, lastStart: lastStart)
+    }
+
+    nonisolated static func scoreForecasts(_ forecasts: [AIForecast], starts: [Date]) -> [ForecastScore] {
+        ForecastMath.score(forecasts.map { ForecastHistoryEntry(cycleStart: $0.cycleStart, baselineStart: $0.baselineStart,
+                                                              predictedStart: $0.predictedStart) }, starts: starts)
+    }
+
+    func setAIPredictions(_ on: Bool) {
+        profile?.aiPredictions = on
+        invalidateForecastRequest()
+        syncNotifications()
+        userRef.updateData(["aiPredictions": on]) { error in
+            if let error { Task { @MainActor in self.showToast("Couldn't update AI predictions: \(error.localizedDescription)") } }
+        }
+        if on { prefetchAI() }
+    }
+
+    private func invalidateForecastRequest() {
+        forecastGeneration += 1
+        forecastTask?.cancel()
+        forecastAttemptedHash = nil
+    }
+
+    func loadForecast() async {
+        guard !Task.isCancelled, aiForecastEligible, !forecastLoading else { return }
+        let id = Self.key(lastStart), hash = currentForecastInputsHash
+        guard activeAIForecast == nil, forecastAttemptedHash != hash else { return }
+        let generation = forecastGeneration, baseline = baselineNextStart, width = baselineSpread, cycleStart = lastStart
+        let context = forecastContext
+        forecastLoading = true
+        forecastAttemptedHash = hash
+        defer { forecastLoading = false }
+        do {
+            let request = ForecastRequest()
+            let response = try await request.run { try await Assistant.cycleForecast(context: context) }
+            try Task.checkCancellation()
+            guard generation == forecastGeneration, id == Self.key(lastStart), hash == currentForecastInputsHash,
+                  aiForecastEligible, !deletingData, profile != nil,
+                  let clamped = Self.clampForecast(response, baselineStart: baseline, baselineSpread: width, lastStart: cycleStart) else { return }
+            let forecast = AIForecast(cycleStart: id, baselineStart: Self.key(baseline), baselineSpread: width,
+                                      shiftDays: Self.days(clamped.start, from: baseline), spreadDays: clamped.spread,
+                                      predictedStart: Self.key(clamped.start), reason: clamped.reason,
+                                      model: Assistant.fastModelName, inputsHash: hash)
+            let memory = ForecastMemory(notes: clamped.notes, basedOnCycles: min(100, completedCycles.count))
+            let batch = db.batch()
+            try batch.setData(from: forecast, forDocument: userRef.collection("predictions").document(id))
+            try batch.setData(from: memory, forDocument: userRef.collection("predictions").document("memory"))
+            // Only the confirmed listener installs the result; denied/offline writes keep the math fallback.
+            try await batch.commit()
+        } catch {
+            print("Cycle forecast failed:", error)
+        }
+    }
+
+    private func scheduleForecast() {
+        guard aiForecastEligible, !forecastLoading, forecastTaskID == nil,
+              activeAIForecast == nil, forecastAttemptedHash != currentForecastInputsHash else { return }
+        let taskID = UUID()
+        forecastTaskID = taskID
+        forecastTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loadForecast()
+            guard self.forecastTaskID == taskID else { return }
+            self.forecastTask = nil
+            self.forecastTaskID = nil
+            // Re-check after a mid-flight edit or cancellation. Attempted inputs are deduplicated.
+            self.scheduleForecast()
+        }
     }
 }

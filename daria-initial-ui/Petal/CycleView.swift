@@ -459,6 +459,14 @@ struct CycleView: View {
                 legend(Circle().stroke(Palette.accent, lineWidth: 2), "Today")
                 legend(Circle().fill(Palette.accent), "Selected")
             }.font(.caption).foregroundStyle(Palette.inkSoft)
+            if store.tracksPhases {
+                VStack(spacing: 3) {
+                    Text(store.activeAIForecast == nil ? "Based on your average cycle" : "✨ AI-adjusted")
+                    if let forecast = store.activeAIForecast { Text(forecast.reason) }
+                }
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+                .multilineTextAlignment(.center)
+            }
             Text("Predictions are estimates. Your period may come a few days earlier or later.")
                 .font(.caption).foregroundStyle(Palette.inkFaint)
                 .multilineTextAlignment(.center)

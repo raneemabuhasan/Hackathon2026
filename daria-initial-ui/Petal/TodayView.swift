@@ -163,6 +163,11 @@ struct TodayView: View {
             .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
 
             if store.tracksPhases {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.activeAIForecast == nil ? "Based on your average cycle" : "✨ AI-adjusted")
+                    if let forecast = store.activeAIForecast { Text(forecast.reason) }
+                }
+                .font(.caption).foregroundStyle(Palette.inkSoft)
                 Text(store.completedCycles.isEmpty
                      ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
                      : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
