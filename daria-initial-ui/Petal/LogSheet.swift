@@ -19,6 +19,7 @@ struct LogSheet: View {
     @State private var energy = 3.0
     @State private var note = ""
     @State private var viewingSavedLog = false
+    @State private var confirmingLogDeletion = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingMoods = false
     @State private var editingSymptoms = false
@@ -85,6 +86,17 @@ struct LogSheet: View {
             .disabled(customFlowName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || customFlowName.count > 30)
         } message: {
             Text("Name the flow you want to record (up to 30 characters).")
+        }
+        .confirmationDialog("Delete this saved log?", isPresented: $confirmingLogDeletion, titleVisibility: .visible) {
+            Button("Delete log", role: .destructive) {
+                if let saved = store.log(for: logDate) {
+                    store.deleteLog(saved)
+                    store.showLog = false
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This entry will be removed from your symptom history. Recorded period dates will be kept.")
         }
         .onAppear {
             logDate = store.selectedLogDate ?? store.today
@@ -433,6 +445,16 @@ struct LogSheet: View {
                     .buttonStyle(.bordered)
                     .tint(Palette.accent)
                     .accessibilityLabel("Edit this saved day log")
+                    Button {
+                        confirmingLogDeletion = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Palette.accent)
+                    .accessibilityLabel("Delete this saved day log")
+                    .disabled(store.logWritePending)
                 }
 
                 // Flow gets the same droplet language as the log editor.
