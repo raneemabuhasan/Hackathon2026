@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var deletePassword = ""
     @State private var confirmingSignOut = false
     @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
+    @State private var placement = FloatingRobotPlacement.shared
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -168,11 +169,30 @@ struct SettingsView: View {
                 }
 
                 section("Floating companion") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Show floating robot", isOn: $floatingRobotEnabled)
-                            .font(.system(size: 15))
-                        Text("Show a little robot on Today, Calendar, and Nourish. Tap it to open Companion, or hold and drag it to a new spot. It goes to sleep when idle. This is separate from AI consent.")
-                            .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Show floating robot", isOn: Binding(
+                            get: { store.aiEnabled && floatingRobotEnabled },
+                            set: { enabled in floatingRobotEnabled = store.aiEnabled && enabled }
+                        ))
+                        .font(.system(size: 15))
+                        .disabled(!store.aiEnabled)
+
+                        Button {
+                            placement.isEditing = true
+                            dismiss()
+                        } label: {
+                            Label("Edit position", systemImage: "hand.draw")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(minHeight: 38)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!store.aiEnabled || !floatingRobotEnabled)
+
+                        Text(store.aiEnabled
+                             ? "Tap the robot to open Companion. Use Edit position to drag it smoothly, then tap Done. It sleeps when idle."
+                             : "Turn on the AI companion above before enabling the floating robot.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.inkSoft)
                     }
                 }
 

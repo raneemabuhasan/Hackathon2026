@@ -2,15 +2,18 @@ import SwiftUI
 
 // Optional in-app overlay; it doesn't enable AI or affect chat permissions.
 // Drag starts only after a hold so ordinary scrolling and tapping keep working.
+// In-app floating robot; dragging is enabled only while placing it.
 @MainActor
 private struct FloatingRobotShortcut: View {
     let size: CGSize
+    let isEditing: Bool
     let onOpenCompanion: () -> Void
+    let onFinishEditing: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("sync.floatingRobot.x") private var savedX = 0.85
     @AppStorage("sync.floatingRobot.y") private var savedY = 0.55
-    @GestureState private var dragOffset: CGSize = .zero
+    @State private var dragPosition: CGPoint?
     @State private var hovering = false
     @State private var sleeping = false
     @State private var wakeNumber = 0
@@ -28,70 +31,111 @@ private struct FloatingRobotShortcut: View {
         constrain(CGPoint(x: size.width * CGFloat(savedX), y: size.height * CGFloat(savedY)))
     }
 
-    private var displayedPoint: CGPoint {
-        constrain(CGPoint(x: restingPoint.x + dragOffset.width,
-                          y: restingPoint.y + dragOffset.height))
-    }
+    private var displayedPoint: CGPoint { dragPosition ?? restingPoint }
 
     private func wake() {
         sleeping = false
         wakeNumber += 1
     }
 
-    private var holdAndMove: some Gesture {
-        LongPressGesture(minimumDuration: 0.4)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .updating($dragOffset) { value, state, _ in
-                if case .second(true, let drag?) = value {
-                    state = drag.translation
-                }
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard isEditing else { return }
+                // Update only local state during drag to avoid laggy disk writes.
+                dragPosition = constrain(CGPoint(
+                    x: restingPoint.x + value.translation.width,
+                    y: restingPoint.y + value.translation.height
+                ))
             }
             .onEnded { value in
-                guard case .second(true, let drag?) = value else { return }
-                let point = constrain(CGPoint(x: restingPoint.x + drag.translation.width,
-                                              y: restingPoint.y + drag.translation.height))
+                guard isEditing else { return }
+                let point = constrain(CGPoint(
+                    x: restingPoint.x + value.translation.width,
+                    y: restingPoint.y + value.translation.height
+                ))
                 savedX = Double(point.x / max(1, size.width))
                 savedY = Double(point.y / max(1, size.height))
+                dragPosition = nil
                 wake()
             }
     }
 
     var body: some View {
-        Image(sleeping ? "CompanionRobotSleep" : "CompanionRobotIdle")
-            .resizable()
-            .interpolation(.none)
-            .scaledToFit()
-            .frame(width: 74, height: 84)
-            .offset(y: reduceMotion || sleeping ? 0 : (hovering ? -3 : 2))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                wake()
-                onOpenCompanion()
+        ZStack(alignment: .top) {
+            if isEditing {
+                Color.black.opacity(0.05).contentShape(Rectangle())
             }
-            .simultaneousGesture(holdAndMove)
-            .position(displayedPoint)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(sleeping ? "Sleeping robot companion" : "Robot companion")
-            .accessibilityHint("Tap to open Companion. Hold and drag to move.")
-            .accessibilityAddTraits(.isButton)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
-                    hovering = true
+
+            Image(sleeping && !isEditing ? "CompanionRobotSleep" : "CompanionRobotIdle")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(width: 74, height: 84)
+                .offset(y: reduceMotion || sleeping || isEditing ? 0 : (hovering ? -3 : 2))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !isEditing else { return }
+                    wake()
+                    onOpenCompanion()
                 }
+                .highPriorityGesture(moveGesture, including: isEditing ? .all : .none)
+                .position(displayedPoint)
+                .transaction { transaction in
+                    if isEditing { transaction.disablesAnimations = true }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(sleeping && !isEditing ? "Sleeping robot companion" : "Robot companion")
+                .accessibilityHint(isEditing ? "Drag to move the robot" : "Tap to open Companion")
+
+            if isEditing {
+                HStack(spacing: 12) {
+                    Label("Drag robot to move", systemImage: "hand.draw")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Button("Done", action: onFinishEditing)
+                        .font(.system(size: 14, weight: .semibold))
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
             }
-            .task(id: wakeNumber) {
-                sleeping = false
-                do { try await Task.sleep(for: .seconds(14)) } catch { return }
-                if !Task.isCancelled { sleeping = true }
+        }
+        .frame(width: size.width, height: size.height)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                hovering = true
             }
+        }
+        .onChange(of: isEditing) { _, _ in
+            dragPosition = nil
+            wake()
+        }
+        .task(id: wakeNumber) {
+            sleeping = false
+            guard !isEditing else { return }
+            do { try await Task.sleep(for: .seconds(14)) } catch { return }
+            if !Task.isCancelled { sleeping = true }
+        }
     }
+}
+
+// Shared transient setting between Settings sheet and ContentView.
+@MainActor @Observable
+final class FloatingRobotPlacement {
+    static let shared = FloatingRobotPlacement()
+    var isEditing = false
 }
 
 @MainActor
 struct ContentView: View {
       @Environment(CycleStore.self) private var store
       @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
+      @State private var placement = FloatingRobotPlacement.shared
       @Environment(\.scenePhase) private var scenePhase 
 
     var body: some View {
@@ -111,11 +155,14 @@ struct ContentView: View {
             .transition(.opacity)
 
             // Only on in-app pages; never covers the chat input or onboarding.
-            if floatingRobotEnabled && store.tab != .companion {
+            if floatingRobotEnabled && store.aiEnabled && store.tab != .companion {
                 GeometryReader { viewport in
-                    FloatingRobotShortcut(size: viewport.size) {
-                        store.tab = .companion
-                    }
+                    FloatingRobotShortcut(
+                        size: viewport.size,
+                        isEditing: placement.isEditing,
+                        onOpenCompanion: { store.tab = .companion },
+                        onFinishEditing: { placement.isEditing = false }
+                    )
                 }
                 .transition(.opacity)
             }
@@ -151,6 +198,12 @@ struct ContentView: View {
             }
         }
         .animation(.spring(duration: 0.3), value: store.toast)
+        .onChange(of: store.aiEnabled) { _, enabled in
+            if !enabled {
+                floatingRobotEnabled = false
+                placement.isEditing = false
+            }
+        }
         .sheet(isPresented: $store.showLog) {
             LogSheet()
                 .environment(store)
