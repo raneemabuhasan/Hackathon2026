@@ -380,7 +380,7 @@ struct OnboardingView: View {
     private var companionSlide: some View {
         VStack(alignment: .leading, spacing: 22) {
             heading("Meet your ", "companion", "Ask about your cycle, get meal ideas and a daily plan, or log how you feel just by chatting.")
-            OnboardingArt(animation: "signin")
+            OnboardingArt(animation: "signin", loops: true)
             VStack(alignment: .leading, spacing: 12) {
                 Eyebrow(text: "How it works")
                 bullet("sparkles", "The companion, AI meal ideas and your daily plan use Google's Gemini AI through Firebase.")
@@ -420,16 +420,18 @@ struct OnboardingView: View {
     }
 }
 
-/// The looping illustration on each slide; holds a still frame when Reduce Motion is on.
+/// The illustration on each slide. Plays once and holds its final frame unless `loops` is set;
+/// holds a still frame when Reduce Motion is on.
 private struct OnboardingArt: View {
     let animation: String
     var height: CGFloat = 170
     var speed: Double = 1
+    var loops = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         LottieView(animation: .named(animation))
-            .playbackMode(reduceMotion ? .paused(at: .progress(0.5)) : .playing(.toProgress(1, loopMode: .loop)))
+            .playbackMode(reduceMotion ? .paused(at: .progress(0.5)) : .playing(.toProgress(1, loopMode: loops ? .loop : .playOnce)))
             .configure { $0.animationSpeed = speed }
             .resizable()
             .scaledToFit()

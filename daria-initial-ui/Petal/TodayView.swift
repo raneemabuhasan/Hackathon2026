@@ -14,14 +14,6 @@ struct TodayView: View {
     @State private var previewDay: Int?
     @AppStorage("petal.planCompletions.v1") private var planCompletions = Data()
 
-    @State private var editing: ReminderSheet?
-
-    /// Which reminder the editor sheet is open for.
-    private enum ReminderSheet: Identifiable {
-        case new, edit(Reminder)
-        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
-    }
-
     var body: some View {
         GeometryReader { viewport in
             Page {
@@ -40,11 +32,11 @@ struct TodayView: View {
                     Spacer()
 
                     Button { showSettings = true } label: {
-                        Text(String(store.name.prefix(1)).uppercased())
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Palette.accent)
-                            .frame(width: 42, height: 42)
-                            .background(Palette.accentSoft, in: Circle())
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Settings")
@@ -61,7 +53,6 @@ struct TodayView: View {
                 quickActions
                 Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
                 plan
-                reminders
             }
         }
         .sheet(isPresented: $showFlow) {
@@ -90,69 +81,6 @@ struct TodayView: View {
             SettingsView()
                 .environment(store)
                 .environment(auth)
-                .presentationCornerRadius(32)
-                .presentationBackground(Palette.bg)
-        }
-    }
-
-    private var reminders: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "bell.badge")
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 40, height: 40)
-                    .background(Palette.accentSoft, in: Circle())
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Reminders").font(.cardSubheading).foregroundStyle(Palette.wine)
-                    Text("Little nudges for your routine")
-                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                }
-                Spacer(minLength: 0)
-            }
-            if let error = store.remindersError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            } else if !store.remindersLoaded {
-                ProgressView("Loading reminders")
-            } else if store.reminders.isEmpty {
-                Text("Add a reminder for your daily routine or a day that works for you.")
-                    .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-            }
-            ForEach(store.reminders) { r in
-                HStack(spacing: 12) {
-                    Button { editing = .edit(r) } label: {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(r.title).font(.system(size: 14, weight: .semibold))
-                                Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Edit reminder")
-                    Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
-                        .labelsHidden()
-                        .tint(Palette.accent)
-                }
-                .padding(12)
-            }
-            Button { editing = .new } label: {
-                Text("New reminder")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-            }
-            .buttonStyle(.plain)
-        }
-        .card()
-        .sheet(item: $editing) { target in
-            ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
-                .environment(store)
-                .presentationDetents([.large])
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
         }
@@ -402,10 +330,6 @@ struct TodayView: View {
                     .accessibilityLabel(item.title)
                     .accessibilityValue(completed ? "Completed" : "Not completed")
                     .accessibilityHint(completed ? "Mark as incomplete" : "Mark as complete")
-                    Image(systemName: item.icon)
-                        .font(.system(size: 20))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
