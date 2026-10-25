@@ -348,8 +348,10 @@ struct SettingsView: View {
         case .companion:
             Section {
                 Toggle("Use the AI companion", isOn: Binding(get: { store.aiEnabled }, set: { store.setAIConsent($0) }))
+                Toggle("Use AI for period predictions", isOn: Binding(get: { store.aiPredictionsEnabled }, set: { store.setAIPredictions($0) }))
+                    .disabled(!store.aiEnabled)
             } footer: {
-                Text("Powers chat, AI meal ideas and your daily plan using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results.")
+                Text("Powers chat, AI meal ideas, your daily plan and optional period predictions using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results. Sync's average-based prediction is used offline, when predictions are off, and until you've logged 3 cycles.")
             }
 
         case .privacy:

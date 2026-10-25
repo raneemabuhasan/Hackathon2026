@@ -159,48 +159,64 @@ struct TodayView: View {
     private var predictionCard: some View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
-        return Button {
-            store.tab = .cycle
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(Palette.rose)
-                Rectangle()
-                    .fill(Palette.rose.opacity(0.25))
-                    .frame(width: 1, height: 36)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(Palette.inkSoft)
-                    Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
-                        .font(.display(19))
-                        .foregroundStyle(Palette.wine)
-                        .monospacedDigit()
-                }
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                Spacer(minLength: 0)
-                Text("in \(earliest)–\(latest) days")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.inkSoft)
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                store.tab = .cycle
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 25, weight: .medium))
+                        .foregroundStyle(Palette.rose)
+                    Rectangle()
+                        .fill(Palette.rose.opacity(0.25))
+                        .frame(width: 1, height: 36)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.8)
+                            .foregroundStyle(Palette.inkSoft)
+                        Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
+                            .font(.display(19))
+                            .foregroundStyle(Palette.wine)
+                            .monospacedDigit()
+                    }
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.inkSoft)
+                    .minimumScaleFactor(0.75)
+                    Spacer(minLength: 0)
+                    Text("in \(earliest)–\(latest) days")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.inkSoft)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        }
-        .buttonStyle(EstimatePressStyle())
-        .accessibilityHint("Opens the Calendar page. Dates are estimates.")
-    }
+            .buttonStyle(EstimatePressStyle())
+            .accessibilityHint("Opens the Calendar page. Dates are estimates.")
 
+            if store.tracksPhases {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.activeAIForecast == nil ? "Based on your average cycle" : "✨ AI-adjusted")
+                    if let forecast = store.activeAIForecast { Text(forecast.reason) }
+                }
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+                Text(store.completedCycles.isEmpty
+                     ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
+                     : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
+            } else {
+                Text("Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule. A bleed in the break is a withdrawal bleed, not a period, and it can be lighter, later or skipped.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
+            }
+        }
+    }
 
     // MARK: Week strip
 
