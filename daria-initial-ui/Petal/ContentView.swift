@@ -1,8 +1,97 @@
 import SwiftUI
 
+// Optional in-app overlay; it doesn't enable AI or affect chat permissions.
+// Drag starts only after a hold so ordinary scrolling and tapping keep working.
+@MainActor
+private struct FloatingRobotShortcut: View {
+    let size: CGSize
+    let onOpenCompanion: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("sync.floatingRobot.x") private var savedX = 0.85
+    @AppStorage("sync.floatingRobot.y") private var savedY = 0.55
+    @GestureState private var dragOffset: CGSize = .zero
+    @State private var hovering = false
+    @State private var sleeping = false
+    @State private var wakeNumber = 0
+
+    private let margin: CGFloat = 43
+
+    private func constrain(_ point: CGPoint) -> CGPoint {
+        CGPoint(
+            x: min(max(margin, point.x), max(margin, size.width - margin)),
+            y: min(max(margin, point.y), max(margin, size.height - margin))
+        )
+    }
+
+    private var restingPoint: CGPoint {
+        constrain(CGPoint(x: size.width * CGFloat(savedX), y: size.height * CGFloat(savedY)))
+    }
+
+    private var displayedPoint: CGPoint {
+        constrain(CGPoint(x: restingPoint.x + dragOffset.width,
+                          y: restingPoint.y + dragOffset.height))
+    }
+
+    private func wake() {
+        sleeping = false
+        wakeNumber += 1
+    }
+
+    private var holdAndMove: some Gesture {
+        LongPressGesture(minimumDuration: 0.4)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .updating($dragOffset) { value, state, _ in
+                if case .second(true, let drag?) = value {
+                    state = drag.translation
+                }
+            }
+            .onEnded { value in
+                guard case .second(true, let drag?) = value else { return }
+                let point = constrain(CGPoint(x: restingPoint.x + drag.translation.width,
+                                              y: restingPoint.y + drag.translation.height))
+                savedX = Double(point.x / max(1, size.width))
+                savedY = Double(point.y / max(1, size.height))
+                wake()
+            }
+    }
+
+    var body: some View {
+        Image(sleeping ? "CompanionRobotSleep" : "CompanionRobotIdle")
+            .resizable()
+            .interpolation(.none)
+            .scaledToFit()
+            .frame(width: 74, height: 84)
+            .offset(y: reduceMotion || sleeping ? 0 : (hovering ? -3 : 2))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                wake()
+                onOpenCompanion()
+            }
+            .simultaneousGesture(holdAndMove)
+            .position(displayedPoint)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(sleeping ? "Sleeping robot companion" : "Robot companion")
+            .accessibilityHint("Tap to open Companion. Hold and drag to move.")
+            .accessibilityAddTraits(.isButton)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                    hovering = true
+                }
+            }
+            .task(id: wakeNumber) {
+                sleeping = false
+                do { try await Task.sleep(for: .seconds(14)) } catch { return }
+                if !Task.isCancelled { sleeping = true }
+            }
+    }
+}
+
 @MainActor
 struct ContentView: View {
       @Environment(CycleStore.self) private var store
+      @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
       @Environment(\.scenePhase) private var scenePhase 
 
     var body: some View {
@@ -21,6 +110,15 @@ struct ContentView: View {
             }
             .transition(.opacity)
 
+            // Only on in-app pages; never covers the chat input or onboarding.
+            if floatingRobotEnabled && store.tab != .companion {
+                GeometryReader { viewport in
+                    FloatingRobotShortcut(size: viewport.size) {
+                        store.tab = .companion
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             TabBar()

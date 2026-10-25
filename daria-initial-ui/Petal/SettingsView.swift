@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var confirmingAccountDelete = false
     @State private var deletePassword = ""
     @State private var confirmingSignOut = false
+    @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var usesPassword: Bool { auth.user?.providerData.contains { $0.providerID == "password" } ?? false }
@@ -162,6 +163,15 @@ struct SettingsView: View {
                         Toggle("Use the AI companion", isOn: Binding(get: { store.aiEnabled }, set: { store.setAIConsent($0) }))
                             .font(.system(size: 15))
                         Text("Powers chat, AI meal ideas and your daily plan using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results.")
+                            .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+
+                section("Floating companion") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Show floating robot", isOn: $floatingRobotEnabled)
+                            .font(.system(size: 15))
+                        Text("Show a little robot on Today, Calendar, and Nourish. Tap it to open Companion, or hold and drag it to a new spot. It goes to sleep when idle. This is separate from AI consent.")
                             .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     }
                 }
