@@ -2,6 +2,13 @@ import Foundation
 
 /// Foundation-only validation shared by tools and regression checks.
 enum CompanionIntent {
+    static func isArithmeticQuestion(_ text: String) -> Bool {
+        let pattern = #"^\s*(?:(?:hey|please|can you|could you|would you|tell me)\s+)*(?:(?:what(?:'s| is)|calculate|compute|solve|evaluate|add|sum|multiply|divide|how much is)\s+)?-?\d+(?:\.\d+)?\s*(?:\+|−|-|\*|×|x|÷|/|\bplus\b|\bminus\b|\btimes\b|\bdivided by\b|\bmultiplied by\b)\s*-?\d+(?:\.\d+)?\s*(?:(?:equals?|equal to)\s*-?\d+(?:\.\d+)?)?\s*[?!.]*\s*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return false }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.firstMatch(in: text, range: range) != nil
+    }
+
     static func explicitDeletion(_ text: String) -> Bool {
         let words = EducationLibrary.tokens(text)
         return !words.isDisjoint(with: ["delete", "remove", "erase"]) && !text.lowercased().contains("don't") && !text.lowercased().contains("do not")
