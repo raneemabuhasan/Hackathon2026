@@ -698,8 +698,9 @@ struct LogSheet: View {
 
     @ViewBuilder private func tile(emoji: String, label: String, on: Bool, dashed: Bool = false) -> some View {
             VStack(spacing: 6) {
-                Text(emoji).font(.system(size: dashed ? 30 : 24))
-                    .frame(width: 38, height: 38)
+                // The add tile's label wraps to two lines, so its + is smaller to leave room.
+                Text(emoji).font(.system(size: dashed ? 18 : 20))
+                    .frame(width: 38, height: dashed ? 22 : 32)
                 Text(label).font(.system(size: 12, weight: .medium))
                     .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
             }
