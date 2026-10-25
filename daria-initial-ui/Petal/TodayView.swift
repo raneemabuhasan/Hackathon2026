@@ -294,8 +294,6 @@ struct TodayView: View {
                      ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
                      : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
                     .font(.caption).foregroundStyle(Palette.inkFaint)
-                Text("This is an approximate window, not a guaranteed date. Calendar-only ovulation estimate: around cycle day \(max(1, store.average - 14)). Ovulation isn't confirmed; don't use this for contraception.")
-                    .font(.caption).foregroundStyle(Palette.inkSoft)
             } else {
                 Text("Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule. A bleed in the break is a withdrawal bleed, not a period, and it can be lighter, later or skipped.")
                     .font(.caption).foregroundStyle(Palette.inkFaint)
