@@ -11,6 +11,9 @@ struct AIForecast: Codable, Equatable {
     var spreadDays: Int
     var predictedStart: String
     var reason: String
+    /// Validated completed-cycle references supporting the forecast, if present.
+    /// Optional so previously stored forecast documents continue to decode.
+    var evidenceCycleStarts: [String]? = nil
     var model: String
     var inputsHash: String
     @ServerTimestamp var createdAt: Date?
@@ -1773,7 +1776,7 @@ extension CycleStore {
     }
 
     nonisolated static func clampForecast(_ response: ForecastResponse, baselineStart: Date, baselineSpread: Int,
-                                         lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String)? {
+                                         lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String, evidenceCycleStarts: [String])? {
         ForecastMath.clamp(response, baselineStart: baselineStart, baselineSpread: baselineSpread,
                            lastStart: lastStart, allowedEvidence: allowedEvidence)
     }
@@ -1821,6 +1824,7 @@ extension CycleStore {
             let forecast = AIForecast(cycleStart: id, baselineStart: Self.key(baseline), baselineSpread: width,
                                       shiftDays: Self.days(clamped.start, from: baseline), spreadDays: clamped.spread,
                                       predictedStart: Self.key(clamped.start), reason: clamped.reason,
+                                      evidenceCycleStarts: clamped.evidenceCycleStarts,
                                       model: Assistant.fastModelName, inputsHash: hash)
             let batch = db.batch()
             try batch.setData(from: forecast, forDocument: userRef.collection("predictions").document(id))

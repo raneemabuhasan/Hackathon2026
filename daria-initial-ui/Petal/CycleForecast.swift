@@ -66,7 +66,7 @@ enum ForecastMath {
     }
 
     static func clamp(_ response: ForecastResponse, baselineStart: Date, baselineSpread: Int,
-                      lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String)? {
+                      lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String, evidenceCycleStarts: [String])? {
         let lower = max(2, baselineSpread - 1), upper = min(10, baselineSpread + 3)
         guard lower <= upper,
               response.evidenceCycleStarts.count <= 6,
@@ -83,7 +83,7 @@ enum ForecastMath {
         let reason = response.reasonCategory == "no_clear_pattern"
             ? "There isn’t a clear pattern, so this stays close to your average."
             : "Recent cycle records informed this estimate."
-        return (start, response.spreadDays, reason)
+        return (start, response.spreadDays, reason, response.evidenceCycleStarts.sorted())
     }
 
     static func score(_ forecasts: [ForecastHistoryEntry], starts: [Date]) -> [ForecastScore] {
