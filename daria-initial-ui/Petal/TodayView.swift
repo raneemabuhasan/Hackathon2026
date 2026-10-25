@@ -10,17 +10,11 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var showPeriodEntry = false
     @State private var headerHeight: CGFloat = 0
+    @State private var heroRingHeight: CGFloat = 0
+    @State private var heroLowerHeight: CGFloat = 0
     /// Day picked on the cycle ring; nil means today.
     @State private var previewDay: Int?
     @AppStorage("petal.planCompletions.v1") private var planCompletions = Data()
-
-    @State private var editing: ReminderSheet?
-
-    /// Which reminder the editor sheet is open for.
-    private enum ReminderSheet: Identifiable {
-        case new, edit(Reminder)
-        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
-    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -40,11 +34,11 @@ struct TodayView: View {
                     Spacer()
 
                     Button { showSettings = true } label: {
-                        Text(String(store.name.prefix(1)).uppercased())
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Palette.accent)
-                            .frame(width: 42, height: 42)
-                            .background(Palette.accentSoft, in: Circle())
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Settings")
@@ -61,7 +55,6 @@ struct TodayView: View {
                 quickActions
                 Text("The wellness plan below uses demo data.").font(.caption).foregroundStyle(Palette.inkSoft)
                 plan
-                reminders
             }
         }
         .sheet(isPresented: $showFlow) {
@@ -96,69 +89,6 @@ struct TodayView: View {
         }
     }
 
-    private var reminders: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "bell.badge")
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 40, height: 40)
-                    .background(Palette.accentSoft, in: Circle())
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Reminders").font(.cardSubheading).foregroundStyle(Palette.wine)
-                    Text("Little nudges for your routine")
-                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                }
-                Spacer(minLength: 0)
-            }
-            if let error = store.remindersError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            } else if !store.remindersLoaded {
-                ProgressView("Loading reminders")
-            } else if store.reminders.isEmpty {
-                Text("Add a reminder for your daily routine or a day that works for you.")
-                    .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-            }
-            ForEach(store.reminders) { r in
-                HStack(spacing: 12) {
-                    Button { editing = .edit(r) } label: {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(r.title).font(.system(size: 14, weight: .semibold))
-                                Text(r.detail(windowStart: store.windowStart)).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Edit reminder")
-                    Toggle(r.title, isOn: Binding(get: { r.on }, set: { store.setReminder(r, on: $0) }))
-                        .labelsHidden()
-                        .tint(Palette.accent)
-                }
-                .padding(12)
-            }
-            Button { editing = .new } label: {
-                Text("New reminder")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-            }
-            .buttonStyle(.plain)
-        }
-        .card()
-        .sheet(item: $editing) { target in
-            ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
-                .environment(store)
-                .presentationDetents([.large])
-                .presentationCornerRadius(32)
-                .presentationBackground(Palette.bg)
-        }
-    }
-
     static func greeting(at date: Date) -> String {
         switch Calendar.current.component(.hour, from: date) {
         case 5..<12: "Good morning"
@@ -172,55 +102,52 @@ struct TodayView: View {
     private func hero(minHeight: CGFloat) -> some View {
         // A completed period can include today; only an unfinished record can be ended.
         let period = store.ongoingPeriod
+        // Spare height (e.g. no prediction card on some birth control) is split above and below the ring,
+        // so it sits centered instead of leaving a gap at the top. Parts are measured without the spacers.
+        let slack = max(0, minHeight - 28 - 12 - heroRingHeight - heroLowerHeight)
         return VStack(spacing: 12) {
-            switch store.cycleMode {
-            case .natural: CycleRing(previewDay: $previewDay)
-            case .pack: PackRing(previewDay: $previewDay)
-            case .steady: steadySummary
-            }
-            VStack(spacing: 12) {
-                Button {
-                    showPeriodEntry = true
-                } label: {
-                    Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
+            Group {
+                switch store.cycleMode {
+                case .natural: CycleRing(previewDay: $previewDay)
+                case .pack: PackRing(previewDay: $previewDay)
+                case .steady: SteadySummary()
                 }
-                .buttonStyle(PeriodEntryPressStyle())
-
-                Button("Edit cycle details") { store.showCycleSetup = true }
-                    .font(.system(size: 13, weight: .medium))
-                    .tint(Palette.wine)
-                    .frame(minHeight: 44)
             }
-            prediction
-                .padding(.horizontal, -16)
-                .padding(.bottom, -14)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroRingHeight = $0 }
+            .padding(.top, slack / 2)
+            .padding(.bottom, slack / 2)
+            VStack(spacing: 12) {
+                VStack(spacing: 12) {
+                    Button {
+                        showPeriodEntry = true
+                    } label: {
+                        Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
+                    }
+                    .buttonStyle(PeriodEntryPressStyle())
+
+                    Button(store.tracksPhases ? "Edit cycle details" : "Edit bleeding details") { store.showCycleSetup = true }
+                        .font(.system(size: 13, weight: .medium))
+                        .tint(Palette.wine)
+                        .frame(minHeight: 44)
+                }
+                prediction
+                    .padding(.horizontal, -16)
+                    .padding(.bottom, -14)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroLowerHeight = $0 }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .bottom)
         .background {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0xFAC8D4), Palette.mist, Palette.cream],
+                .fill(LinearGradient(colors: [Palette.blushPink, Palette.mist, Palette.cream],
                                      startPoint: .top, endPoint: .bottom))
                 .shadow(color: Palette.wine.opacity(0.09), radius: 10, x: 0, y: 6)
         }
         .sheet(isPresented: $showPeriodEntry) {
             PeriodQuickEntry(period: period, date: store.today).environment(store)
         }
-    }
-
-    /// Hero for methods with no predictable bleed: just the method, and why there's no ring.
-    private var steadySummary: some View {
-        VStack(spacing: 10) {
-            Eyebrow(text: "Birth control")
-            Text(store.birthControl?.method.name ?? "")
-                .font(.display(40))
-            Text("Bleeding can be irregular or stop on this method, so Sync doesn't show phases or predict bleeds. Log any bleeding or spotting to see your own pattern.")
-                .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, 12)
     }
 
     // MARK: Prediction
@@ -233,48 +160,64 @@ struct TodayView: View {
     private var predictionCard: some View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
-        return Button {
-            store.tab = .cycle
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 25, weight: .medium))
-                    .foregroundStyle(Palette.rose)
-                Rectangle()
-                    .fill(Palette.rose.opacity(0.25))
-                    .frame(width: 1, height: 36)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(Palette.inkSoft)
-                    Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
-                        .font(.display(19))
-                        .foregroundStyle(Palette.wine)
-                        .monospacedDigit()
-                }
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                Spacer(minLength: 0)
-                Text("in \(earliest)–\(latest) days")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.inkSoft)
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                store.tab = .cycle
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 25, weight: .medium))
+                        .foregroundStyle(Palette.rose)
+                    Rectangle()
+                        .fill(Palette.rose.opacity(0.25))
+                        .frame(width: 1, height: 36)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.8)
+                            .foregroundStyle(Palette.inkSoft)
+                        Text("\(store.fmt(store.windowStart)) – \(store.fmt(store.windowEnd))")
+                            .font(.display(19))
+                            .foregroundStyle(Palette.wine)
+                            .monospacedDigit()
+                    }
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.inkSoft)
+                    .minimumScaleFactor(0.75)
+                    Spacer(minLength: 0)
+                    Text("in \(earliest)–\(latest) days")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.inkSoft)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.inkSoft)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        }
-        .buttonStyle(EstimatePressStyle())
-        .accessibilityHint("Opens the Calendar page. Dates are estimates.")
-    }
+            .buttonStyle(EstimatePressStyle())
+            .accessibilityHint("Opens the Calendar page. Dates are estimates.")
 
+            if store.tracksPhases {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.activeAIForecast == nil ? "Based on your average cycle" : "✨ AI-adjusted")
+                    if let forecast = store.activeAIForecast { Text(forecast.reason) }
+                }
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+                Text(store.completedCycles.isEmpty
+                     ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
+                     : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
+            } else {
+                Text("Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule. A bleed in the break is a withdrawal bleed, not a period, and it can be lighter, later or skipped.")
+                    .font(.caption).foregroundStyle(Palette.inkFaint)
+            }
+        }
+    }
 
     // MARK: Week strip
 
@@ -403,10 +346,6 @@ struct TodayView: View {
                     .accessibilityLabel(item.title)
                     .accessibilityValue(completed ? "Completed" : "Not completed")
                     .accessibilityHint(completed ? "Mark as incomplete" : "Mark as complete")
-                    Image(systemName: item.icon)
-                        .font(.system(size: 20))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 28, height: 22)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.title).font(.system(size: 14, weight: .semibold))
                         Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -434,7 +373,6 @@ struct CycleRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var previewDay: Int?
     @State private var showsPhaseExplanation = false
-    @GestureState private var isDraggingHandle = false
 
     /// Same length and phases as the prediction card, calendar and Nourish.
     private var cycleLength: Int { store.average }
@@ -472,19 +410,17 @@ struct CycleRing: View {
                 let todayAngle = (Double(actualRingDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
 
                 ZStack {
-                    ForEach(1...cycleLength, id: \.self) { day in
-                        let phase = store.phase(forDay: day)
-                        let iconAngle = (Double(day) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
-                        // Leave room for both current-phase emphasis and the drag pop.
-                        let iconSize = min(23, 2 * .pi * radius / Double(cycleLength) / 1.45)
-                        PhaseRingIcon(phase: phase)
-                            .frame(width: iconSize, height: iconSize)
-                            .scaleEffect(iconScale(day: day, phase: phase))
-                            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.78),
-                                       value: iconScale(day: day, phase: phase))
-                            .position(x: size / 2 + radius * cos(iconAngle),
-                                      y: size / 2 + radius * sin(iconAngle))
-                            .allowsHitTesting(false)
+                    ForEach(Phase.allCases) { phase in
+                        // A very short cycle can leave a phase with no days; skip its arc.
+                        if let range = store.range(of: phase) {
+                            Circle()
+                                .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
+                                      to: Double(range.upperBound) / Double(cycleLength) - 0.012)
+                                .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
+                                                                      lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .padding(16)
+                        }
                     }
 
                     ZStack {
@@ -502,6 +438,7 @@ struct CycleRing: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             .padding(.horizontal, 12)
+                            .transition(.push(from: .trailing))
                         } else {
                             VStack(spacing: 5) {
                                 Text("CYCLE DAY")
@@ -511,39 +448,38 @@ struct CycleRing: View {
                                 Text("\(shownDay)")
                                     .font(.display(74)).monospacedDigit()
                                     .contentTransition(.numericText())
-                                Text("\(selectedPhase.name) phase")
-                                    .font(.display(19))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
                                 Text("of your \(cycleLength)-day cycle")
                                     .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                             }
+                            .transition(.push(from: .leading))
                         }
                     }
                     .frame(width: max(0, size - 88), height: max(0, size - 88))
+                    // Keep the sliding pages inside the ring.
+                    .clipped()
                     .contentShape(Circle())
+                    .onTapGesture { showPage(explanation: !showsPhaseExplanation) }
                     .gesture(DragGesture(minimumDistance: 20)
                         .onEnded { value in
                             guard abs(value.translation.width) > abs(value.translation.height),
                                   abs(value.translation.width) > 30 else { return }
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                                showsPhaseExplanation = value.translation.width > 0
-                            }
+                            // Like any pager: swipe left for the next page, right to go back.
+                            showPage(explanation: value.translation.width < 0)
                         })
                     .overlay(alignment: .bottom) {
-                        HStack(spacing: 7) {
-                            Circle().fill(showsPhaseExplanation ? Palette.accent.opacity(0.2) : Palette.accent)
-                            Circle().fill(showsPhaseExplanation ? Palette.accent : Palette.accent.opacity(0.2))
+                        HStack(spacing: 0) {
+                            pageDot(explanation: false)
+                            pageDot(explanation: true)
                         }
-                        .frame(width: 22, height: 7)
-                        .offset(y: 9)
-                        .allowsHitTesting(false)
+                        .offset(y: 16)
+                        .accessibilityHidden(true)
                     }
 
                     if selectedDay != actualRingDay {
                         Circle()
-                            .stroke(Color.gray.opacity(0.55), lineWidth: 2.5)
-                            .frame(width: 34, height: 34)
+                            .fill(Color(white: 0.88))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
+                            .frame(width: 32, height: 32)
                             .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
                             .position(x: size / 2 + radius * cos(todayAngle),
                                       y: size / 2 + radius * sin(todayAngle))
@@ -553,14 +489,14 @@ struct CycleRing: View {
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .stroke(Palette.ink, lineWidth: 2.5)
+                            .fill(.white)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
                             .frame(width: 32, height: 32)
                             .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 2)
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cyclePreviewRing"))
-                        .updating($isDraggingHandle) { _, dragging, _ in dragging = true }
                         .onChanged { value in selectDay(at: value.location, size: size) })
                     .modifier(CycleHandlePosition(angle: angle, radius: radius, center: size / 2))
                 }
@@ -575,7 +511,7 @@ struct CycleRing: View {
             .accessibilityAction(named: showsPhaseExplanation ? "Show cycle day" : "Show phase explanation") {
                 showsPhaseExplanation.toggle()
             }
-            .accessibilityCustomContent("Phase explanation", showsPhaseExplanation ? phaseExplanation : "Swipe right inside the circle to read about this phase")
+            .accessibilityCustomContent("Phase explanation", showsPhaseExplanation ? phaseExplanation : "Swipe left or tap inside the circle to read about this phase")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: previewDay = min(cycleLength, selectedDay + 1)
@@ -629,13 +565,24 @@ struct CycleRing: View {
         .accessibilityAddTraits(phase == selectedPhase ? .isSelected : [])
     }
 
-    private func iconScale(day: Int, phase: Phase) -> CGFloat {
-        let emphasis: CGFloat = phase == actualPhase ? 1.12 : 1
-        guard isDraggingHandle, !reduceMotion else { return emphasis }
-        let distance = abs(day - selectedDay)
-        let circularDistance = min(distance, cycleLength - distance)
-        let pop: CGFloat = circularDistance == 0 ? 1.15 : circularDistance == 1 ? 1.07 : 1
-        return emphasis * pop
+    private func showPage(explanation: Bool) {
+        guard explanation != showsPhaseExplanation else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+            showsPhaseExplanation = explanation
+        }
+    }
+
+    /// A page indicator dot that also jumps to its page when tapped.
+    private func pageDot(explanation: Bool) -> some View {
+        let current = explanation == showsPhaseExplanation
+        return Button { showPage(explanation: explanation) } label: {
+            Circle()
+                .fill(current ? Palette.ink : Palette.ink.opacity(0.2))
+                .frame(width: 7, height: 7)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func selectDay(at point: CGPoint, size: CGFloat) {
@@ -653,14 +600,8 @@ struct CycleRing: View {
 struct PhaseRingIcon: View {
     let phase: Phase
 
-    private var colors: [Color] {
-        switch phase {
-        case .menstrual: [Color(hex: 0xCF1753), Color(hex: 0xBD1248)]
-        case .follicular: [Color(hex: 0xF6A8C7), Color(hex: 0xF095B9)]
-        case .ovulation: [Color(hex: 0xD85281), Color(hex: 0xCE4776)]
-        case .luteal: [Color(hex: 0x872044), Color(hex: 0x731237)]
-        }
-    }
+    /// Same color as the phase's arc on the ring, so the icons follow the chosen theme.
+    private var colors: [Color] { [phase.color, phase.color.opacity(0.88)] }
 
     var body: some View {
         ZStack {
@@ -669,10 +610,10 @@ struct PhaseRingIcon: View {
                       style: FillStyle(eoFill: phase == .ovulation))
             if phase == .follicular {
                 // Normalized geometry keeps the seed proportional at ring and legend sizes.
-                PhaseIconDetail(phase: phase).fill(Color(hex: 0xCC1852))
+                PhaseIconDetail(phase: phase).fill(Palette.rose)
             } else if phase == .menstrual || phase == .luteal {
                 PhaseIconDetail(phase: phase)
-                    .fill(phase == .menstrual ? Color(hex: 0xF2759E) : Color(hex: 0xF5BCD3))
+                    .fill(phase == .menstrual ? Palette.petal : Palette.blushPink)
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -769,6 +710,73 @@ private func fitted(_ path: Path, in rect: CGRect) -> Path {
 }
 
 
+/// For methods without a schedule (mini-pill, shot, implant, hormonal IUD): no phases or predictions,
+/// so the ring shows the user's own logged bleeding instead. Same footprint as CycleRing.
+struct SteadySummary: View {
+    @Environment(CycleStore.self) private var store
+
+    private var today: Date { store.today }
+    private var lastBleed: PeriodRecord? { store.bleedRecords.first { $0.start <= today } }
+    private var bleedsLast90Days: Int {
+        store.bleedRecords.filter { $0.start > CycleStore.add(today, -90) && $0.start <= today }.count
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(Palette.blush, lineWidth: 14)
+                    .padding(16)
+                VStack(spacing: 5) {
+                    if let bleed = lastBleed, bleed.end == nil {
+                        Eyebrow(text: "Bleed day")
+                        Text("\(CycleStore.days(today, from: bleed.start) + 1)")
+                            .font(.display(74)).monospacedDigit()
+                        Text("since \(bleed.start.formatted(.dateTime.month(.abbreviated).day()))")
+                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    } else if let bleed = lastBleed {
+                        Eyebrow(text: "Days since bleeding")
+                        Text("\(CycleStore.days(today, from: bleed.end ?? bleed.start))")
+                            .font(.display(74)).monospacedDigit()
+                        Text("on your \(store.birthControl?.method.name.lowercased() ?? "method")")
+                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    } else {
+                        Eyebrow(text: "Birth control")
+                        Text(store.birthControl?.method.name ?? "")
+                            .font(.display(34))
+                            .multilineTextAlignment(.center)
+                        Text("No bleeding logged yet")
+                            .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+                .padding(.horizontal, 44)
+            }
+            .frame(width: 280, height: 280)
+            .accessibilityElement(children: .combine)
+
+            HStack(spacing: 16) {
+                stat(lastBleed.map { $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? "None", "last bleed")
+                stat("\(bleedsLast90Days)", "bleeds in 90 days")
+            }
+
+            Text("Bleeding can be irregular or stop on this method, so Sync doesn't predict it.")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.inkFaint)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 44)
+        }
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(value).font(.system(size: 12, weight: .bold))
+            Text(label).font(.system(size: 12))
+        }
+        .foregroundStyle(Palette.ink)
+    }
+}
+
 /// Interpolate the angle so the handle follows the ring instead of crossing its center.
 private struct CycleHandlePosition: AnimatableModifier {
     var angle: Double
@@ -790,6 +798,7 @@ private struct CycleHandlePosition: AnimatableModifier {
 /// Like CycleRing, dragging only previews a day and never writes anything.
 struct PackRing: View {
     @Environment(CycleStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var previewDay: Int?
 
     var body: some View {
@@ -799,7 +808,8 @@ struct PackRing: View {
         let day = previewDay ?? actualDay
         let todayAngle = (Double(actualDay) - 0.5) / Double(length) * 2 * .pi - .pi / 2
         let angle = (Double(day) - 0.5) / Double(length) * 2 * .pi - .pi / 2
-        VStack(spacing: 16) {
+        // Same sizes and spacing as CycleRing, so switching methods or previewing never moves the card.
+        VStack(spacing: 12) {
             GeometryReader { geometry in
                 let size = min(geometry.size.width, geometry.size.height)
                 let radius = size / 2 - 16
@@ -810,7 +820,7 @@ struct PackRing: View {
                     }
                     VStack(spacing: 4) {
                         Eyebrow(text: store.birthControl?.method == .combinedPill ? "Pack day" : "Day")
-                        Text("\(day)").font(.display(68)).monospacedDigit()
+                        Text("\(day)").font(.display(74)).monospacedDigit()
                             .contentTransition(.numericText())
                         Text("of \(length)").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     }
@@ -819,7 +829,7 @@ struct PackRing: View {
                         Circle()
                             .fill(Color(white: 0.88))
                             .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
-                            .frame(width: 28, height: 28)
+                            .frame(width: 32, height: 32)
                             .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
                             .position(x: size / 2 + radius * cos(todayAngle),
                                       y: size / 2 + radius * sin(todayAngle))
@@ -828,9 +838,10 @@ struct PackRing: View {
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .stroke(Palette.ink, lineWidth: 2.5)
-                            .frame(width: 28, height: 28)
-                            .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
+                            .fill(.white)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
+                            .frame(width: 32, height: 32)
+                            .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 2)
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
@@ -841,7 +852,7 @@ struct PackRing: View {
                 .frame(width: size, height: size)
                 .coordinateSpace(name: "packPreviewRing")
             }
-            .frame(width: 230, height: 230)
+            .frame(width: 280, height: 280)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Pack day preview")
             .accessibilityValue("Exploring day \(day) of \(length), \(day <= active ? "active days" : "break"). Today is day \(actualDay).")
@@ -854,16 +865,34 @@ struct PackRing: View {
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
                 legend(Palette.blush, "Active", bold: day <= active)
-                legend(Palette.rose, "Break", bold: day > active)
+                if active < length {
+                    legend(Palette.rose, "Break", bold: day > active)
+                }
             }
 
-            if previewDay != nil {
-                Button("Preview · Back to today") { previewDay = nil }
-                    .font(.system(size: 11, weight: .medium))
-                    .tint(Palette.inkSoft)
+            ZStack {
+                if previewDay != nil {
+                    Button("Return to today") {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
+                            previewDay = nil
+                        }
+                    }
+                        .font(.system(size: 13, weight: .medium))
+                        .tint(Palette.inkSoft)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .transition(.opacity)
+                } else {
+                    Label("Drag the circle to explore your \(store.birthControl?.method.scheduleNoun.replacingOccurrences(of: "first ", with: "") ?? "pack")", systemImage: "hand.draw")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.inkFaint)
+                        .transition(.opacity)
+                }
             }
+            .frame(height: 44)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: previewDay != nil)
         }
     }
 
@@ -888,8 +917,8 @@ struct PackRing: View {
 
     private func legend(_ color: Color, _ label: String, bold: Bool) -> some View {
         HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(label).font(.system(size: 10, weight: bold ? .bold : .regular))
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.system(size: 12, weight: bold ? .bold : .regular))
         }
         .foregroundStyle(bold ? Palette.ink : Palette.inkSoft)
     }
@@ -1027,13 +1056,13 @@ struct CycleSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(eyebrow: "Cycle details") {
+            SheetHeader(eyebrow: store.tracksPhases ? "Cycle details" : "Bleeding details") {
                 store.showCycleSetup = false
             } title: {
-                DisplayTitle(before: "Your cycle ", accent: "basics", size: 30)
+                DisplayTitle(before: store.tracksPhases ? "Your cycle " : "Your bleeding ", accent: "basics", size: 30)
             }
 
-            section("Most recent period", note: "Used as a baseline for estimates. We never infer an actual end date.") {
+            section("Most recent \(store.bleedName)", note: "Used as a baseline for estimates. We never infer an actual end date.") {
                 Toggle("I know the start date", isOn: $knowsStart)
                 if knowsStart {
                     Divider().overlay(Palette.line)
@@ -1045,12 +1074,19 @@ struct CycleSetupView: View {
                 stepper("Bleeding days", value: $periodDays, range: 2...10)
             }
 
-            section("Typical cycle length", note: "Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.") {
-                Toggle("I know my usual cycle length", isOn: $knowsCycle)
-                if knowsCycle {
-                    Divider().overlay(Palette.line)
-                    stepper("Cycle length", value: $cycleDays, range: 18...45)
+            // On hormonal birth control there's no cycle to measure; the pack schedule lives in Settings.
+            if store.tracksPhases {
+                section("Typical cycle length", note: "Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.") {
+                    Toggle("I know my usual cycle length", isOn: $knowsCycle)
+                    if knowsCycle {
+                        Divider().overlay(Palette.line)
+                        stepper("Cycle length", value: $cycleDays, range: 18...45)
+                    }
                 }
+            } else if store.cycleMode == .pack {
+                Text("Your \(store.birthControl?.method.scheduleNoun ?? "pack") start date and break are in Settings → Birth control.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
