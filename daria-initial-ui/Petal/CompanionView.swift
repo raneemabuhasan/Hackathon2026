@@ -1,5 +1,65 @@
 import SwiftUI
 
+// The default robot is a visual companion. AI logic stays inside CycleStore.
+// Keep this in CompanionView.swift to avoid changing the Xcode project file.
+@MainActor
+struct PixelRobotCompanion: View {
+    var thinking = false
+    var width: CGFloat = 108
+    var pacing = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var blink = false
+    @State private var smiling = false
+
+    private var imageName: String {
+        if smiling { return "CompanionRobotHappy" }
+        if thinking { return "CompanionRobotThinking" }
+        if blink { return "CompanionRobotBlink" }
+        return "CompanionRobotIdle"
+    }
+
+    var body: some View {
+        Button { smiling = true } label: {
+            TimelineView(.animation(minimumInterval: 0.1, paused: reduceMotion)) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                // Move within a dedicated header lane, never on top of the bell.
+                // Rounded whole-point offsets keep the pixel artwork sharp.
+                let distance: Double = pacing ? (thinking ? 17 : 9) : 0
+                let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
+                let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
+                Image(imageName)
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: width, height: width * 1.23)
+                    .offset(x: CGFloat(horizontal), y: CGFloat(smiling && !reduceMotion ? -4 : vertical))
+                    .frame(width: pacing ? 90 : width, height: width * 1.23)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Sync robot companion")
+        .accessibilityHint("Tap to see the robot smile")
+        .task(id: thinking) {
+            blink = false
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3.8)) } catch { return }
+                if thinking { continue }
+                blink = true
+                do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
+                blink = false
+            }
+        }
+        .task(id: smiling) {
+            guard smiling else { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            smiling = false
+        }
+    }
+}
+
 @MainActor
 struct CompanionView: View {
     @Environment(CycleStore.self) private var store
@@ -15,7 +75,11 @@ struct CompanionView: View {
             VStack(spacing: 0) {
                 HStack {
                     Eyebrow(text: "Companion")
-                    Spacer()
+                    Spacer(minLength: 4)
+                    // The robot slowly wanders here while idle, and paces when thinking.
+                    if !store.messages.isEmpty {
+                        PixelRobotCompanion(thinking: store.thinking, width: 44, pacing: true)
+                    }
                 }
                 .frame(minHeight: 44)
                 .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
@@ -27,6 +91,7 @@ struct CompanionView: View {
                         VStack(spacing: 0) {
                             Spacer(minLength: 28)
                             VStack(spacing: 24) {
+                                PixelRobotCompanion(thinking: store.thinking, width: 104)
                                 VStack(spacing: 10) {
                                     DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
                                         .multilineTextAlignment(.center)
@@ -121,10 +186,9 @@ struct CompanionView: View {
                 .padding(20)
             }
             .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.never)
             .onChange(of: store.messages.count) { scrollToBottom(proxy) }
             .onChange(of: store.thinking) { scrollToBottom(proxy) }
-            .onChange(of: focused) { if focused { scrollToBottom(proxy) } }
             .onAppear { scrollToBottom(proxy) }
         }
     }
@@ -138,8 +202,10 @@ struct CompanionView: View {
 
     private var composerField: some View {
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask your companion…", text: $draft, axis: .vertical)
-                    .lineLimit(1...4)
+                // Keep keyboard input independent of the animated header.
+                TextField("Ask your companion…", text: $draft)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1)
                     .font(.system(size: 16))
                     .focused($focused)
                     .submitLabel(.send)

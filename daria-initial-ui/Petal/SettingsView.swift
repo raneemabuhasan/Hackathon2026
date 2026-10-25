@@ -32,6 +32,11 @@ struct SettingsView: View {
     @State private var saveError: String?
     @State private var deletePassword = ""
     @State private var confirmingSignOut = false
+    @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
+    // Same placement keys used by FloatingRobotShortcut in ContentView.swift.
+    @AppStorage("sync.floatingRobot.x") private var floatingRobotX = 0.85
+    @AppStorage("sync.floatingRobot.y") private var floatingRobotY = 0.55
+    @State private var placement = FloatingRobotPlacement.shared
 
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
@@ -352,6 +357,40 @@ struct SettingsView: View {
                     .disabled(!store.aiEnabled)
             } footer: {
                 Text("Powers chat, AI meal ideas, your daily plan and optional period predictions using Google's Gemini through Firebase. When it's on, the data it needs (messages, cycle dates, recent logs and food preferences) is sent to answer you. Turning it off clears this session's AI results. Sync's average-based prediction is used offline, when predictions are off, and until you've logged 3 cycles.")
+            }
+
+            Section {
+                Toggle("Show floating robot", isOn: Binding(
+                    get: { store.aiEnabled && floatingRobotEnabled },
+                    set: { enabled in floatingRobotEnabled = store.aiEnabled && enabled }
+                ))
+                .disabled(!store.aiEnabled)
+
+                Button {
+                    placement.isEditing = true
+                    dismiss()
+                } label: {
+                    Label("Edit position", systemImage: "hand.draw")
+                }
+                .disabled(!store.aiEnabled || !floatingRobotEnabled)
+
+                Button {
+                    // These are the same defaults used by the floating sprite.
+                    // AppStorage propagates the new position to ContentView.
+                    floatingRobotX = 0.85
+                    floatingRobotY = 0.55
+                    placement.isEditing = false
+                } label: {
+                    Label("Reset position", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(!store.aiEnabled || !floatingRobotEnabled)
+                .accessibilityHint("Move the floating robot back to its default position")
+            } header: {
+                Text("Floating companion")
+            } footer: {
+                Text(store.aiEnabled
+                     ? "Double-tap the robot to open Companion. Tap once to make it smile, or hold for a curious reaction. Use Edit position to drag without animation, then tap Done. It sleeps when idle."
+                     : "Turn on the AI companion above before enabling the floating robot.")
             }
 
         case .privacy:
