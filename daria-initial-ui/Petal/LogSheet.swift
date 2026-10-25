@@ -2,6 +2,14 @@ import SwiftUI
 
 @MainActor
 struct LogSheet: View {
+    var moodOnly = false
+    var symptomsOnly = false
+    var flowOnly = false
+    @State private var editingCustomFlow = false
+    @State private var customFlowName = ""
+    @Environment(\.dismiss) private var dismiss
+    @State private var savingIndividual = false
+    @State private var individualError: String?
     @Environment(CycleStore.self) private var store
     @State private var logDate = Calendar.current.startOfDay(for: .now)
     @State private var flow = "None"
@@ -11,6 +19,7 @@ struct LogSheet: View {
     @State private var energy = 3.0
     @State private var note = ""
     @State private var viewingSavedLog = false
+    @State private var confirmingLogDeletion = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingMoods = false
     @State private var editingSymptoms = false
@@ -23,7 +32,10 @@ struct LogSheet: View {
         let emoji: String
     }
 
-    private let flows = [("None", 0), ("Light", 1), ("Medium", 2), ("Heavy", 3)]
+    private var flows: [(String, Int)] {
+        let standard = [("None", 0), ("Light", 1), ("Medium", 2), ("Heavy", 3)]
+        return standard.contains(where: { $0.0 == flow }) ? standard : standard + [(flow, 1)]
+    }
     private let energyLevels = [("Drained", "battery.0percent"), ("Low", "battery.25percent"), ("Steady", "battery.50percent"),
                                 ("Good", "battery.75percent"), ("Energised", "battery.100percent")]
     private static let emoji: [String: String] = [
@@ -34,130 +46,8 @@ struct LogSheet: View {
     private let tileColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Eyebrow(text: "Log · " + logDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        DisplayTitle(before: viewingSavedLog ? "How you " : "How do you ",
-                                     accent: viewingSavedLog ? "felt" : "feel?", size: 30)
-                    }
-                    Spacer()
-                    Button { store.showLog = false } label: {
-                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
-                            .frame(width: 38, height: 38)
-                            .background(Palette.surface, in: Circle())
-                            .overlay(Circle().stroke(Palette.line))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
-                }
-
-                if viewingSavedLog {
-                    savedLogDetails
-                } else {
-                    DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
-                    .font(.system(size: 14, weight: .semibold))
-                    .onChange(of: logDate) { _, newDate in loadDraft(for: newDate) }
-
-                if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
-                if store.logWritePending { ProgressView("Saving entry") }
-
-                field("Flow") {
-                    HStack(spacing: 8) {
-                        ForEach(flows, id: \.0) { name, drops in
-                            Button { flow = name } label: {
-                                VStack(spacing: 6) {
-                                    HStack(alignment: .bottom, spacing: 2) {
-                                        if drops == 0 {
-                                            Image(systemName: "drop").font(.system(size: 12)).foregroundStyle(Palette.inkFaint)
-                                        }
-                                        ForEach(0..<drops, id: \.self) { i in
-                                            Image(systemName: "drop.fill").font(.system(size: CGFloat(9 + i * 3))).foregroundStyle(Palette.accent)
-                                        }
-                                    }
-                                    .frame(height: 18)
-                                    Text(name).font(.system(size: 12, weight: .semibold))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(flow == name ? Palette.accentSoft : Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(flow == name ? Palette.accent : Palette.line))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                field("Mood") {
-                    tagSection(store.allMoods, selected: $moods, symptom: false)
-                }
-
-                field("Symptoms") {
-                    tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
-                }
-
-                field("Pain", value: pain == 0 ? "None" : "\(Self.painWord(Int(pain))) · \(Int(pain))") {
-                    painScale
-                    if pain >= 7 {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Pain that stops you doing everyday things deserves proper care. Consider talking to a GP or pharmacist.")
-                            Link("NHS: period pain", destination: CycleStore.nhsPeriodPain).foregroundStyle(Palette.accent)
-                        }
-                        .font(.system(size: 13))
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                }
-
-                field("Energy") {
-                    HStack(spacing: 6) {
-                        ForEach(Array(energyLevels.enumerated()), id: \.offset) { i, level in
-                            let selected = Int(energy) == i + 1
-                            Button { energy = Double(i + 1) } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: level.1).font(.system(size: 18)).foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
-                                    Text(level.0).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(selected ? Palette.accentSoft : Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(selected ? Palette.accent : Palette.line))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Energy \(level.0)")
-                            .accessibilityAddTraits(selected ? .isSelected : [])
-                        }
-                    }
-                }
-
-                field("Note") {
-                    TextField("Anything you want to remember…", text: $note, axis: .vertical)
-                        .lineLimit(3...6)
-                        .padding(12)
-                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Palette.line))
-                }
-
-                Button {
-                    store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
-                                      pain: Int(pain), energy: Int(energy), note: note))
-                } label: {
-                    Text(store.log(for: logDate) == nil ? "Save log" : "Save changes")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Palette.accent, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(store.logWritePending)
-                } // End editable log fields
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 30)
+        Group {
+            if moodOnly || symptomsOnly || flowOnly { individualBody } else { combinedBody }
         }
         .scrollIndicators(.hidden)
         .foregroundStyle(Palette.ink)
@@ -186,6 +76,28 @@ struct LogSheet: View {
                 return true
             }
         }
+        .alert("Custom flow", isPresented: $editingCustomFlow) {
+            TextField("Flow label", text: $customFlowName)
+            Button("Cancel", role: .cancel) { }
+            Button("Use flow") {
+                let name = customFlowName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { flow = name }
+            }
+            .disabled(customFlowName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || customFlowName.count > 30)
+        } message: {
+            Text("Name the flow you want to record (up to 30 characters).")
+        }
+        .confirmationDialog("Delete this saved log?", isPresented: $confirmingLogDeletion, titleVisibility: .visible) {
+            Button("Delete log", role: .destructive) {
+                if let saved = store.log(for: logDate) {
+                    store.deleteLog(saved)
+                    store.showLog = false
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This entry will be removed from your symptom history. Recorded period dates will be kept.")
+        }
         .onAppear {
             logDate = store.selectedLogDate ?? store.today
             loadDraft(for: logDate)
@@ -193,6 +105,324 @@ struct LogSheet: View {
             viewingSavedLog = store.showingLogPreview && store.log(for: logDate) != nil
         }
         .onDisappear { store.selectedLogDate = nil; store.showingLogPreview = false }
+    }
+
+    private var combinedBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    DisplayTitle(before: viewingSavedLog ? "How you " : "How do you ",
+                                 accent: viewingSavedLog ? "felt" : "feel?", size: 32)
+                    Spacer()
+                    Button { store.showLog = false } label: {
+                        Image(systemName: "xmark").font(.system(size: 20))
+                            .frame(width: 40, height: 40)
+                            .background(Palette.surface, in: Circle())
+                            .overlay(Circle().stroke(Palette.line))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .disabled(store.logWritePending)
+                }
+                if viewingSavedLog {
+                    savedLogDetails
+                } else {
+                    combinedFields
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 30)
+        }
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
+        .background(Palette.bg.ignoresSafeArea())
+        .interactiveDismissDisabled(store.logWritePending)
+        .onChange(of: store.logsLoaded) { _, loaded in
+            if loaded { loadDraft(for: logDate) }
+        }
+    }
+
+    private var combinedFields: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.vertical, 8)
+                .onChange(of: logDate) { _, date in loadDraft(for: date) }
+            individualFlow
+            tagSection(store.allMoods, selected: $moods, symptom: false)
+            tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
+            individualPain
+            individualEnergy
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Note").font(.cardSubheading)
+                TextField("Anything you want to remember…", text: $note, axis: .vertical)
+                    .lineLimit(3...6)
+                    .padding(14)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line))
+            }
+            if !store.logsLoaded { ProgressView("Loading saved entry") }
+            if let error = store.logWriteError ?? store.logsError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            if store.logWritePending { ProgressView("Saving entry") }
+            Button {
+                store.save(DayLog(date: logDate, flow: flow, moods: moods.sorted(), symptoms: symptoms.sorted(),
+                                  pain: Int(pain), energy: Int(energy), note: note))
+            } label: {
+                Text("Save log").font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Palette.surface)
+                    .frame(maxWidth: .infinity, minHeight: 54)
+                    .background(Palette.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(Palette.surface2.opacity(0.45), in: RoundedRectangle(cornerRadius: 24))
+        .disabled(store.logWritePending || !store.logsLoaded || store.logsError != nil)
+    }
+
+
+    private var individualBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    Text("Log \(Text(flowOnly ? "Flow" : (symptomsOnly ? "Symptoms" : "Mood")).italic().foregroundStyle(Palette.accent))")
+                        .font(.display(32))
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 20))
+                            .frame(width: 40, height: 40)
+                            .background(Palette.surface, in: Circle())
+                            .overlay(Circle().stroke(Palette.line))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .disabled(savingIndividual)
+                }
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(flowOnly ? "How is your flow?" : (symptomsOnly ? "What are you noticing?" : "How are you feeling?")).font(.cardSubheading)
+                        Text(flowOnly ? "Choose the option that best describes your flow." : (symptomsOnly ? "Select any symptoms, then record your pain and energy." : "Select your moods or add your own."))
+                            .font(.system(size: 16)).foregroundStyle(Palette.inkSoft)
+                    }
+                    DatePicker("Log date", selection: $logDate, in: ...store.today, displayedComponents: .date)
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.vertical, 8)
+                        .onChange(of: logDate) { _, date in loadDraft(for: date) }
+                    if flowOnly {
+                        individualFlow
+                    } else if symptomsOnly {
+                        tagSection(store.allSymptoms, selected: $symptoms, symptom: true)
+                        individualPain
+                        individualEnergy
+                    } else {
+                        tagSection(store.allMoods, selected: $moods, symptom: false)
+                    }
+                    if !store.logsLoaded { ProgressView("Loading saved entry") }
+                    if let error = individualError ?? store.logsError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+                    Button(action: saveIndividual) {
+                        HStack {
+                            if savingIndividual { ProgressView().tint(Palette.surface) }
+                            Text(flowOnly ? "Save flow" : (symptomsOnly ? "Save symptoms" : "Save mood")).font(.system(size: 17, weight: .semibold))
+                        }
+                        .foregroundStyle(Palette.surface)
+                        .frame(maxWidth: .infinity, minHeight: 54)
+                        .background(Palette.accent, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(savingIndividual || !store.logsLoaded || store.logsError != nil || store.logWritePending)
+                }
+                .padding(18)
+                .background(Palette.surface2.opacity(0.45), in: RoundedRectangle(cornerRadius: 24))
+                .disabled(savingIndividual)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 30)
+        }
+        .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
+        .background(Palette.bg.ignoresSafeArea())
+        .interactiveDismissDisabled(savingIndividual)
+        .onChange(of: store.logsLoaded) { _, loaded in
+            if loaded { loadDraft(for: logDate) }
+        }
+    }
+
+    private var standardFlowNames: [String] { ["None", "Spotting", "Light", "Medium", "Heavy"] }
+
+    private var individualFlow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Flow").font(.cardSubheading)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 12) {
+                ForEach(Array(standardFlowNames.enumerated()), id: \.element) { index, name in
+                    Button { flow = name } label: {
+                        flowTile(name: name, index: index, selected: flow == name)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(name)
+                    .accessibilityAddTraits(flow == name ? .isSelected : [])
+                }
+                Button {
+                    customFlowName = standardFlowNames.contains(flow) ? "" : flow
+                    editingCustomFlow = true
+                } label: {
+                    flowTile(name: standardFlowNames.contains(flow) ? "Custom" : flow,
+                             index: nil, selected: !standardFlowNames.contains(flow))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(standardFlowNames.contains(flow) ? "Custom flow" : "Custom flow, \(flow)")
+                .accessibilityAddTraits(standardFlowNames.contains(flow) ? [] : .isSelected)
+            }
+        }
+    }
+
+    private func flowTile(name: String, index: Int?, selected: Bool) -> some View {
+        VStack(spacing: 12) {
+            if let index {
+                Image(systemName: index == 0 ? "drop" : "drop.fill")
+                    .font(.system(size: CGFloat(24 + index * 5)))
+                    .foregroundStyle([Palette.inkFaint, Palette.petal, Palette.pink, Palette.accent, Palette.berry][index])
+                    .frame(width: 68, height: 68)
+                    .background(Palette.accentSoft, in: Circle())
+            } else {
+                Image(systemName: "plus").font(.system(size: 36, weight: .light))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 68, height: 68)
+            }
+            Text(name).font(.system(size: 15, weight: .semibold))
+                .lineLimit(2).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 144)
+        .padding(.horizontal, 8)
+        .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .stroke(selected ? Palette.accent : Palette.line,
+                    style: StrokeStyle(lineWidth: selected ? 1.5 : 1, dash: index == nil ? [4, 3] : [])))
+        .foregroundStyle(selected ? Palette.ink : (index == nil ? Palette.accent : Palette.ink))
+    }
+
+    private var individualPain: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Pain").font(.cardSubheading)
+                Spacer()
+                Text("How much pain today?").font(.system(size: 14))
+                    .foregroundStyle(Palette.inkSoft)
+            }
+            gradientPainSlider
+            HStack(spacing: 0) {
+                ForEach(0...10, id: \.self) { level in
+                    Text("\(level)")
+                        .font(.system(size: 12, weight: Int(pain) == level ? .bold : .regular))
+                        .foregroundStyle(Int(pain) == level ? Palette.accent : Palette.inkSoft)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            if pain >= 7 {
+                Text("Pain that stops you doing everyday things deserves proper care. Consider talking to a GP or pharmacist.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                Link("NHS: period pain", destination: CycleStore.nhsPeriodPain).font(.caption)
+            }
+        }
+    }
+
+    private var gradientPainSlider: some View {
+        GeometryReader { geometry in
+            let travel = max(1, geometry.size.width - 30)
+            let progress = min(1, max(0, pain / 10))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.accentSoft)
+                    .frame(height: 8)
+                Capsule()
+                    .fill(LinearGradient(colors: [Palette.petal, Palette.pink,
+                                                  Palette.accent, Palette.berry],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 8)
+                    .mask(alignment: .leading) {
+                        Rectangle().frame(width: 15 + travel * progress)
+                    }
+                Circle().fill(Palette.surface)
+                    .overlay(Circle().stroke(Self.painColor(Int(pain)), lineWidth: 3))
+                    .shadow(color: Self.painColor(Int(pain)).opacity(0.2), radius: 4, y: 2)
+                    .frame(width: 30, height: 30)
+                    .offset(x: travel * progress)
+            }
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                pain = (min(1, max(0, (value.location.x - 15) / travel)) * 10).rounded()
+            })
+        }
+        .frame(height: 44)
+        .accessibilityElement()
+        .accessibilityLabel("Pain")
+        .accessibilityValue("\(Int(pain)) out of 10")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: pain = min(10, pain + 1)
+            case .decrement: pain = max(0, pain - 1)
+            @unknown default: break
+            }
+        }
+        .sensoryFeedback(.selection, trigger: Int(pain))
+    }
+
+    private var individualEnergy: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Energy").font(.cardSubheading)
+            HStack(spacing: 6) {
+                ForEach(Array(energyLevels.enumerated()), id: \.offset) { index, level in
+                    let selected = Int(energy) == index + 1
+                    Button { energy = Double(index + 1) } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: level.1).font(.system(size: 20))
+                                .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
+                            Text(level.0).foregroundStyle(selected ? Palette.ink : Palette.ink)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 62)
+                        .background(selected ? Palette.blushPink : Palette.surface,
+                                    in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16)
+                            .stroke(selected ? Palette.accent : Palette.line, lineWidth: selected ? 1.5 : 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Energy \(level.0)")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func saveIndividual() {
+        guard !savingIndividual, store.logsLoaded, store.logsError == nil, !store.logWritePending else { return }
+        savingIndividual = true
+        individualError = nil
+        // Update only this sheet’s fields in the latest daily entry.
+        var entry = store.log(for: logDate) ?? DayLog(date: logDate)
+        if flowOnly {
+            entry.flow = flow
+        } else if symptomsOnly {
+            entry.symptoms = symptoms.sorted()
+            entry.pain = Int(pain)
+            entry.energy = Int(energy)
+        } else {
+            entry.moods = moods.sorted()
+        }
+        Task {
+            defer { savingIndividual = false }
+            do {
+                try await store.write(entry)
+                store.showToast(flowOnly ? "Flow saved" : (symptomsOnly ? "Symptoms saved" : "Mood saved"))
+                dismiss()
+            } catch { individualError = "Entry wasn't saved: \(error.localizedDescription)" }
+        }
     }
 
     /// A saved day log is a readable journal entry until the user taps Edit.
@@ -215,6 +445,16 @@ struct LogSheet: View {
                     .buttonStyle(.bordered)
                     .tint(Palette.accent)
                     .accessibilityLabel("Edit this saved day log")
+                    Button {
+                        confirmingLogDeletion = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Palette.accent)
+                    .accessibilityLabel("Delete this saved day log")
+                    .disabled(store.logWritePending)
                 }
 
                 // Flow gets the same droplet language as the log editor.
@@ -292,7 +532,9 @@ struct LogSheet: View {
             } else {
                 LazyVGrid(columns: tileColumns, spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
-                        let icon = store.emojiForTag(symptom: symptom, tag) ?? Self.emoji[tag] ?? "✨"
+                        let icon = store.emojiForTag(symptom: symptom, tag)
+                    ?? (symptom ? ["Cramps": "⚡️", "Headache": "🤕", "Bloating": "🫧", "Tender breasts": "👙"][tag] : nil)
+                    ?? Self.emoji[tag] ?? "✨"
                         VStack(spacing: 5) {
                             Text(icon).font(.system(size: 23))
                             Text(tag)
@@ -354,6 +596,7 @@ struct LogSheet: View {
         let managing = symptom ? editingSymptoms : editingMoods
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
+                if !moodOnly && !flowOnly { Text(symptom ? "Symptoms" : "Mood").font(.cardSubheading) }
                 Spacer()
                 Button(managing ? "Done" : "Edit") {
                     withAnimation(.easeInOut(duration: 0.16)) {
@@ -385,7 +628,9 @@ struct LogSheet: View {
         return LazyVGrid(columns: tileColumns, spacing: 8) {
             ForEach(shown, id: \.self) { tag in
                 let on = selected.wrappedValue.contains(tag)
-                let icon = store.emojiForTag(symptom: symptom, tag) ?? Self.emoji[tag] ?? "✨"
+                let icon = store.emojiForTag(symptom: symptom, tag)
+                    ?? (symptom ? ["Cramps": "⚡️", "Headache": "🤕", "Bloating": "🫧", "Tender breasts": "👙"][tag] : nil)
+                    ?? Self.emoji[tag] ?? "✨"
                 if managing {
                     tile(emoji: icon, label: tag, on: on)
                         .phaseAnimator([false, true]) { content, phase in
@@ -433,12 +678,12 @@ struct LogSheet: View {
                     }
                 }
             }
-            if managing {
+            Group {
                 Button {
                     tagEditor = TagEditRequest(symptom: symptom, originalName: nil,
                                                emoji: symptom ? "🌀" : "😊")
                 } label: {
-                    tile(emoji: "＋", label: "Add", on: false, dashed: true)
+                    tile(emoji: "＋", label: symptom ? "Add symptom" : "Add mood", on: false, dashed: true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(symptom ? "Add your own symptom" : "Add your own mood")
@@ -451,74 +696,22 @@ struct LogSheet: View {
         tagEditor = TagEditRequest(symptom: symptom, originalName: name, emoji: emoji)
     }
 
-    private func tile(emoji: String, label: String, on: Bool, dashed: Bool = false) -> some View {
-        VStack(spacing: 4) {
-            Text(emoji).font(.system(size: 22))
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, minHeight: 72)
-        .padding(.horizontal, 4)
-        .background(on ? Palette.accentSoft : Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(on ? Palette.accent : Palette.line, style: StrokeStyle(lineWidth: on ? 1.5 : 1, dash: dashed ? [4, 3] : []))
-        )
-        .foregroundStyle(dashed ? Palette.accent : Palette.ink)
-    }
-
-    /// 0-10 scale that works like a slider: drag or tap along the dots. Dots up to the level fill with the gradient.
-    private var painScale: some View {
-        VStack(spacing: 6) {
-            GeometryReader { geo in
-                let step = geo.size.width / 11
-                ZStack(alignment: .leading) {
-                    // Track behind the dots, filled up to the current level.
-                    Capsule().fill(Palette.ink.opacity(0.1))
-                        .frame(width: step * 10, height: 4)
-                        .offset(x: step / 2)
-                    Capsule().fill(LinearGradient(colors: [Self.painColor(0), Self.painColor(Int(pain))], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: step * pain, height: 4)
-                        .offset(x: step / 2)
-                    HStack(spacing: 0) {
-                        ForEach(0...10, id: \.self) { level in
-                            let filled = level <= Int(pain)
-                            let current = level == Int(pain)
-                            Circle()
-                                .fill(filled ? Self.painColor(level) : Palette.surface)
-                                .overlay(Circle().stroke(current ? Palette.ink : (filled ? Color.clear : Palette.ink.opacity(0.22)),
-                                                         lineWidth: current ? 2 : 1.5))
-                                .frame(width: current ? 26 : 16, height: current ? 26 : 16)
-                                .frame(width: step, height: 32)
-                        }
-                    }
-                }
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                    pain = Double(min(10, max(0, Int(drag.location.x / step))))
-                })
+    @ViewBuilder private func tile(emoji: String, label: String, on: Bool, dashed: Bool = false) -> some View {
+            VStack(spacing: 6) {
+                Text(emoji).font(.system(size: dashed ? 30 : 24))
+                    .frame(width: 38, height: 38)
+                    .background(dashed ? Color.clear : Palette.accentSoft, in: Circle())
+                Text(label).font(.system(size: 12, weight: .medium))
+                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
             }
-            .frame(height: 32)
-            .sensoryFeedback(.selection, trigger: Int(pain))
-            .accessibilityElement()
-            .accessibilityLabel("Pain")
-            .accessibilityValue("\(Int(pain)) out of 10, \(Self.painWord(Int(pain)))")
-            .accessibilityAdjustableAction { direction in
-                switch direction {
-                case .increment: pain = min(10, pain + 1)
-                case .decrement: pain = max(0, pain - 1)
-                @unknown default: break
-                }
-            }
-            HStack {
-                Text("None"); Spacer(); Text("Moderate"); Spacer(); Text("Severe")
-            }
-            .font(.system(size: 11)).foregroundStyle(Palette.inkFaint)
-        }
-        .animation(.spring(duration: 0.15), value: pain)
+            .padding(.horizontal, 3)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aspectRatio(1, contentMode: .fit)
+            .background(on ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18)
+                .stroke(on ? Palette.accent : Palette.line,
+                        style: StrokeStyle(lineWidth: on ? 1.5 : 1, dash: dashed ? [4, 3] : [])))
+            .foregroundStyle(on ? Palette.ink : (dashed ? Palette.accent : Palette.ink))
     }
 
     static func painWord(_ level: Int) -> String {
@@ -532,21 +725,11 @@ struct LogSheet: View {
     }
 
     private static func painColor(_ level: Int) -> Color {
-        // Starts at a mid pink so the low levels are still easy to see on the pale background.
-        let steps = [Palette.petal, Palette.pink, Palette.coral, Palette.rose, Palette.berry, Palette.plum, Palette.wine]
-        return steps[min(steps.count - 1, level * steps.count / 11)]
+        let steps: [Color] = [Palette.petal, Palette.pink, Palette.accent, Palette.berry]
+        return steps[min(steps.count - 1, max(0, level) * steps.count / 11)]
     }
 
-    private func field<C: View>(_ title: String, value: String? = nil, @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title).font(.system(size: 15, weight: .semibold))
-                Spacer()
-                if let value { Text(value).font(.system(size: 14)).monospacedDigit().foregroundStyle(Palette.inkSoft) }
-            }
-            content()
-        }
-    }
+
 }
 
 // A compact name + emoji editor. Built-in tags may be renamed (converted into custom tags);

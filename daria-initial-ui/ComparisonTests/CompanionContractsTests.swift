@@ -4,6 +4,32 @@ import XCTest
 final class CompanionContractsTests: XCTestCase {
     let today = LogDate.parse("2026-10-21")!
 
+    func testSelectedWeekdaysPersistAndGenerateRepeatingCalendarTimes() throws {
+        let reminder = Reminder(title: "Take birth control", kind: .daily, hour: 9, minute: 15,
+                                weekdays: [1, 3, 4, 7, 3, 0, 8])
+        let decoded = try JSONDecoder().decode(Reminder.self, from: JSONEncoder().encode(reminder))
+        XCTAssertEqual(decoded.repeatWeekdays, [3, 4, 7, 1])
+        XCTAssertEqual(decoded.dailyNotificationComponents.map(\.weekday), [3, 4, 7, 1])
+        XCTAssertTrue(decoded.dailyNotificationComponents.allSatisfy { $0.hour == 9 && $0.minute == 15 })
+        let changed = try ReminderPatch(time: "10:30").applying(to: decoded, today: today)
+        XCTAssertEqual(changed.repeatWeekdays, decoded.repeatWeekdays)
+        XCTAssertTrue(changed.dailyNotificationComponents.allSatisfy { $0.hour == 10 && $0.minute == 30 })
+    }
+
+    func testLegacyDailyReminderStillSchedulesEveryDay() throws {
+        let old = Reminder(title: "Water", kind: .daily, hour: 14, minute: 0)
+        let decoded = try JSONDecoder().decode(Reminder.self, from: JSONEncoder().encode(old))
+        XCTAssertNil(decoded.weekdays)
+        XCTAssertEqual(decoded.dailyNotificationComponents.count, 1)
+        XCTAssertNil(decoded.dailyNotificationComponents.first?.weekday)
+        var selected = old
+        selected.weekdays = [2, 4]
+        let daily = try ReminderPatch(schedule: "daily").applying(to: selected, today: today)
+        XCTAssertNil(daily.weekdays)
+        selected.weekdays = []
+        XCTAssertTrue(selected.dailyNotificationComponents.isEmpty)
+    }
+
     func testTimeEditPreservesScheduleIdentityPreferencesAndDormantFields() throws {
         let original = Reminder(id: "server-id", title: "Evening check-in", kind: .beforePeriod,
             hour: 20, minute: 30, date: today, daysBefore: 5, on: false, created: today)

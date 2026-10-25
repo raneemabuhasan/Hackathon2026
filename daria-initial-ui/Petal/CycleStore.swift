@@ -527,13 +527,41 @@ final class CycleStore {
         listeners = []
     }
 
-    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) {
-        userRef.updateData([
+
+    /// The Companion's opening message. Computed, not stored, so it updates as soon as a log changes the prediction.
+    var greeting: ChatMessage {
+        ChatMessage(
+            fromUser: false,
+            text: "Hi \(name). You're on day \(cycleDay), in your \(currentPhase.name.lowercased()) phase. Your next period will probably start between \(fmt(windowStart)) and \(fmt(windowEnd)).",
+            note: "I'm a wellness companion, not a doctor. I won't diagnose anything.")
+    }
+
+    func updateProfile(name: String, lastPeriodStart: Date, cycleLength: Int, periodLength: Int) async throws {
+        let start = Self.cal.startOfDay(for: lastPeriodStart)
+        let batch = db.batch()
+        // Settings displays the latest recorded start, so edits must update that record too.
+        if let latest = periodHistory.records.first,
+           !Self.cal.isDate(start, inSameDayAs: latest.start) {
+            if let periodStorageError {
+                throw NSError(domain: "CycleStore", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: periodStorageError])
+            }
+            var next = periodHistory
+            try next.save(id: latest.id, start: start, end: latest.end)
+            guard let saved = next.records.first(where: { $0.id == latest.id }) else {
+                throw PeriodHistory.Validation.missing
+            }
+            try batch.setData(from: saved, forDocument: periodsRef.document(saved.id.uuidString))
+        }
+        let baseline = CycleBaseline(lastStart: start, periodDays: periodLength, cycleDays: cycleLength)
+        batch.updateData([
             "name": name,
-            "lastPeriodStart": Timestamp(date: Self.cal.startOfDay(for: lastPeriodStart)),
+            "lastPeriodStart": Timestamp(date: start),
             "cycleLength": cycleLength,
             "periodLength": periodLength,
-        ]) { error in if let error { print("Profile update failed:", error) } }
+            "baseline": try Firestore.Encoder().encode(baseline),
+        ], forDocument: userRef)
+        try await batch.commit()
         showToast("Settings saved")
     }
 
@@ -564,7 +592,7 @@ final class CycleStore {
                               diets: diets.sorted(), avoid: avoid.sorted(), dislikes: dislikes, aiConsent: aiConsent,
                               birthControl: birthControl)
         let batch = db.batch()
-        try? batch.setData(from: profile, forDocument: userRef)
+        _ = try? batch.setData(from: profile, forDocument: userRef)
         addDefaultReminders(to: batch, logHour: logHour, logMinute: logMinute, periodDaysBefore: periodDaysBefore,
                             mode: birthControl?.mode ?? .natural, first: birthControlReminders)
         batch.commit { error in if let error { print("Onboarding write failed:", error) } }
@@ -578,7 +606,7 @@ final class CycleStore {
                                             bleed: mode != .natural, predicts: mode != .steady)
         for (i, var r) in all.enumerated() {
             r.created = Date().addingTimeInterval(-Double(i)) // keep this order under created-desc sorting
-            try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
+            _ = try? batch.setData(from: r, forDocument: userRef.collection("reminders").document(r.id))
         }
     }
 
@@ -907,7 +935,9 @@ final class CycleStore {
                 let fields = try patch.fields(for: reminder, today: currentDay)
                 transaction.updateData(fields, forDocument: reference)
                 // Decode the same merged fields for local state only after the commit acknowledges.
-                let merged = (snapshot.data() ?? [:]).merging(fields) { _, new in new }
+                var merged = (snapshot.data() ?? [:]).merging(fields) { _, new in new }
+                // Firestore deletion sentinels are not decodable values in the local snapshot.
+                if patch.schedule != nil { merged.removeValue(forKey: "weekdays") }
                 let saved = try Firestore.Decoder().decode(Reminder.self, from: merged)
                 return CompanionReminderCommit(reminder: saved)
             } catch { errorPointer?.pointee = error as NSError; return nil }
@@ -1382,7 +1412,7 @@ final class CycleStore {
         } else {
             for name in meal.items where !grocery.contains(where: { $0.name == name }) {
                 let item = GroceryItem(name: name)
-                try? batch.setData(from: item, forDocument: userRef.collection("grocery").document(item.id))
+                _ = try? batch.setData(from: item, forDocument: userRef.collection("grocery").document(item.id))
             }
             showToast("Added \(meal.items.count) items to your list")
         }
@@ -1569,7 +1599,10 @@ private extension ReminderPatch {
         if title != nil { fields["title"] = saved.title }
         if time != nil { fields["hour"] = saved.hour; fields["minute"] = saved.minute }
         if enabled != nil { fields["on"] = saved.on }
-        if schedule != nil { fields["kind"] = saved.kind.rawValue }
+        if schedule != nil {
+            fields["kind"] = saved.kind.rawValue
+            fields["weekdays"] = FieldValue.delete()
+        }
         if date != nil, let date = saved.date { fields["date"] = Timestamp(date: date) }
         if daysBefore != nil, let days = saved.daysBefore { fields["daysBefore"] = days }
         return fields

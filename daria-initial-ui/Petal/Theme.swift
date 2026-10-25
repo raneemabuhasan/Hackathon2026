@@ -134,6 +134,8 @@ enum Palette {
 
 extension Font {
     static func display(_ size: CGFloat) -> Font { .system(size: size, weight: .regular, design: .serif) }
+    /// New York serif, shared by headings within cards.
+    static var cardSubheading: Font { .display(20) }
 }
 
 struct CardStyle: ViewModifier {
@@ -222,7 +224,7 @@ struct SectionHeader: View {
     var trailing: String? = nil
     var body: some View {
         HStack {
-            Text(title).font(.system(size: 15, weight: .semibold))
+            Text(title).font(.cardSubheading)
             Spacer()
             if let trailing { Text(trailing).font(.caption).foregroundStyle(Palette.inkFaint) }
         }
@@ -299,13 +301,14 @@ struct FlowLayout: Layout {
 
 /// Standard scrolling page used by every tab.
 struct Page<Content: View>: View {
+    var bottomPadding: CGFloat = 120
     @ViewBuilder let content: Content
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) { content }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 120)
+                .padding(.bottom, bottomPadding)
         }
         .scrollIndicators(.hidden)
     }

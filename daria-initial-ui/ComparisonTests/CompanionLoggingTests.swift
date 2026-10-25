@@ -4,6 +4,26 @@ import XCTest
 final class CompanionLoggingTests: XCTestCase {
     let date = LogDate.parse("2026-10-20")!
 
+    func testCompanionUpdatesPreserveSpottingAndCustomFlow() throws {
+        for flow in ["Spotting", "Very light"] {
+            var existing = DayLog(date: date)
+            existing.flow = flow
+            existing.note = "Keep this note"
+            let updated = try CompanionLogPatch(date: date, symptoms: ["Cramps"])
+                .merged(with: existing, today: date)
+            XCTAssertEqual(updated.flow, flow)
+            XCTAssertEqual(updated.note, existing.note)
+            XCTAssertEqual(updated.symptoms, ["Cramps"])
+        }
+    }
+
+    func testExplicitCompanionFlowRemainsValidated() throws {
+        XCTAssertThrowsError(try CompanionLogPatch(date: date, flow: "Unknown flow")
+            .merged(with: nil, today: date))
+        XCTAssertEqual(try CompanionLogPatch(date: date, flow: "Spotting")
+            .merged(with: nil, today: date).flow, "Spotting")
+    }
+
     func testFeelingThenConfirmationRetainsContextAcrossChatRecreationAndMidnight() {
         var state = LoggingConversation()
         XCTAssertEqual(state.receive("I'm feeling really tired today", now: date), .offer)
