@@ -301,13 +301,14 @@ struct FlowLayout: Layout {
 
 /// Standard scrolling page used by every tab.
 struct Page<Content: View>: View {
+    var bottomPadding: CGFloat = 120
     @ViewBuilder let content: Content
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) { content }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 120)
+                .padding(.bottom, bottomPadding)
         }
         .scrollIndicators(.hidden)
     }
