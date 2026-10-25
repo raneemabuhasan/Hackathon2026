@@ -4,8 +4,8 @@ import CryptoKit
 struct ForecastResponse: Codable, Sendable {
     let shiftDays: Int
     let spreadDays: Int
-    let reason: String
-    let notes: [String]
+    let reasonCategory: String
+    let evidenceCycleStarts: [String]
 }
 
 /// Date-only facts; no Firebase dependency, so validation and accuracy can be tested locally.
@@ -22,6 +22,25 @@ struct ForecastScore: Equatable {
     let actualStart: String
     let aiError: Int
     let mathError: Int
+}
+
+struct ForecastScoreInput {
+    let cycleStart: String
+    let predictedStart: String
+    let baselineStart: String
+    let actualStart: String
+    let aiError: Int
+    let mathError: Int
+}
+
+enum ForecastRetryPolicy {
+    static let maximumAttempts = 3
+
+    /// Retry transient failures with a short capped backoff; invalid model output is not retried.
+    static func delay(afterFailureCount count: Int) -> TimeInterval? {
+        guard count > 0, count < maximumAttempts else { return nil }
+        return min(30, pow(2, Double(count)))
+    }
 }
 
 struct ForecastEligibility {
@@ -47,16 +66,24 @@ enum ForecastMath {
     }
 
     static func clamp(_ response: ForecastResponse, baselineStart: Date, baselineSpread: Int,
-                      lastStart: Date) -> (start: Date, spread: Int, reason: String, notes: [String])? {
+                      lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String)? {
         let lower = max(2, baselineSpread - 1), upper = min(10, baselineSpread + 3)
         guard lower <= upper,
-              let start = LogDate.calendar.date(byAdding: .day, value: min(3, max(-3, response.shiftDays)), to: baselineStart),
+              response.evidenceCycleStarts.count <= 6,
+              Set(response.evidenceCycleStarts).count == response.evidenceCycleStarts.count,
+              Set(response.evidenceCycleStarts).isSubset(of: allowedEvidence),
+              (-3...3).contains(response.shiftDays), (lower...upper).contains(response.spreadDays),
+              response.reasonCategory == "recent_history" || response.reasonCategory == "no_clear_pattern",
+              response.reasonCategory != "no_clear_pattern" || response.shiftDays == 0,
+              response.reasonCategory != "no_clear_pattern" || (response.evidenceCycleStarts.isEmpty && response.spreadDays == baselineSpread),
+              response.reasonCategory != "recent_history" || !response.evidenceCycleStarts.isEmpty,
+              response.shiftDays == 0 || response.evidenceCycleStarts.count >= 2 else { return nil }
+        guard let start = LogDate.calendar.date(byAdding: .day, value: response.shiftDays, to: baselineStart),
               (18...45).contains(days(start, from: lastStart)) else { return nil }
-        let reason = String(response.reason.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
-        guard !reason.isEmpty else { return nil }
-        let notes = response.notes.lazy.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)) }
-            .filter { !$0.isEmpty }.prefix(5)
-        return (start, min(upper, max(lower, response.spreadDays)), reason, Array(notes))
+        let reason = response.reasonCategory == "no_clear_pattern"
+            ? "There isn’t a clear pattern, so this stays close to your average."
+            : "Recent cycle records informed this estimate."
+        return (start, response.spreadDays, reason)
     }
 
     static func score(_ forecasts: [ForecastHistoryEntry], starts: [Date]) -> [ForecastScore] {
@@ -80,10 +107,25 @@ enum ForecastMath {
         return recent.count == 3 && recent.reduce(0) { $0 + abs($1.aiError) } > recent.reduce(0) { $0 + abs($1.mathError) }
     }
 
-    static func inputsHash(lastStart: Date, cycles: [(start: Date, length: Int)], average: Int,
-                           spread: Int, completedLogCount: Int) -> String {
-        let cycles = cycles.sorted { $0.start < $1.start }.map { "\(LogDate.key($0.start)):\($0.length)" }
-        let text = ([LogDate.key(lastStart)] + cycles + [String(average), String(spread), String(completedLogCount)]).joined(separator: "|")
+    static func inputsHash(lastStart: Date, cycles: [(start: Date, length: Int)],
+                           periods: [(start: Date, end: Date?)], logs: [DayLog], average: Int,
+                           spread: Int, configuredCycleLength: Int, configuredPeriodLength: Int,
+                           referenceDate: Date, scores: [ForecastScoreInput] = [],
+                           logicVersion: String = "forecast-v2") -> String {
+        let cycleParts = cycles.sorted { $0.start < $1.start }.map { "cycle:\(LogDate.key($0.start)):\($0.length)" }
+        let periodParts = periods.map { "period:\(LogDate.key($0.start)):\($0.end.map { LogDate.key($0) } ?? "open")" }.sorted()
+        let logParts = logs.map { log in
+            let symptoms = Set(log.symptoms).sorted().joined(separator: ",")
+            let moods = Set(log.moods).sorted().joined(separator: ",")
+            return "log:\(LogDate.key(log.date)):\(log.flow):\(symptoms):\(moods):\(log.pain):\(log.energy)"
+        }.sorted()
+        let scoreParts = scores.map {
+            "score:\($0.cycleStart):\($0.predictedStart):\($0.baselineStart):\($0.actualStart):\($0.aiError):\($0.mathError)"
+        }.sorted()
+        let text = ([logicVersion, "last:\(LogDate.key(lastStart))"] + cycleParts + periodParts + logParts
+            + scoreParts
+            + ["average:\(average)", "spread:\(spread)", "configured-cycle:\(configuredCycleLength)",
+               "configured-period:\(configuredPeriodLength)", "today:\(LogDate.key(referenceDate))"]).joined(separator: "|")
         return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -91,13 +133,19 @@ enum ForecastMath {
         let ordered = logs.sorted { $0.date < $1.date }
         guard !ordered.isEmpty else { return "No saved daily logs." }
         var counts: [String: Int] = [:]
-        for log in ordered { for symptom in Set(log.symptoms) { counts[symptom, default: 0] += 1 } }
+        var moodCounts: [String: Int] = [:]
+        for log in ordered {
+            for symptom in Set(log.symptoms) { counts[symptom, default: 0] += 1 }
+            for mood in Set(log.moods) { moodCounts[mood, default: 0] += 1 }
+        }
         let top = counts.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .prefix(3).map { "\($0.key): \($0.value) days" }.joined(separator: ", ")
+        let topMoods = moodCounts.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
             .prefix(3).map { "\($0.key): \($0.value) days" }.joined(separator: ", ")
         let energy = Double(ordered.reduce(0) { $0 + min(5, max(1, $1.energy)) }) / Double(ordered.count)
         let flow = ["None", "Light", "Medium", "Heavy"]
         let heaviest = ordered.map { flow.firstIndex(of: $0.flow) ?? 0 }.max() ?? 0
-        return "Logged days: \(ordered.count); top symptoms: \(top.isEmpty ? "none" : top); max pain: \(min(10, max(0, ordered.map(\.pain).max() ?? 0))); average energy: \(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), energy)); heaviest flow: \(flow[heaviest])."
+        return "Logged days: \(ordered.count); top symptoms: \(top.isEmpty ? "none" : top); top moods: \(topMoods.isEmpty ? "none" : topMoods); max pain: \(min(10, max(0, ordered.map(\.pain).max() ?? 0))); average energy: \(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), energy)); heaviest flow: \(flow[heaviest])."
     }
 }
 
