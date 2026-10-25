@@ -411,8 +411,11 @@ final class CycleStore {
     private var forecastStopped = false
     private var forecastGeneration = 0
     private var forecastAttemptedHash: String?
+    private var forecastFailureHash: String?
+    private var forecastFailureCount = 0
     @ObservationIgnored private var forecastTask: Task<Void, Never>?
     @ObservationIgnored private var forecastTaskID: UUID?
+    @ObservationIgnored private var forecastTaskHash: String?
 
     @ObservationIgnored private var listeners: [ListenerRegistration] = []
     @ObservationIgnored private let db = Firestore.firestore()
@@ -1434,6 +1437,9 @@ final class CycleStore {
 
     /// Start AI work early so Today and Nourish are ready by the time the user looks.
     private func prefetchAI() {
+        if let scheduledHash = forecastTaskHash, scheduledHash != currentForecastInputsHash {
+            invalidateForecastRequest()
+        }
         guard profile != nil, aiEnabled, !deletingData else { return }
         scheduleForecast()
         Task {
@@ -1710,16 +1716,23 @@ extension CycleStore {
         return max(2, Int((sqrt(variance) * 1.5).rounded()))
     }
 
-    private var completedForecastLogs: [DayLog] {
+    private var forecastRelevantLogs: [DayLog] {
         logs.filter { log in
-            completedCycles.contains { log.date >= $0.start && log.date < Self.add($0.start, $0.length) }
+            (log.date >= lastStart && log.date <= today)
+                || completedCycles.contains { log.date >= $0.start && log.date < Self.add($0.start, $0.length) }
         }
     }
 
     var currentForecastInputsHash: String {
-        ForecastMath.inputsHash(lastStart: lastStart, cycles: completedCycles, average: average,
-                                spread: baselineSpread, completedLogCount: completedForecastLogs.count)
+        let scores = forecastScores.map { ForecastScoreInput(cycleStart: $0.cycleStart, predictedStart: $0.predictedStart,
+            baselineStart: $0.baselineStart, actualStart: $0.actualStart, aiError: $0.aiError, mathError: $0.mathError) }
+        return ForecastMath.inputsHash(lastStart: lastStart, cycles: completedCycles,
+            periods: periodHistory.records.map { ($0.start, $0.end) }, logs: forecastRelevantLogs,
+            average: average, spread: baselineSpread, configuredCycleLength: profile?.cycleLength ?? 28,
+            configuredPeriodLength: profile?.periodLength ?? 5, referenceDate: today, scores: scores)
     }
+
+    private var forecastEvidenceCycleStarts: Set<String> { Set(completedCycles.map { Self.key($0.start) }) }
 
     var activeAIForecast: AIForecast? {
         guard aiForecastEligible, let forecast = forecasts[Self.key(lastStart)],
@@ -1750,21 +1763,19 @@ extension CycleStore {
             let entries = logs.filter { $0.date >= cycle.start && $0.date < Self.add(cycle.start, cycle.length) }
             let periodLength = periodHistory.records.first { Self.key($0.start) == Self.key(cycle.start) }?.end
                 .map { Self.days($0, from: cycle.start) + 1 }
-            lines.append("Completed cycle: start=\(Self.key(cycle.start)); length=\(cycle.length); periodLength=\(periodLength.map(String.init) ?? "unknown"). \(ForecastMath.symptomSummary(entries))")
+            lines.append("Completed cycle (reference \(Self.key(cycle.start))): start=\(Self.key(cycle.start)); length=\(cycle.length); periodLength=\(periodLength.map(String.init) ?? "unknown"). \(ForecastMath.symptomSummary(entries))")
         }
         lines.append("Current cycle: day=\(cycleDay). \(ForecastMath.symptomSummary(logs.filter { $0.date >= lastStart && $0.date <= today }))")
         for score in forecastScores.reversed() {
             lines.append("Past forecast: cycleStart=\(score.cycleStart); predictedStart=\(score.predictedStart); baselineStart=\(score.baselineStart); actualStart=\(score.actualStart); aiError=\(score.aiError); mathError=\(score.mathError).")
         }
-        for note in forecastMemory?.notes.prefix(5) ?? [] {
-            lines.append("Pattern note: \(String(note.prefix(200)))")
-        }
         return lines.joined(separator: "\n")
     }
 
     nonisolated static func clampForecast(_ response: ForecastResponse, baselineStart: Date, baselineSpread: Int,
-                                         lastStart: Date) -> (start: Date, spread: Int, reason: String, notes: [String])? {
-        ForecastMath.clamp(response, baselineStart: baselineStart, baselineSpread: baselineSpread, lastStart: lastStart)
+                                         lastStart: Date, allowedEvidence: Set<String>) -> (start: Date, spread: Int, reason: String)? {
+        ForecastMath.clamp(response, baselineStart: baselineStart, baselineSpread: baselineSpread,
+                           lastStart: lastStart, allowedEvidence: allowedEvidence)
     }
 
     nonisolated static func scoreForecasts(_ forecasts: [AIForecast], starts: [Date]) -> [ForecastScore] {
@@ -1786,6 +1797,8 @@ extension CycleStore {
         forecastGeneration += 1
         forecastTask?.cancel()
         forecastAttemptedHash = nil
+        forecastFailureHash = nil
+        forecastFailureCount = 0
     }
 
     func loadForecast() async {
@@ -1803,33 +1816,51 @@ extension CycleStore {
             try Task.checkCancellation()
             guard generation == forecastGeneration, id == Self.key(lastStart), hash == currentForecastInputsHash,
                   aiForecastEligible, !deletingData, profile != nil,
-                  let clamped = Self.clampForecast(response, baselineStart: baseline, baselineSpread: width, lastStart: cycleStart) else { return }
+                  let clamped = Self.clampForecast(response, baselineStart: baseline, baselineSpread: width,
+                                                   lastStart: cycleStart, allowedEvidence: forecastEvidenceCycleStarts) else { return }
             let forecast = AIForecast(cycleStart: id, baselineStart: Self.key(baseline), baselineSpread: width,
                                       shiftDays: Self.days(clamped.start, from: baseline), spreadDays: clamped.spread,
                                       predictedStart: Self.key(clamped.start), reason: clamped.reason,
                                       model: Assistant.fastModelName, inputsHash: hash)
-            let memory = ForecastMemory(notes: clamped.notes, basedOnCycles: min(100, completedCycles.count))
             let batch = db.batch()
             try batch.setData(from: forecast, forDocument: userRef.collection("predictions").document(id))
-            try batch.setData(from: memory, forDocument: userRef.collection("predictions").document("memory"))
             // Only the confirmed listener installs the result; denied/offline writes keep the math fallback.
             try await batch.commit()
+            if hash == currentForecastInputsHash {
+                forecastFailureHash = nil
+                forecastFailureCount = 0
+            }
         } catch {
+            if !Task.isCancelled, generation == forecastGeneration, hash == currentForecastInputsHash, aiForecastEligible {
+                if forecastFailureHash != hash { forecastFailureHash = hash; forecastFailureCount = 0 }
+                forecastFailureCount += 1
+                forecastAttemptedHash = ForecastRetryPolicy.delay(afterFailureCount: forecastFailureCount) == nil ? hash : nil
+            }
             print("Cycle forecast failed:", error)
         }
     }
 
     private func scheduleForecast() {
+        let hash = currentForecastInputsHash
         guard aiForecastEligible, !forecastLoading, forecastTaskID == nil,
-              activeAIForecast == nil, forecastAttemptedHash != currentForecastInputsHash else { return }
+              activeAIForecast == nil, forecastAttemptedHash != hash else { return }
         let taskID = UUID()
         forecastTaskID = taskID
+        forecastTaskHash = hash
         forecastTask = Task { [weak self] in
             guard let self else { return }
+            do {
+                let delay = self.forecastFailureHash == hash
+                    ? (ForecastRetryPolicy.delay(afterFailureCount: self.forecastFailureCount) ?? 0.25)
+                    : 0.25
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                try Task.checkCancellation()
+            } catch { }
             await self.loadForecast()
             guard self.forecastTaskID == taskID else { return }
             self.forecastTask = nil
             self.forecastTaskID = nil
+            self.forecastTaskHash = nil
             // Re-check after a mid-flight edit or cancellation. Attempted inputs are deduplicated.
             self.scheduleForecast()
         }
