@@ -71,6 +71,9 @@ final class Assistant {
         logAuthorization = authorization
         educationEvidence = EducationEvidence()
         educationRequested = EducationLibrary.requiresEducation(text)
+        if authorization == nil, CompanionIntent.isArithmeticQuestion(text) {
+            return makeReply(text: "I can help with your cycle, saved logs or nutrition, but I can't answer arithmetic questions.")
+        }
         do {
             return try await generateReply(to: text, immediateFollowUp: immediateFollowUp)
         } catch {

@@ -4,6 +4,15 @@ import XCTest
 final class CompanionContractsTests: XCTestCase {
     let today = LogDate.parse("2026-10-21")!
 
+    func testArithmeticQuestionsAreBlockedWithoutMatchingCycleNumbers() {
+        for prompt in ["5+10", "What is 5 + 10?", "Can you tell me what is 5 plus 10?", "calculate 5 * 10"] {
+            XCTAssertTrue(CompanionIntent.isArithmeticQuestion(prompt), prompt)
+        }
+        for prompt in ["What cycle day am I on?", "I logged 5 symptoms over 10 days", "My period lasted from day 5 to day 10"] {
+            XCTAssertFalse(CompanionIntent.isArithmeticQuestion(prompt), prompt)
+        }
+    }
+
     func testSelectedWeekdaysPersistAndGenerateRepeatingCalendarTimes() throws {
         let reminder = Reminder(title: "Take birth control", kind: .daily, hour: 9, minute: 15,
                                 weekdays: [1, 3, 4, 7, 3, 0, 8])
