@@ -49,8 +49,9 @@ final class CycleForecastTests: XCTestCase {
 
     func testForecastExplanationIsAppOwnedAndEvidenceMustBeSupplied() throws {
         let evidence: Set<String> = ["2026-09-01", "2026-08-01"]
-        let result = try XCTUnwrap(ForecastMath.clamp(response(shift: 1), baselineStart: day("2026-10-29"), baselineSpread: 2, lastStart: day("2026-10-01"), allowedEvidence: evidence))
+        let result = try XCTUnwrap(ForecastMath.clamp(response(shift: 1, evidence: ["2026-09-01", "2026-08-01"]), baselineStart: day("2026-10-29"), baselineSpread: 2, lastStart: day("2026-10-01"), allowedEvidence: evidence))
         XCTAssertEqual(result.reason, "Recent cycle records informed this estimate.")
+        XCTAssertEqual(result.evidenceCycleStarts, ["2026-08-01", "2026-09-01"])
         XCTAssertNil(ForecastMath.clamp(response(shift: 1, evidence: ["2030-01-01", "2030-02-01"]), baselineStart: day("2026-10-29"), baselineSpread: 2, lastStart: day("2026-10-01"), allowedEvidence: evidence))
         XCTAssertNil(ForecastMath.clamp(response(shift: 1, evidence: ["2026-09-01"]), baselineStart: day("2026-10-29"), baselineSpread: 2, lastStart: day("2026-10-01"), allowedEvidence: evidence))
         XCTAssertNil(ForecastMath.clamp(response(shift: 0, category: "no_clear_pattern", evidence: ["2026-09-01"]), baselineStart: day("2026-10-29"), baselineSpread: 2, lastStart: day("2026-10-01"), allowedEvidence: ["2026-09-01"]))
