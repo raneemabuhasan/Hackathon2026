@@ -18,14 +18,18 @@ struct SignInView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 Image("SyncWordmark")
                     .resizable()
                     .scaledToFit()
                     .frame(width: creating ? 170 : 220)
-                    .padding(.top, creating ? 48 : 90)
-                    .padding(.bottom, creating ? 16 : 40)
+                    .padding(.top, creating ? 18 : 34)
+                    .padding(.bottom, 2)
                     .accessibilityLabel("Sync")
+
+                // Same interactive pixel robot as the Companion tab.
+                PixelPetCompanion(pet: .robot, width: creating ? 84 : 98)
+                    .padding(.bottom, creating ? 4 : 12)
 
                 VStack(spacing: 14) {
                     Button { Task { await auth.signInWithGoogle() } } label: {

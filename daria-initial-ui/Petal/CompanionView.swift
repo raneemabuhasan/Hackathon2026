@@ -1,7 +1,7 @@
 import SwiftUI
 
 // All pets use the same AI assistant. This selection only changes the visual character.
-private enum CompanionPet: String, CaseIterable, Identifiable {
+enum CompanionPet: String, CaseIterable, Identifiable {
     case robot, bunny, kitten, bear, frog
 
     var id: String { rawValue }
@@ -14,7 +14,7 @@ private enum CompanionPet: String, CaseIterable, Identifiable {
 // A visual companion only: messaging, data access and tool calls still belong to CycleStore.
 // This deliberately lives in CompanionView.swift so the first PR avoids editing project.pbxproj.
 @MainActor
-private struct PixelPetCompanion: View {
+struct PixelPetCompanion: View {
     var pet: CompanionPet = .robot
     var thinking = false
     var width: CGFloat = 108
@@ -26,6 +26,7 @@ private struct PixelPetCompanion: View {
 
     private var imageName: String {
         if smiling { return pet.happyImage }
+        if thinking && pet == .robot { return "CompanionRobotThinking" }
         if blink && !thinking {
             return pet == .robot ? "CompanionRobotBlink" : pet.happyImage
         }
@@ -39,10 +40,10 @@ private struct PixelPetCompanion: View {
                 .interpolation(.none) // Keep the pixel-art outline crisp.
                 .scaledToFit()
                 .frame(width: width, height: width * 1.23)
-                .scaleEffect(smiling && !reduceMotion ? 1.07 : 1)
-                .animation(.spring(duration: 0.22), value: smiling)
-                .offset(y: reduceMotion ? 0 : (floating ? -3 : 2))
-                .rotationEffect(.degrees(reduceMotion ? 0 : (floating ? (thinking ? 5 : 1) : (thinking ? -5 : -1))))
+                // No rotation or fractional scaling: preserve crisp pixel edges.
+                .offset(y: reduceMotion ? 0 : (smiling ? -5 : (floating ? -2 : 1)))
+                .offset(x: reduceMotion || !thinking ? 0 : (floating ? 1 : -1))
+                .animation(.spring(duration: 0.28), value: smiling)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -50,7 +51,7 @@ private struct PixelPetCompanion: View {
         .accessibilityHint("Tap to see the companion smile")
         .onAppear {
             guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                 floating = true
             }
         }
