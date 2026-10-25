@@ -18,6 +18,9 @@ struct SettingsView: View {
     @State private var deletePassword = ""
     @State private var confirmingSignOut = false
     @AppStorage("sync.floatingRobot.enabled") private var floatingRobotEnabled = false
+    // Same placement keys used by FloatingRobotShortcut in ContentView.swift.
+    @AppStorage("sync.floatingRobot.x") private var floatingRobotX = 0.85
+    @AppStorage("sync.floatingRobot.y") private var floatingRobotY = 0.55
     @State private var placement = FloatingRobotPlacement.shared
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
@@ -187,6 +190,21 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(!store.aiEnabled || !floatingRobotEnabled)
+
+                        Button {
+                            // These are the same defaults used by the floating sprite.
+                            // AppStorage propagates the new position to ContentView.
+                            floatingRobotX = 0.85
+                            floatingRobotY = 0.55
+                            placement.isEditing = false
+                        } label: {
+                            Label("Reset position", systemImage: "arrow.counterclockwise")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(minHeight: 38)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!store.aiEnabled || !floatingRobotEnabled)
+                        .accessibilityHint("Move the floating robot back to its default position")
 
                         Text(store.aiEnabled
                              ? "Double-tap the robot to open Companion. Tap once to make it smile, or hold for a curious reaction. Use Edit position to drag without animation, then tap Done. It sleeps when idle."
