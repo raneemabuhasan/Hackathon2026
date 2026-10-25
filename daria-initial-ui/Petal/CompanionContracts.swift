@@ -234,7 +234,7 @@ struct Reminder: Identifiable, Codable {
     /// Optional so older reminders still decode.
     var greets: Bool? = nil
 
-    /// Suggested set for new accounts, most important first. Onboarding picks the log time and the period heads-up.
+    /// Suggested set for new accounts: the period heads-up and the daily check-in. Onboarding picks the log time and the period heads-up.
     /// On hormonal birth control the heads-up is about a bleed, and it's off when nothing is predicted.
     static func defaults(logHour: Int = 20, logMinute: Int = 30, periodDaysBefore: Int = 2,
                          bleed: Bool = false, predicts: Bool = true) -> [Reminder] {
@@ -242,8 +242,6 @@ struct Reminder: Identifiable, Codable {
             Reminder(title: bleed ? "Bleed may start soon" : "Period may start soon", kind: .beforePeriod, hour: 9, minute: 0,
                      daysBefore: periodDaysBefore, on: predicts),
             Reminder(title: "Don't forget to log your symptoms today!", kind: .daily, hour: logHour, minute: logMinute, on: true, greets: true),
-            Reminder(title: "Restock pads & tampons", kind: .beforePeriod, hour: 18, minute: 0, daysBefore: 5, on: false),
-            Reminder(title: "Drink some water", kind: .daily, hour: 14, minute: 0, on: false),
         ]
     }
 

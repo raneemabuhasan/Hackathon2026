@@ -16,6 +16,16 @@ extension Reminder {
         return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
     }
 
+    /// Short name for the settings list; the built-in reminders get a label, custom ones keep their title.
+    var listName: String {
+        if greets == true { return "Daily check-in" }
+        switch title {
+        case "Period may start soon": return "Period reminder"
+        case "Bleed may start soon": return "Bleed reminder"
+        default: return title
+        }
+    }
+
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
     func day(windowStart: Date) -> Date? {
         switch kind {
@@ -191,15 +201,50 @@ struct ReminderEditor: View {
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// The schedule tiles; "Selected days" is a daily reminder with weekdays.
+    private enum Schedule: String, CaseIterable, Identifiable {
+        case daily = "Every day", selectedDays = "Selected days", once = "Once"
+        case beforePeriod = "Before period", everyWeeks = "Every few weeks"
+        var id: Self { self }
+        var icon: String {
+            switch self {
+            case .daily: "sun.max"
+            case .selectedDays: "calendar.badge.clock"
+            case .once: "calendar"
+            case .beforePeriod: "drop"
+            case .everyWeeks: "repeat"
+            }
+        }
+    }
+
+    private var schedule: Binding<Schedule> {
+        Binding {
+            switch kind {
+            case .daily: selectedDays ? .selectedDays : .daily
+            case .once: .once
+            case .beforePeriod: .beforePeriod
+            case .everyWeeks: .everyWeeks
+            }
+        } set: { picked in
+            selectedDays = picked == .selectedDays
+            switch picked {
+            case .daily, .selectedDays: kind = .daily
+            case .once: kind = .once
+            case .beforePeriod: kind = .beforePeriod
+            case .everyWeeks: kind = .everyWeeks
+            }
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    DisplayTitle(before: original == nil ? "New " : "Edit ", accent: "Reminder", size: 32)
+                    DisplayTitle(before: original == nil ? "New " : "Edit ", accent: "reminder", size: 26)
                     Spacer()
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
-                            .frame(width: 38, height: 38)
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                            .frame(width: 32, height: 32)
                             .background(Palette.surface, in: Circle())
                             .overlay(Circle().stroke(Palette.line))
                     }
@@ -207,84 +252,64 @@ struct ReminderEditor: View {
                     .accessibilityLabel("Close")
                 }
 
-                Text("A little nudge, on your schedule.")
-                    .font(.system(size: 16)).foregroundStyle(Palette.inkSoft)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Remind me to…").font(.cardSubheading)
-                    TextField("Reminder title", text: $title, prompt: Text(""))
+                VStack(alignment: .leading, spacing: 8) {
+                    label("Remind me to…")
+                    TextField("Reminder title", text: $title, prompt: Text("e.g. Take a walk"))
                         .font(.system(size: 15))
-                        .padding(.horizontal, 14).padding(.vertical, 12)
-                        .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(Palette.surface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     if original?.greets == true {
                         Text("Starts with a greeting for the time of day and your name.")
                             .font(.caption).foregroundStyle(Palette.inkFaint)
                     }
                 }
-                .card()
+                .compactCard()
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("When").font(.cardSubheading)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 10) {
-                        scheduleTile("Every day", icon: "sun.max", selected: kind == .daily && !selectedDays) {
-                            kind = .daily; selectedDays = false
-                        }
-                        scheduleTile("Selected days", icon: "calendar.badge.clock", selected: kind == .daily && selectedDays) {
-                            kind = .daily; selectedDays = true
-                        }
-                        scheduleTile("Once", icon: "calendar", selected: kind == .once) { kind = .once; selectedDays = false }
-                        scheduleTile("Before period", icon: "drop", selected: kind == .beforePeriod) { kind = .beforePeriod; selectedDays = false }
-                    }
-                    // Preserve pack/patch/ring repeat intervals supported by the existing scheduler.
-                    scheduleTile("Every few weeks", icon: "repeat", selected: kind == .everyWeeks) {
-                        kind = .everyWeeks; selectedDays = false
-                    }
-
-                    switch kind {
-                    case .daily:
-                        if selectedDays {
-                            Text("Repeat on").font(.cardSubheading)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                                ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in
-                                    scheduleTile([1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat"][day]!,
-                                                 selected: weekdays.contains(day)) {
-                                        if !weekdays.insert(day).inserted { weekdays.remove(day) }
-                                    }
-                                }
+                VStack(alignment: .leading, spacing: 10) {
+                    label("When")
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                        ForEach(Schedule.allCases) { option in
+                            scheduleTile(option.rawValue, icon: option.icon, selected: schedule.wrappedValue == option) {
+                                schedule.wrappedValue = option
                             }
-                            Text("Repeats every week on the days you select.")
-                                .font(.caption).foregroundStyle(Palette.inkSoft)
                         }
-                    case .once:
-                        DatePicker("Date", selection: $date, in: Date.now..., displayedComponents: .date)
-                    case .beforePeriod:
-                        Stepper("\(daysBefore) day\(daysBefore == 1 ? "" : "s") before", value: $daysBefore, in: 1...7)
-                        Text("Moves with your predicted window. Next: \(CycleStore.add(store.windowStart, -daysBefore).formatted(.dateTime.month(.abbreviated).day())).")
-                            .font(.caption).foregroundStyle(Palette.inkFaint)
-                    case .everyWeeks:
-                        DatePicker("Starting", selection: $date, displayedComponents: .date)
-                        Stepper("Every \(weeks == 1 ? "week" : "\(weeks) weeks")", value: $weeks, in: 1...4)
                     }
-                    DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+
+                    Group {
+                        switch kind {
+                        case .daily:
+                            if selectedDays { weekdayPicker.padding(.top, 4) }
+                        case .once:
+                            DatePicker("Date", selection: $date, in: Date.now..., displayedComponents: .date)
+                        case .beforePeriod:
+                            Stepper("\(daysBefore) day\(daysBefore == 1 ? "" : "s") before", value: $daysBefore, in: 1...7)
+                            Text("Moves with your predicted window. Next: \(CycleStore.add(store.windowStart, -daysBefore).formatted(.dateTime.month(.abbreviated).day())).")
+                                .font(.caption).foregroundStyle(Palette.inkFaint)
+                        case .everyWeeks:
+                            DatePicker("Starting", selection: $date, displayedComponents: .date)
+                            Stepper("Every \(weeks == 1 ? "week" : "\(weeks) weeks")", value: $weeks, in: 1...4)
+                        }
+                        DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                    }
+                    .font(.system(size: 14))
                 }
-                .font(.system(size: 14))
-                .card()
+                .compactCard()
 
                 Button(action: save) {
                     Text("Save reminder")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Palette.surface)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Palette.accent.opacity(trimmedTitle.isEmpty ? 0.4 : 1), in: Capsule())
+                        .padding(.vertical, 12)
+                        .background(Palette.accent.opacity(canSave ? 1 : 0.4), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(trimmedTitle.isEmpty || (kind == .daily && selectedDays && weekdays.isEmpty))
+                .disabled(!canSave)
 
                 if let original {
                     Button { confirmingDelete = true } label: {
                         Label("Delete reminder", systemImage: "trash")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Palette.accent)
                             .frame(maxWidth: .infinity)
                     }
@@ -301,8 +326,8 @@ struct ReminderEditor: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 30)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
@@ -310,23 +335,52 @@ struct ReminderEditor: View {
         .tint(Palette.accent)
         .background(Palette.bg.ignoresSafeArea())
         .animation(.easeOut(duration: 0.2), value: kind)
+        .animation(.easeOut(duration: 0.2), value: selectedDays)
     }
 
-    private func scheduleTile(_ title: String, icon: String? = nil, selected: Bool, action: @escaping () -> Void) -> some View {
+    private var canSave: Bool {
+        !trimmedTitle.isEmpty && !(kind == .daily && selectedDays && weekdays.isEmpty)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.inkSoft)
+    }
+
+    private func scheduleTile(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                if let icon { Image(systemName: icon).font(.system(size: 18)) }
-                Text(title).font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.leading)
-                if icon != nil && selected { Spacer(minLength: 0); Image(systemName: "checkmark.circle.fill") }
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13))
+                Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .padding(10)
-            .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Palette.accent : Palette.line, lineWidth: selected ? 1.5 : 1))
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .padding(.horizontal, 8)
+            .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Palette.accent : Palette.line, lineWidth: selected ? 1.5 : 1))
             .foregroundStyle(selected ? Palette.accent : Palette.ink)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// One round button per weekday, Monday first.
+    private var weekdayPicker: some View {
+        HStack(spacing: 6) {
+            ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in
+                let on = weekdays.contains(day)
+                Button {
+                    if !weekdays.insert(day).inserted { weekdays.remove(day) }
+                } label: {
+                    Text(CycleStore.cal.veryShortWeekdaySymbols[day - 1])
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .foregroundStyle(on ? Palette.surface : Palette.ink)
+                        .background(on ? Palette.accent : Palette.surface2, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(CycleStore.cal.weekdaySymbols[day - 1])
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
     }
 
     private func save() {
@@ -343,5 +397,15 @@ struct ReminderEditor: View {
         r.on = true
         store.saveReminder(r)
         dismiss()
+    }
+}
+
+private extension View {
+    /// A tighter version of `card()` for the reminder editor.
+    func compactCard() -> some View {
+        padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: Palette.berry.opacity(0.07), radius: 12, y: 5)
     }
 }
