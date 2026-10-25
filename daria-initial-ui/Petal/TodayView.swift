@@ -10,6 +10,8 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var showPeriodEntry = false
     @State private var headerHeight: CGFloat = 0
+    @State private var heroRingHeight: CGFloat = 0
+    @State private var heroLowerHeight: CGFloat = 0
     /// Day picked on the cycle ring; nil means today.
     @State private var previewDay: Int?
     @AppStorage("petal.planCompletions.v1") private var planCompletions = Data()
@@ -171,28 +173,39 @@ struct TodayView: View {
     private func hero(minHeight: CGFloat) -> some View {
         // A completed period can include today; only an unfinished record can be ended.
         let period = store.ongoingPeriod
+        // Spare height (e.g. no prediction card on some birth control) is split above and below the ring,
+        // so it sits centered instead of leaving a gap at the top. Parts are measured without the spacers.
+        let slack = max(0, minHeight - 28 - 12 - heroRingHeight - heroLowerHeight)
         return VStack(spacing: 12) {
-            switch store.cycleMode {
-            case .natural: CycleRing(previewDay: $previewDay)
-            case .pack: PackRing(previewDay: $previewDay)
-            case .steady: SteadySummary()
-            }
-            VStack(spacing: 12) {
-                Button {
-                    showPeriodEntry = true
-                } label: {
-                    Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
+            Group {
+                switch store.cycleMode {
+                case .natural: CycleRing(previewDay: $previewDay)
+                case .pack: PackRing(previewDay: $previewDay)
+                case .steady: SteadySummary()
                 }
-                .buttonStyle(PeriodEntryPressStyle())
-
-                Button("Edit cycle details") { store.showCycleSetup = true }
-                    .font(.system(size: 13, weight: .medium))
-                    .tint(Palette.wine)
-                    .frame(minHeight: 44)
             }
-            prediction
-                .padding(.horizontal, -16)
-                .padding(.bottom, -14)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroRingHeight = $0 }
+            .padding(.top, slack / 2)
+            .padding(.bottom, slack / 2)
+            VStack(spacing: 12) {
+                VStack(spacing: 12) {
+                    Button {
+                        showPeriodEntry = true
+                    } label: {
+                        Text(period == nil ? (store.tracksPhases ? "Period started" : "Bleed started") : (store.tracksPhases ? "Period ended" : "Bleed ended"))
+                    }
+                    .buttonStyle(PeriodEntryPressStyle())
+
+                    Button(store.tracksPhases ? "Edit cycle details" : "Edit bleeding details") { store.showCycleSetup = true }
+                        .font(.system(size: 13, weight: .medium))
+                        .tint(Palette.wine)
+                        .frame(minHeight: 44)
+                }
+                prediction
+                    .padding(.horizontal, -16)
+                    .padding(.bottom, -14)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroLowerHeight = $0 }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -762,9 +775,9 @@ struct SteadySummary: View {
     @Environment(CycleStore.self) private var store
 
     private var today: Date { store.today }
-    private var lastBleed: PeriodRecord? { store.periodHistory.records.first { $0.start <= today } }
+    private var lastBleed: PeriodRecord? { store.bleedRecords.first { $0.start <= today } }
     private var bleedsLast90Days: Int {
-        store.periodHistory.records.filter { $0.start > CycleStore.add(today, -90) && $0.start <= today }.count
+        store.bleedRecords.filter { $0.start > CycleStore.add(today, -90) && $0.start <= today }.count
     }
 
     var body: some View {
@@ -1102,13 +1115,13 @@ struct CycleSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(eyebrow: "Cycle details") {
+            SheetHeader(eyebrow: store.tracksPhases ? "Cycle details" : "Bleeding details") {
                 store.showCycleSetup = false
             } title: {
-                DisplayTitle(before: "Your cycle ", accent: "basics", size: 30)
+                DisplayTitle(before: store.tracksPhases ? "Your cycle " : "Your bleeding ", accent: "basics", size: 30)
             }
 
-            section("Most recent period", note: "Used as a baseline for estimates. We never infer an actual end date.") {
+            section("Most recent \(store.bleedName)", note: "Used as a baseline for estimates. We never infer an actual end date.") {
                 Toggle("I know the start date", isOn: $knowsStart)
                 if knowsStart {
                     Divider().overlay(Palette.line)
@@ -1120,12 +1133,19 @@ struct CycleSetupView: View {
                 stepper("Bleeding days", value: $periodDays, range: 2...10)
             }
 
-            section("Typical cycle length", note: "Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.") {
-                Toggle("I know my usual cycle length", isOn: $knowsCycle)
-                if knowsCycle {
-                    Divider().overlay(Palette.line)
-                    stepper("Cycle length", value: $cycleDays, range: 18...45)
+            // On hormonal birth control there's no cycle to measure; the pack schedule lives in Settings.
+            if store.tracksPhases {
+                section("Typical cycle length", note: "Count from the first day of one period to the first day of the next. If unsure, we begin with a 28-day estimate.") {
+                    Toggle("I know my usual cycle length", isOn: $knowsCycle)
+                    if knowsCycle {
+                        Divider().overlay(Palette.line)
+                        stepper("Cycle length", value: $cycleDays, range: 18...45)
+                    }
                 }
+            } else if store.cycleMode == .pack {
+                Text("Your \(store.birthControl?.method.scheduleNoun ?? "pack") start date and break are in Settings → Birth control.")
+                    .font(.caption).foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
