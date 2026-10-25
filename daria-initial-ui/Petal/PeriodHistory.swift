@@ -1,9 +1,13 @@
 import Foundation
 
-/// An explicit account setting takes priority over estimates learned from history.
+/// The cycle length the user typed wins until there's enough logged history to learn from,
+/// so a new setting shows up straight away but logging periods still improves predictions.
 enum CycleLengthSelection {
+    /// Same threshold as AI forecasts: three completed cycles.
+    static let cyclesToLearn = 3
+
     static func resolve(explicit: Int?, recorded: [Int], fallback: Int) -> Int {
-        if let explicit { return max(1, explicit) }
+        if recorded.count < cyclesToLearn, let explicit { return max(1, explicit) }
         guard !recorded.isEmpty else { return max(1, fallback) }
         return max(1, Int((Double(recorded.reduce(0, +)) / Double(recorded.count)).rounded()))
     }
