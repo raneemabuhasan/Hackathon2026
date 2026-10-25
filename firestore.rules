@@ -31,8 +31,9 @@ service cloud.firestore {
     // Mirrors AIForecast in CycleStore.swift. Document ID is the cycle start, yyyy-MM-dd.
     function isValidForecast(f, id) {
       return f.keys().hasAll(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
-        && f.keys().hasOnly(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
+        && f.keys().hasOnly(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'evidenceCycleStarts', 'model', 'inputsHash', 'createdAt'])
         && f.cycleStart == id
+        && (!('evidenceCycleStarts' in f) || (f.evidenceCycleStarts is list && f.evidenceCycleStarts.size() <= 6))
         && isDay(f.baselineStart) && isDay(f.predictedStart)
         && f.baselineSpread is int && f.baselineSpread >= 1 && f.baselineSpread <= 30
         && f.shiftDays is int && f.shiftDays >= -3 && f.shiftDays <= 3

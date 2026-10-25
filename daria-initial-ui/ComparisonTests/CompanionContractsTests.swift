@@ -10,7 +10,9 @@ final class CompanionContractsTests: XCTestCase {
             XCTAssertTrue(CompanionIntent.isArithmeticQuestion(prompt), prompt)
         }
         for prompt in ["What cycle day am I on?", "I logged 5 symptoms over 10 days", "My period lasted from day 5 to day 10",
-                       "I logged my period on 2026-10-01", "How many days since my last period on 2026-10-01?", "My period started on 10/01/2026"] {
+                       "I logged my period on 2026-10-01", "How many days since my last period on 2026-10-01?", "My period started on 10/01/2026",
+                       "Is a 21-35 day cycle normal?", "I bleed for 3-7 days, is that ok?", "My cycles are between 26 and 32 days",
+                       "I took 2 x 200mg ibuprofen", "Should I take 1/2 a pill?"] {
             XCTAssertFalse(CompanionIntent.isArithmeticQuestion(prompt), prompt)
         }
     }
@@ -26,6 +28,10 @@ final class CompanionContractsTests: XCTestCase {
         XCTAssertEqual(CompanionIntent.companionScope("What about food?", previousUserRequest: "Why do I feel tired before my period?"), .inScope)
         XCTAssertEqual(CompanionIntent.companionScope("What is five plus ten?", previousUserRequest: "Why do I feel tired?"), .redirect)
         XCTAssertEqual(CompanionIntent.companionScope("Hi"), .clarify)
+        for prompt in ["Am I pregnant?", "Is it normal to feel sad?", "I struggle with body image before my period",
+                       "My IUD is making me anxious", "Does the implant stop bleeding?"] {
+            XCTAssertEqual(CompanionIntent.companionScope(prompt), .inScope, prompt)
+        }
     }
 
     func testUnsupportedMedicalClaimsAreFlagged() {
@@ -33,7 +39,8 @@ final class CompanionContractsTests: XCTestCase {
                        "These foods balance hormones.", "This diet can treat cramps."] {
             XCTAssertTrue(CompanionAnswerSafety.hasUnsupportedClaim(answer), answer)
         }
-        for answer in ["I can’t diagnose PCOS.", "Some people find warm meals comforting.", "Ask your clinician before changing medication."] {
+        for answer in ["I can’t diagnose PCOS.", "Some people find warm meals comforting.", "Ask your clinician before changing medication.",
+                       "You can take ibuprofen for cramps.", "Don't stop taking your pill without asking your doctor."] {
             XCTAssertFalse(CompanionAnswerSafety.hasUnsupportedClaim(answer), answer)
         }
     }
@@ -46,6 +53,9 @@ final class CompanionContractsTests: XCTestCase {
         XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your average cycle is 31 days.", evidence: "averageCycleLength: 30"))
         XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your average cycle is 31 days.", evidence: "averageCycleLength: 31"))
         XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Many cycles vary from month to month.", evidence: ""))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your period usually lasts 3 to 7 days.", evidence: ""))
+        XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("You're on cycle day 12.", evidence: "cycleDay: 11"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("You're on cycle day 12.", evidence: "cycleDay: 12"))
     }
 
     func testSelectedWeekdaysPersistAndGenerateRepeatingCalendarTimes() throws {
