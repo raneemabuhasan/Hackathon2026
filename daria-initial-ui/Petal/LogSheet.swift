@@ -258,7 +258,7 @@ struct LogSheet: View {
     private var individualFlow: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Flow").font(.cardSubheading)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(Array(standardFlowNames.enumerated()), id: \.element) { index, name in
                     Button { flow = name } label: {
                         flowTile(name: name, index: index, selected: flow == name)
@@ -282,25 +282,25 @@ struct LogSheet: View {
     }
 
     private func flowTile(name: String, index: Int?, selected: Bool) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 6) {
             if let index {
+                // Drops grow with the flow, inside a fixed box so the labels line up.
                 Image(systemName: index == 0 ? "drop" : "drop.fill")
-                    .font(.system(size: CGFloat(24 + index * 5)))
+                    .font(.system(size: CGFloat(16 + index * 3)))
                     .foregroundStyle([Palette.inkFaint, Palette.petal, Palette.pink, Palette.accent, Palette.berry][index])
-                    .frame(width: 68, height: 68)
-                    .background(Palette.accentSoft, in: Circle())
+                    .frame(height: 30)
             } else {
-                Image(systemName: "plus").font(.system(size: 36, weight: .light))
+                Image(systemName: "plus").font(.system(size: 20, weight: .light))
                     .foregroundStyle(Palette.accent)
-                    .frame(width: 68, height: 68)
+                    .frame(height: 30)
             }
-            Text(name).font(.system(size: 15, weight: .semibold))
-                .lineLimit(2).multilineTextAlignment(.center)
+            Text(name).font(.system(size: 13, weight: .semibold))
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, minHeight: 144)
-        .padding(.horizontal, 8)
-        .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .padding(.horizontal, 6)
+        .background(selected ? Palette.blushPink : Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14)
             .stroke(selected ? Palette.accent : Palette.line,
                     style: StrokeStyle(lineWidth: selected ? 1.5 : 1, dash: index == nil ? [4, 3] : [])))
         .foregroundStyle(selected ? Palette.ink : (index == nil ? Palette.accent : Palette.ink))
@@ -700,7 +700,6 @@ struct LogSheet: View {
             VStack(spacing: 6) {
                 Text(emoji).font(.system(size: dashed ? 30 : 24))
                     .frame(width: 38, height: 38)
-                    .background(dashed ? Color.clear : Palette.accentSoft, in: Circle())
                 Text(label).font(.system(size: 12, weight: .medium))
                     .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
             }
