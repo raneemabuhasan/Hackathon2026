@@ -199,7 +199,7 @@ struct TodayView: View {
         .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .bottom)
         .background {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0xFAC8D4), Palette.mist, Palette.cream],
+                .fill(LinearGradient(colors: [Palette.blushPink, Palette.mist, Palette.cream],
                                      startPoint: .top, endPoint: .bottom))
                 .shadow(color: Palette.wine.opacity(0.09), radius: 10, x: 0, y: 6)
         }
@@ -660,14 +660,8 @@ struct CycleRing: View {
 struct PhaseRingIcon: View {
     let phase: Phase
 
-    private var colors: [Color] {
-        switch phase {
-        case .menstrual: [Color(hex: 0xCF1753), Color(hex: 0xBD1248)]
-        case .follicular: [Color(hex: 0xF6A8C7), Color(hex: 0xF095B9)]
-        case .ovulation: [Color(hex: 0xD85281), Color(hex: 0xCE4776)]
-        case .luteal: [Color(hex: 0x872044), Color(hex: 0x731237)]
-        }
-    }
+    /// Same color as the phase's arc on the ring, so the icons follow the chosen theme.
+    private var colors: [Color] { [phase.color, phase.color.opacity(0.88)] }
 
     var body: some View {
         ZStack {
@@ -676,10 +670,10 @@ struct PhaseRingIcon: View {
                       style: FillStyle(eoFill: phase == .ovulation))
             if phase == .follicular {
                 // Normalized geometry keeps the seed proportional at ring and legend sizes.
-                PhaseIconDetail(phase: phase).fill(Color(hex: 0xCC1852))
+                PhaseIconDetail(phase: phase).fill(Palette.rose)
             } else if phase == .menstrual || phase == .luteal {
                 PhaseIconDetail(phase: phase)
-                    .fill(phase == .menstrual ? Color(hex: 0xF2759E) : Color(hex: 0xF5BCD3))
+                    .fill(phase == .menstrual ? Palette.petal : Palette.blushPink)
             }
         }
         .aspectRatio(1, contentMode: .fit)
