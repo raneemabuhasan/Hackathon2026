@@ -1,9 +1,21 @@
 import SwiftUI
 
+// All pets use the same AI assistant. This selection only changes the visual character.
+private enum CompanionPet: String, CaseIterable, Identifiable {
+    case robot, bunny, kitten, bear, frog
+
+    var id: String { rawValue }
+    var name: String { rawValue.capitalized }
+    var assetPrefix: String { "Companion" + name }
+    var idleImage: String { assetPrefix + "Idle" }
+    var happyImage: String { assetPrefix + "Happy" }
+}
+
 // A visual companion only: messaging, data access and tool calls still belong to CycleStore.
 // This deliberately lives in CompanionView.swift so the first PR avoids editing project.pbxproj.
 @MainActor
-private struct PixelRobotCompanion: View {
+private struct PixelPetCompanion: View {
+    var pet: CompanionPet = .robot
     var thinking = false
     var width: CGFloat = 108
 
@@ -13,9 +25,11 @@ private struct PixelRobotCompanion: View {
     @State private var smiling = false
 
     private var imageName: String {
-        if smiling { return "CompanionRobotHappy" }
-        if blink && !thinking { return "CompanionRobotBlink" }
-        return "CompanionRobotIdle"
+        if smiling { return pet.happyImage }
+        if blink && !thinking {
+            return pet == .robot ? "CompanionRobotBlink" : pet.happyImage
+        }
+        return pet.idleImage
     }
 
     var body: some View {
@@ -25,13 +39,15 @@ private struct PixelRobotCompanion: View {
                 .interpolation(.none) // Keep the pixel-art outline crisp.
                 .scaledToFit()
                 .frame(width: width, height: width * 1.23)
+                .scaleEffect(smiling && !reduceMotion ? 1.07 : 1)
+                .animation(.spring(duration: 0.22), value: smiling)
                 .offset(y: reduceMotion ? 0 : (floating ? -3 : 2))
                 .rotationEffect(.degrees(reduceMotion ? 0 : (floating ? (thinking ? 5 : 1) : (thinking ? -5 : -1))))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Sync robot companion")
-        .accessibilityHint("Tap to see the robot smile")
+        .accessibilityLabel("\(pet.name) companion")
+        .accessibilityHint("Tap to see the companion smile")
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
@@ -72,6 +88,17 @@ struct CompanionView: View {
     }
 
     @State private var showReminders = false
+    @State private var showPetPicker = false
+    @State private var selectedPet: CompanionPet = .robot
+
+    // Device-local and separated by account, so switching users doesn't switch pets.
+    private var petStorageKey: String { "sync.selectedCompanion.\(store.uid)" }
+
+    private func choose(_ pet: CompanionPet) {
+        selectedPet = pet
+        UserDefaults.standard.set(pet.rawValue, forKey: petStorageKey)
+        showPetPicker = false
+    }
 
     private var canSend: Bool {
         store.aiEnabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.thinking
@@ -85,8 +112,16 @@ struct CompanionView: View {
                     Spacer()
                     // Keep a small avatar visible once the chat has started.
                     if !store.messages.isEmpty {
-                        PixelRobotCompanion(thinking: store.thinking, width: 38)
+                        PixelPetCompanion(pet: selectedPet, thinking: store.thinking, width: 38)
                     }
+                    Button { showPetPicker = true } label: {
+                        Image(systemName: "pawprint")
+                            .font(.system(size: 18))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.inkSoft)
+                    .accessibilityLabel("Choose your companion")
                     Button { showReminders = true } label: {
                         Image(systemName: "bell")
                             .font(.system(size: 18))
@@ -105,7 +140,13 @@ struct CompanionView: View {
                         VStack(spacing: 0) {
                             Spacer(minLength: 28)
                             VStack(spacing: 24) {
-                                PixelRobotCompanion(thinking: store.thinking, width: 104)
+                                VStack(spacing: 4) {
+                                    PixelPetCompanion(pet: selectedPet, thinking: store.thinking, width: 104)
+                                    Button("Change companion") { showPetPicker = true }
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Palette.accent)
+                                        .padding(.vertical, 4)
+                                }
                                 VStack(spacing: 10) {
                                     DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
                                         .multilineTextAlignment(.center)
@@ -137,6 +178,50 @@ struct CompanionView: View {
                         }
                 }
             }
+        }
+        .task(id: store.uid) {
+            selectedPet = CompanionPet(rawValue: UserDefaults.standard.string(forKey: petStorageKey) ?? "") ?? .robot
+        }
+        .sheet(isPresented: $showPetPicker) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    SheetHeader(eyebrow: "Companion") { showPetPicker = false } title: {
+                        DisplayTitle(before: "Choose your ", accent: "friend", size: 30)
+                    }
+                    Text("Everyone gets the same helpful AI. Pick the little friend you want to see!")
+                        .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 12)], spacing: 12) {
+                        ForEach(CompanionPet.allCases) { pet in
+                            Button { choose(pet) } label: {
+                                VStack(spacing: 6) {
+                                    Image(pet.idleImage)
+                                        .resizable()
+                                        .interpolation(.none)
+                                        .scaledToFit()
+                                        .frame(width: 70, height: 82)
+                                    Text(pet.name)
+                                        .font(.system(size: 13, weight: .semibold))
+                                }
+                                .foregroundStyle(Palette.ink)
+                                .frame(maxWidth: .infinity, minHeight: 122)
+                                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(selectedPet == pet ? Palette.accent : Palette.line,
+                                                  lineWidth: selectedPet == pet ? 2 : 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(pet.name) companion")
+                            .accessibilityAddTraits(selectedPet == pet ? .isSelected : [])
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .scrollIndicators(.hidden)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(32)
+            .presentationBackground(Palette.bg)
         }
         .sheet(isPresented: $showReminders) {
             ScrollView {
