@@ -1,6 +1,12 @@
 import Foundation
 @main struct ForecastChecks {
  static func main() throws {
+ // Updating Account Info must override an existing learned cycle length.
+ assert(CycleLengthSelection.resolve(explicit: 35, recorded: [28, 29, 27], fallback: 28) == 35)
+ assert(CycleLengthSelection.resolve(explicit: 21, recorded: [28, 29, 27], fallback: 35) == 21)
+ // Choosing an unknown length still allows history-based estimates and onboarding fallback.
+ assert(CycleLengthSelection.resolve(explicit: nil, recorded: [28, 30], fallback: 35) == 29)
+ assert(CycleLengthSelection.resolve(explicit: nil, recorded: [], fallback: 32) == 32)
  var cal = Calendar(identifier: .gregorian)
  cal.timeZone = TimeZone(identifier: "America/New_York")!
  let start = cal.date(from: DateComponents(year: 2026, month: 10, day: 9))!

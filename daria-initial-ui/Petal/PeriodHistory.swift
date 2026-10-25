@@ -1,5 +1,14 @@
 import Foundation
 
+/// An explicit account setting takes priority over estimates learned from history.
+enum CycleLengthSelection {
+    static func resolve(explicit: Int?, recorded: [Int], fallback: Int) -> Int {
+        if let explicit { return max(1, explicit) }
+        guard !recorded.isEmpty else { return max(1, fallback) }
+        return max(1, Int((Double(recorded.reduce(0, +)) / Double(recorded.count)).rounded()))
+    }
+}
+
 struct PeriodRecord: Identifiable, Codable, Equatable {
     var id = UUID()
     var start: Date
