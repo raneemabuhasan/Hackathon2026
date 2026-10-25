@@ -49,6 +49,7 @@
 		ED0000000000000000000005 /* CompanionLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000006 /* CompanionLogging.swift */; };
 		ED000000000000000000000B /* CompanionPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000C /* CompanionPrompt.swift */; };
 		ED000000000000000000000D /* CompanionContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000E /* CompanionContracts.swift */; };
+		ED0000000000000000000020 /* CycleForecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000021 /* CycleForecast.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +115,7 @@
 		ED0000000000000000000006 /* CompanionLogging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLogging.swift; sourceTree = "<group>"; };
 		ED000000000000000000000C /* CompanionPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPrompt.swift; sourceTree = "<group>"; };
 		ED000000000000000000000E /* CompanionContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionContracts.swift; sourceTree = "<group>"; };
+		ED0000000000000000000021 /* CycleForecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleForecast.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,6 +146,7 @@
 			children = (
 				ED000000000000000000000C /* CompanionPrompt.swift */,
 				ED000000000000000000000E /* CompanionContracts.swift */,
+				ED0000000000000000000021 /* CycleForecast.swift */,
 				ED0000000000000000000003 /* EducationLibrary.swift */,
 				ED0000000000000000000006 /* CompanionLogging.swift */,
 				ED0000000000000000000004 /* education.json */,
@@ -355,6 +358,7 @@
 				CC0000000000000000000010 /* Assistant.swift in Sources */,
 				ED000000000000000000000B /* CompanionPrompt.swift in Sources */,
 				ED000000000000000000000D /* CompanionContracts.swift in Sources */,
+				ED0000000000000000000020 /* CycleForecast.swift in Sources */,
 				ED0000000000000000000001 /* EducationLibrary.swift in Sources */,
 				ED0000000000000000000005 /* CompanionLogging.swift in Sources */,
 				CC0000000000000000000011 /* Reminders.swift in Sources */,

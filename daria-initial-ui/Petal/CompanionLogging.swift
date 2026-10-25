@@ -231,7 +231,9 @@ struct CompanionLogPatch {
         if !note.isEmpty, !log.note.components(separatedBy: "\n").contains(note) {
             log.note = log.note.isEmpty ? note : log.note + "\n" + note
         }
-        guard ["None", "Light", "Medium", "Heavy"].contains(log.flow), (0...10).contains(log.pain),
+        guard (flow == nil || ["None", "Spotting", "Light", "Medium", "Heavy"].contains(log.flow)),
+              !log.flow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, log.flow.count <= 30,
+              (0...10).contains(log.pain),
               (1...5).contains(log.energy), log.symptoms.count <= 20, log.moods.count <= 20, log.note.count <= 2000,
               (log.symptoms + log.moods).allSatisfy({ !$0.isEmpty && $0.count <= 30 }) else { throw Invalid.fields }
         return log

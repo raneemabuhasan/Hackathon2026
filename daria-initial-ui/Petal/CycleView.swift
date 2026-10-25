@@ -1,5 +1,13 @@
 import SwiftUI
 
+private struct InsightContentHeight: PreferenceKey {
+    static let defaultValue: [Int: CGFloat] = [:]
+
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
 @MainActor
 struct CycleView: View {
     @Environment(CycleStore.self) private var store
@@ -14,65 +22,18 @@ struct CycleView: View {
     private var hasSelectedDate: Bool { store.selectedCalendarDate != nil }
     @State private var showingPeriodControls = false
     @State private var pendingLogPreview: Date?
-    @State private var editingPeriod: PeriodRecord?
-    @State private var addingPastPeriod: PeriodRecord?
     @State private var periodError: String?
     @State private var deletingPeriod: PeriodRecord?
-    @State private var logToDelete: DayLog?
     @State private var insightPage: Int? = 0
+    @State private var insightContentHeights: [Int: CGFloat] = [:]
+    @State private var showingAllLogs = false
+    @State private var periodSearch = ""
+    /// What a row tapped in the View more sheet should open once the sheet is gone.
+    @State private var afterAllLogs: (() -> Void)?
     @State private var showingAllSymptoms = false
 
-    @State private var searchExpanded = false
-    @State private var historyQuery = ""
-    @State private var historyField: HistoryField = .all
-    @State private var historyDateRange: HistoryDateRange = .all
-    @State private var monthExpansion: [Date: Bool] = [:]
-    @FocusState private var isHistorySearchFocused: Bool
-
-    private enum HistoryField: String, CaseIterable, Identifiable {
-        case all = "All fields"
-        case symptoms = "Symptoms"
-        case moods = "Moods"
-        case flow = "Flow"
-        case notes = "Notes"
-
-        var id: String { rawValue }
-    }
-
-    private enum HistoryDateRange: String, CaseIterable, Identifiable {
-        case all = "All time"
-        case month = "This month"
-        case quarter = "Last 3 months"
-        case year = "Last 12 months"
-
-        var id: String { rawValue }
-
-        func includes(_ date: Date, today: Date, calendar: Calendar = .current) -> Bool {
-            if self == .all { return true }
-            let thisMonth = calendar.dateInterval(of: .month, for: today)?.start
-                ?? calendar.startOfDay(for: today)
-            let monthsBack: Int
-            switch self {
-            case .all: monthsBack = 0
-            case .month: monthsBack = 0
-            case .quarter: monthsBack = 2
-            case .year: monthsBack = 11
-            }
-            let firstDay = calendar.date(byAdding: .month, value: -monthsBack, to: thisMonth)
-                ?? thisMonth
-            let day = calendar.startOfDay(for: date)
-            return day >= firstDay && day <= calendar.startOfDay(for: today)
-        }
-    }
-
-    private struct HistoryMonth: Identifiable {
-        let date: Date
-        let logs: [DayLog]
-        var id: Date { date }
-    }
-
     var body: some View {
-        Page {
+        Page(bottomPadding: 24) {
             calendar
             if hasSelectedDate,
                Calendar.current.isDate(selectedDate, equalTo: month, toGranularity: .month),
@@ -81,7 +42,6 @@ struct CycleView: View {
             }
             insights
             if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
-            logHistory
         }
         .sheet(isPresented: $showingPeriodControls, onDismiss: {
             if let date = pendingLogPreview {
@@ -91,6 +51,29 @@ struct CycleView: View {
         }) {
             periodControlsSheet
         }
+        .sheet(isPresented: $showingAllLogs, onDismiss: {
+            periodSearch = ""
+            afterAllLogs?()
+            afterAllLogs = nil
+        }) {
+            NavigationStack {
+                ScrollView {
+                    allPeriods
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .background(Palette.bg)
+                .navigationTitle("\(store.bleedTitle) history")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { showingAllLogs = false } }
+                }
+            }
+            .foregroundStyle(Palette.ink)
+            .tint(Palette.accent)
+            .presentationCornerRadius(32)
+        }
         .sheet(isPresented: $showingCycleDetails) {
             cycleDetails
         }
@@ -99,27 +82,53 @@ struct CycleView: View {
         }
     }
 
+    /// One card: the bleed this day belongs to, editable in place, then what was logged that day.
     private var periodControlsSheet: some View {
         VStack(alignment: .leading, spacing: 18) {
-            periodControls
-            if let entry = store.log(for: selectedDate) { calendarLogPreview(entry) }
+            SheetHeader(eyebrow: selectedDate.formatted(.dateTime.weekday(.wide))) {
+                showingPeriodControls = false
+            } title: {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
+                        .font(.display(28))
+                        .accessibilityAddTraits(.isHeader)
+                    statusPill
+                }
+            }
+
+            if let error = store.periodStorageError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                bleedRows
+                    .disabled(store.periodStorageError != nil)
+                if !isFutureDate {
+                    Divider().overlay(Palette.line).padding(.vertical, 12)
+                    dayLogSummary
+                }
+            }
+            .card()
+
+            if let record = displayedStartPeriod, !isFutureDate {
+                Button("Delete \(store.bleedName)", systemImage: "trash", role: .destructive) { deletingPeriod = record }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.wine)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 24)
         .padding(.bottom, 16)
         .foregroundStyle(Palette.ink)
+        .tint(Palette.accent)
         .fittedSheet()
-        .sheet(item: $addingPastPeriod) { draft in
-            PastPeriodEditor(start: draft.start).environment(store)
-        }
-        .sheet(item: $editingPeriod) { record in
-            PeriodEditor(record: record).environment(store)
-        }
-        .alert("Could not save period", isPresented: Binding(get: { periodError != nil }, set: { if !$0 { periodError = nil } })) {
+        .alert("Could not save \(store.bleedName)", isPresented: Binding(get: { periodError != nil }, set: { if !$0 { periodError = nil } })) {
             Button("OK") { periodError = nil }
         } message: { Text(periodError ?? "") }
-        .confirmationDialog("Delete this entire period, including its start and end dates?", isPresented: Binding(get: { deletingPeriod != nil }, set: { if !$0 { deletingPeriod = nil } }), titleVisibility: .visible) {
-            Button("Delete period", role: .destructive) {
+        .confirmationDialog("Delete this entire \(store.bleedName), including its start and end dates?", isPresented: Binding(get: { deletingPeriod != nil }, set: { if !$0 { deletingPeriod = nil } }), titleVisibility: .visible) {
+            Button("Delete \(store.bleedName)", role: .destructive) {
                 if let record = deletingPeriod { performPeriodAction { try store.removePeriod(id: record.id) } }
                 deletingPeriod = nil
             }
@@ -150,95 +159,119 @@ struct CycleView: View {
         }
     }
 
-    private var startSwitchLabel: String {
-        if let record = displayedStartPeriod {
-            return "Period started on " + store.fmt(record.start)
-        }
-        return "Period started " + selectedDayLabel
-    }
-
-    private var endingPeriod: PeriodRecord? {
-        store.periodHistory.records.first { record in
-            record.end.map { Calendar.current.isDate($0, inSameDayAs: selectedDate) } ?? false
-        }
-    }
-
     // Resolve the period for this date, including an already-ended record
     // so a user can correct its end without first reopening it elsewhere.
     private var periodToEnd: PeriodRecord? {
         store.periodHistory.periodToEnd(on: selectedDate)
     }
 
-    private func updatePeriodSwitch(_ action: () throws -> Void) {
-        do {
-            try action()
-        } catch { periodError = error.localizedDescription }
-    }
-
-    private var periodControls: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(eyebrow: selectedDate.formatted(.dateTime.weekday(.wide))) {
-                showingPeriodControls = false
-            } title: {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(selectedDate.formatted(.dateTime.month(.wide).day().year()))
-                        .font(.display(28))
-                        .accessibilityAddTraits(.isHeader)
-                    statusPill
+    @ViewBuilder
+    private var bleedRows: some View {
+        if isFutureDate {
+            Label("\(store.bleedTitle)s can only be recorded for today or earlier.", systemImage: "info.circle")
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+        } else if let record = displayedStartPeriod {
+            // Changing a date saves straight away; the store rejects overlaps and shows why.
+            dateRow("\(store.bleedTitle) started", date: Binding(
+                get: { record.start },
+                set: { new in performPeriodAction { try store.savePeriod(id: record.id, start: new, end: record.end) } }),
+                range: Date.distantPast...(record.end ?? store.today))
+            Divider().overlay(Palette.line)
+            // Ongoing on: no end date. Off: ends on the day you're looking at, editable below.
+            Toggle("Ongoing", isOn: Binding(
+                get: { record.end == nil },
+                set: { ongoing in
+                    performPeriodAction {
+                        try store.savePeriod(id: record.id, start: record.start,
+                                             end: ongoing ? nil : max(record.start, min(selectedDate, store.today)))
+                    }
+                }))
+                .font(.system(size: 15))
+                .frame(minHeight: 44)
+            if let end = record.end {
+                Divider().overlay(Palette.line)
+                dateRow("\(store.bleedTitle) ended", date: Binding(
+                    get: { end },
+                    set: { new in performPeriodAction { try store.savePeriod(id: record.id, start: record.start, end: new) } }),
+                    range: record.start...max(record.start, store.today))
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("No \(store.bleedName) logged \(selectedDayLabel).")
+                    .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                Button {
+                    // Before a later bleed it can't run on, so start it as a one-day bleed; the end date is editable right here.
+                    let later = store.periodHistory.records.contains { $0.start > selectedDate }
+                    performPeriodAction { try store.savePeriod(start: selectedDate, end: later ? selectedDate : nil) }
+                } label: {
+                    Label("\(store.bleedTitle) started \(selectedDayLabel)", systemImage: "drop.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(Palette.accent, in: Capsule())
                 }
-            }
-
-            if let error = store.periodStorageError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
-
-            VStack(spacing: 0) {
-                periodSwitchRow(icon: "drop.fill", title: startSwitchLabel, detail: startDetail, isOn: Binding(
-                    get: { displayedStartPeriod != nil },
-                    set: { enabled in
-                        if enabled {
-                            if store.periodHistory.records.contains(where: { $0.start > selectedDate }) {
-                                addingPastPeriod = PeriodRecord(start: selectedDate)
-                            } else {
-                                updatePeriodSwitch { try store.savePeriod(start: selectedDate, end: nil) }
-                            }
-                        } else if let record = displayedStartPeriod {
-                            if record.end != nil {
-                                deletingPeriod = record
-                            } else {
-                                updatePeriodSwitch { try store.removePeriod(id: record.id) }
-                            }
-                        }
-                    }))
-                Divider().padding(.leading, 50)
-                periodSwitchRow(icon: "checkmark.circle.fill", title: "Period ended \(selectedDayLabel)", detail: endDetail, isOn: Binding(
-                    get: { endingPeriod != nil },
-                    set: { enabled in
-                        if enabled, let record = periodToEnd {
-                            updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
-                        } else if !enabled, let record = endingPeriod {
-                            updatePeriodSwitch { try store.savePeriod(id: record.id, start: record.start, end: nil) }
-                        }
-                    }))
-                    .disabled(periodToEnd == nil && endingPeriod == nil)
-            }
-            .disabled(store.periodStorageError != nil || isFutureDate)
-            .card()
-
-            if isFutureDate {
-                Label("Periods can only be recorded for today or earlier.", systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(Palette.inkSoft)
-            }
-
-            // Only the period this day belongs to; any other day is one tap away on the calendar.
-            if let record = displayedStartPeriod {
-                VStack(alignment: .leading, spacing: 10) {
-                    SectionHeader(title: "This period")
-                    periodRow(record)
+                .buttonStyle(.plain)
+                // Only offer to stretch a bleed that ended in the last few days, not one from months ago.
+                if let record = periodToEnd, CycleStore.days(selectedDate, from: record.end ?? record.start) <= 10 {
+                    Button("Or end your \(store.fmt(record.start)) \(store.bleedName) here") {
+                        performPeriodAction { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .buttonStyle(.plain)
                 }
             }
         }
-        .tint(Palette.accent)
+    }
+
+    private func dateRow(_ title: String, date: Binding<Date>, range: ClosedRange<Date>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            DatePicker(title, selection: date, in: range, displayedComponents: .date)
+                .labelsHidden()
+        }
+        .font(.system(size: 15))
+        .frame(minHeight: 44)
+    }
+
+    /// A quick look at what was logged on the selected day, with a way into the full log.
+    @ViewBuilder
+    private var dayLogSummary: some View {
+        let log = store.log(for: selectedDate)
+        HStack {
+            Text(log == nil ? "Nothing logged \(selectedDayLabel)" : "Logged \(selectedDayLabel)")
+                .font(.system(size: 15, weight: log == nil ? .regular : .semibold))
+                .foregroundStyle(log == nil ? Palette.inkSoft : Palette.ink)
+            Spacer()
+            Button {
+                // Opens after this sheet closes; two sheets can't be up at once.
+                pendingLogPreview = selectedDate
+                showingPeriodControls = false
+            } label: {
+                HStack(spacing: 4) {
+                    Text(log == nil ? "Log this day" : "View log")
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        if let log {
+            let tags = log.moods + log.symptoms
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Flow: \(log.flow) · Pain: \(log.pain == 0 ? "None" : String(log.pain)) · Energy: \(log.energy)/5")
+                if !tags.isEmpty {
+                    Text(tags.joined(separator: " · ")).lineLimit(2)
+                } else if !log.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Note saved")
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.inkSoft)
+            .padding(.top, 6)
+        }
     }
 
     /// What the selected day is: a recorded period day, a predicted one, or neither.
@@ -246,10 +279,10 @@ struct CycleView: View {
         let (icon, text, strong): (String, String, Bool) = {
             if let record = displayedStartPeriod {
                 let day = CycleStore.days(selectedDate, from: record.start) + 1
-                return ("drop.fill", record.end == nil ? "Period day \(day) · ongoing" : "Period day \(day)", true)
+                return ("drop.fill", record.end == nil ? "\(store.bleedTitle) day \(day) · ongoing" : "\(store.bleedTitle) day \(day)", true)
             }
-            if store.isPredicted(selectedDate) { return ("sparkles", "Predicted period", false) }
-            return ("circle.dashed", "No period recorded", false)
+            if store.isPredicted(selectedDate) { return ("sparkles", "Predicted \(store.bleedName)", false) }
+            return ("circle.dashed", "No \(store.bleedName) recorded", false)
         }()
         return Label(text, systemImage: icon)
             .font(.system(size: 12, weight: .semibold))
@@ -258,71 +291,6 @@ struct CycleView: View {
             .background(strong ? Palette.accent : Palette.mist, in: Capsule())
     }
 
-    private var startDetail: String {
-        if let record = displayedStartPeriod {
-            return record.end == nil ? "Ongoing. Turn off to remove this period." : "Turn off to delete this period."
-        }
-        return "Makes \(store.fmt(selectedDate)) day 1 of a period."
-    }
-
-    private var endDetail: String {
-        if endingPeriod != nil { return "Last day recorded. Turn off to mark it ongoing again." }
-        if let record = periodToEnd { return "Ends the period that started \(store.fmt(record.start))." }
-        return "Mark a start on or before this day first."
-    }
-
-    private func periodSwitchRow(icon: String, title: String, detail: String, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 36, height: 36)
-                    .background(Palette.accentSoft.opacity(0.6), in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 15, weight: .semibold))
-                    Text(detail).font(.caption).foregroundStyle(Palette.inkSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .toggleStyle(.switch)
-        .padding(.vertical, 10)
-    }
-
-    private func periodRow(_ record: PeriodRecord) -> some View {
-        let range = record.end.map { "\(store.fmt(record.start)) – \(store.fmt($0))" } ?? "\(store.fmt(record.start)) – now"
-        let days = CycleStore.days(record.end ?? store.today, from: record.start) + 1
-        let containsSelected = displayedStartPeriod?.id == record.id
-        return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(range).font(.system(size: 15, weight: .semibold))
-                Text(record.start.formatted(.dateTime.year())).font(.caption).foregroundStyle(Palette.inkFaint)
-            }
-            Spacer()
-            Text(record.end == nil ? "Ongoing" : "\(days) day\(days == 1 ? "" : "s")")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Palette.accent)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Palette.mist, in: Capsule())
-            Menu {
-                Button("Edit dates", systemImage: "pencil") { editingPeriod = record }
-                Button("Delete period", systemImage: "trash", role: .destructive) { deletingPeriod = record }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.inkSoft)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Options for period starting \(store.fmt(record.start))")
-        }
-        .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 12)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(containsSelected ? Palette.accent.opacity(0.5) : Palette.line, lineWidth: containsSelected ? 1.5 : 1))
-    }
 
     // MARK: Calendar
 
@@ -454,12 +422,16 @@ struct CycleView: View {
                 .accessibilityHidden(true)
             }
             HStack(spacing: 14) {
-                legend(Rectangle().fill(Palette.mist), "Period")
-                legend(Rectangle().fill(Palette.mist.opacity(0.5)), "Predicted")
+                legend(Rectangle().fill(Palette.mist), "\(store.bleedTitle)")
+                if store.predictsBleeds {
+                    legend(Rectangle().fill(Palette.mist.opacity(0.5)), "Predicted")
+                }
                 legend(Circle().stroke(Palette.accent, lineWidth: 2), "Today")
                 legend(Circle().fill(Palette.accent), "Selected")
             }.font(.caption).foregroundStyle(Palette.inkSoft)
-            Text("Predictions are estimates. Your period may come a few days earlier or later.")
+            Text(store.predictsBleeds
+                 ? "Predictions are estimates. Your \(store.bleedName) may come a few days earlier or later."
+                 : "Sync doesn't predict bleeding on your method. Log any bleeding or spotting to see your pattern.")
                 .font(.caption).foregroundStyle(Palette.inkFaint)
                 .multilineTextAlignment(.center)
         }
@@ -574,19 +546,13 @@ struct CycleView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .overlay(alignment: .bottom) {
-                    if store.log(for: day) != nil {
-                        Circle().fill(Palette.accent).frame(width: 5, height: 5)
-                            .padding(.bottom, 4).allowsHitTesting(false)
-                    }
-                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
-                            + (predicted ? ", predicted period" : period ? ", period" : "")
-                            + (periodDay.map { ", period day \($0)" } ?? ""))
-        .accessibilityHint(isSelected ? "Opens period start and end controls for this date" : "Selects this date. Activate again to open period start and end controls.")
+                            + (predicted ? ", predicted \(store.bleedName)" : period ? ", \(store.bleedName)" : "")
+                            + (periodDay.map { ", \(store.bleedName) day \($0)" } ?? ""))
+        .accessibilityHint(isSelected ? "Opens \(store.bleedName) start and end controls for this date" : "Selects this date. Activate again to open \(store.bleedName) start and end controls.")
         .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -610,33 +576,57 @@ struct CycleView: View {
         RecordedCycle.recent(from: store.periodHistory.records)
     }
 
-    /// Cycle length and symptom summary, swiped through one at a time.
+    /// Cycle length, symptom summary, and period history, swiped through one at a time.
     private var insights: some View {
         let current = insightPage ?? 0
+        let summaryHeight = max(insightContentHeights[0] ?? 0, insightContentHeights[1] ?? 0)
+        let summaryContentHeight = max(insightContentHeights[10] ?? 0, insightContentHeights[11] ?? 0)
+        let visibleHeight = current == 2 ? insightContentHeights[2] : (summaryHeight > 0 ? summaryHeight : nil)
         return VStack(spacing: 10) {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(0..<Self.insightCount, id: \.self) { page in
                         Group {
                             switch page {
-                            case 0: lengths
-                            default: symptoms
+                            case 0:
+                                // Cycle length means nothing on hormonal birth control; show what does.
+                                switch store.cycleMode {
+                                case .natural: lengths
+                                case .pack: packSchedule
+                                case .steady: bleedingPattern
+                                }
+                            case 1: symptoms
+                            default:
+                                logHistory
                             }
                         }
-                        // Stretch to the tallest card so both match, without a fixed height.
-                        .frame(maxHeight: .infinity, alignment: .top)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background {
+                            if page < 2 {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: InsightContentHeight.self, value: [page + 10: geometry.size.height])
+                                }
+                            }
+                        }
+                        .frame(minHeight: page < 2 ? summaryContentHeight : nil, alignment: .top)
                         .card()
                         .containerRelativeFrame(.horizontal)
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: InsightContentHeight.self, value: [page: geometry.size.height])
+                            }
+                        }
                         .id(page)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .scrollTargetLayout()
             }
+            .onPreferenceChange(InsightContentHeight.self) { insightContentHeights = $0 }
+            .frame(height: visibleHeight, alignment: .top)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $insightPage)
             .scrollIndicators(.hidden)
-            .scrollClipDisabled()
 
             HStack(spacing: 14) {
                 carouselArrow("chevron.left", label: "Previous card", enabled: current > 0) { current - 1 }
@@ -655,7 +645,7 @@ struct CycleView: View {
         }
     }
 
-    private static let insightCount = 2
+    private static let insightCount = 3
 
     private func carouselArrow(_ icon: String, label: String, enabled: Bool, to page: @escaping () -> Int) -> some View {
         Button {
@@ -676,16 +666,116 @@ struct CycleView: View {
         .accessibilityLabel(label)
     }
 
+    /// Pill, patch and ring: the pack laid out like a blister pack, with today marked,
+    /// and one plain sentence about what's next.
+    private var packSchedule: some View {
+        let length = BirthControl.packLength
+        let active = store.birthControl?.activeDays ?? length
+        let day = store.packDay ?? 1
+        let packStart = CycleStore.add(store.today, 1 - day)
+        let noun = store.birthControl?.method.scheduleNoun.replacingOccurrences(of: "first ", with: "") ?? "pack"
+        let inBreak = day > active
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "Your \(noun)", trailing: store.birthControl?.method.name)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(inBreak ? "Break day \(day - active) of \(length - active)" : "Active day \(day) of \(active)")
+                    .font(.system(size: 17, weight: .semibold))
+                Text(inBreak
+                     ? "Start your next \(noun) on \(store.fmt(CycleStore.add(packStart, length))). A bleed during the break is normal."
+                     : "Your break starts \(store.fmt(CycleStore.add(packStart, active))).")
+                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                ForEach(1...length, id: \.self) { d in
+                    let isBreak = d > active
+                    Circle()
+                        .fill(d < day ? (isBreak ? Palette.rose : Palette.blush).opacity(0.35)
+                                      : (isBreak ? Palette.rose : Palette.blush))
+                        .overlay(Circle().stroke(Palette.ink, lineWidth: d == day ? 2.5 : 0))
+                        .frame(width: 22, height: 22)
+                }
+            }
+            .accessibilityHidden(true)
+            HStack(spacing: 14) {
+                packLegend(Palette.blush, "Active")
+                packLegend(Palette.rose, "Break")
+                HStack(spacing: 5) {
+                    Circle().stroke(Palette.ink, lineWidth: 2).frame(width: 9, height: 9)
+                    Text("Today")
+                }
+            }
+            .font(.caption).foregroundStyle(Palette.inkSoft)
+        }
+    }
+
+    private func packLegend(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(label)
+        }
+    }
+
+    private func scheduleRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title).foregroundStyle(Palette.inkSoft)
+            Spacer()
+            Text(value).fontWeight(.semibold)
+        }
+        .font(.subheadline)
+    }
+
+    /// Mini-pill, implant, hormonal IUD and shot: no cycle, so list the bleeds the user logged.
+    private var bleedingPattern: some View {
+        let since = CycleStore.add(store.today, -180)
+        let bleeds = store.bleedRecords.filter { $0.start > since && $0.start <= store.today }
+        let lengths = bleeds.compactMap { r in r.end.map { CycleStore.days($0, from: r.start) + 1 } }
+        let usual = lengths.isEmpty ? nil : lengths.sorted()[lengths.count / 2]
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "Bleeding pattern", trailing: "last 6 months")
+            if bleeds.isEmpty {
+                Text("No bleeding logged in the last 6 months.")
+                    .font(.subheadline).foregroundStyle(Palette.inkSoft)
+            } else {
+                Text("\(bleeds.count) bleed\(bleeds.count == 1 ? "" : "s")" + (usual.map { " · usually \($0) day\($0 == 1 ? "" : "s")" } ?? ""))
+                    .font(.subheadline.weight(.semibold))
+                VStack(spacing: 10) {
+                    ForEach(bleeds.prefix(3)) { r in
+                        scheduleRow(r.start.formatted(.dateTime.month(.abbreviated).day()),
+                                    value: r.end.map { let d = CycleStore.days($0, from: r.start) + 1; return "\(d) day\(d == 1 ? "" : "s")" } ?? "ongoing")
+                    }
+                }
+            }
+            if bleeds.count > 3 {
+                Button { showingAllLogs = true } label: {
+                    HStack(spacing: 6) {
+                        Text("View more")
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens every saved bleed")
+            }
+            Text("Bleeding often changes or stops on \(store.birthControl?.method.name.lowercased() ?? "this method"). Log any bleeding or spotting; the pattern is useful to show your doctor.")
+                .font(.caption).foregroundStyle(Palette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var lengths: some View {
         let cycles = recordedCycles
         let average = cycles.isEmpty ? 0 : Int((Double(cycles.reduce(0) { $0 + $1.days }) / Double(cycles.count)).rounded())
         let maximum = max(cycles.map(\.days).max() ?? 1, 1)
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "saved periods")
+            SectionHeader(title: "Cycle length", trailing: "saved \(store.bleedName)s")
             if cycles.isEmpty {
-                Text("Save at least two period start dates to see your first cycle length.")
+                Text("Save at least two \(store.bleedName) start dates to see your first cycle length.")
                     .font(.subheadline).foregroundStyle(Palette.inkSoft)
-                Text("Cycle length is the number of days between consecutive period starts.")
+                Text("Cycle length is the number of days between consecutive \(store.bleedName) starts.")
                     .font(.caption).foregroundStyle(Palette.inkSoft)
             } else {
                 HStack(alignment: .bottom, spacing: 4) {
@@ -726,8 +816,8 @@ struct CycleView: View {
                 if let start = selectedCycleStart, let cycle = cycles.first(where: { $0.start == start }) {
                     Section("Recorded cycle") {
                         LabeledContent("Cycle length", value: "\(cycle.days) days")
-                        LabeledContent("Period started", value: cycle.start.formatted(date: .abbreviated, time: .omitted))
-                        LabeledContent("Next period started", value: cycle.nextStart.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("\(store.bleedTitle) started", value: cycle.start.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Next \(store.bleedName) started", value: cycle.nextStart.formatted(date: .abbreviated, time: .omitted))
                     }
                     Section {
                         Text("\(cycle.days) calendar days between these two saved starts. The next start belongs to the next cycle. This measures cycle length, not the number of bleeding days.")
@@ -749,10 +839,10 @@ struct CycleView: View {
                         }
                     }
                 } else {
-                    Text("This cycle is no longer available. Save at least two period starts to see cycle details.")
+                    Text("This cycle is no longer available. Save at least two \(store.bleedName) starts to see cycle details.")
                 }
                 Section {
-                    Text("Calculated from period dates saved on this device. Missing starts can make intervals longer.")
+                    Text("Calculated from \(store.bleedName) dates saved on this device. Missing starts can make intervals longer.")
                 }
             }
             .navigationTitle(selectedCycleStart == nil ? "Cycle average" : "Cycle details")
@@ -849,490 +939,137 @@ struct CycleView: View {
         .presentationDragIndicator(.visible)
     }
 
-    // MARK: Searchable, month-grouped symptom history
+    // MARK: Period history
 
-    private var historyQueryText: String {
-        historyQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var historyFiltersActive: Bool {
-        !historyQueryText.isEmpty || historyDateRange != .all || historyField != .all
-    }
-
-    /// Apply filters to *all* saved logs. Nothing is truncated to 20 days.
-    private var matchingHistoryLogs: [DayLog] {
-        store.logs.filter { log in
-            guard historyDateRange.includes(log.date, today: store.today) else { return false }
-            let query = historyQueryText
-            guard !query.isEmpty else { return true }
-
-            let fields: [String]
-            switch historyField {
-            case .all:
-                fields = log.symptoms + log.moods + [log.flow, log.note]
-            case .symptoms:
-                fields = log.symptoms
-            case .moods:
-                fields = log.moods
-            case .flow:
-                fields = [log.flow]
-            case .notes:
-                fields = [log.note]
-            }
-            return fields.contains { $0.localizedStandardContains(query) }
-        }
-        .sorted { $0.date > $1.date }
-    }
-
-    private var historyMonths: [HistoryMonth] {
-        let calendar = Calendar.current
-        let byMonth = Dictionary(grouping: matchingHistoryLogs) { log in
-            calendar.dateInterval(of: .month, for: log.date)?.start
-                ?? calendar.startOfDay(for: log.date)
-        }
-        return byMonth.keys.sorted(by: >).map { month in
-            HistoryMonth(date: month, logs: byMonth[month] ?? [])
-        }
-    }
-
-    /// Suggestions use saved tag names, never the contents of private notes.
-    private var historySuggestions: [String] {
-        // Suggestions follow the date filter, not every log ever recorded.
-        let relevantLogs = store.logs.filter { historyDateRange.includes($0.date, today: store.today) }
-        let values: [String]
-        switch historyField {
-        case .all:
-            values = relevantLogs.flatMap { $0.symptoms + $0.moods }
-        case .symptoms:
-            values = relevantLogs.flatMap { $0.symptoms }
-        case .moods:
-            values = relevantLogs.flatMap { $0.moods }
-        case .flow:
-            values = relevantLogs.map(\.flow).filter { $0 != "None" }
-        case .notes:
-            return []
-        }
-        let nonempty = values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let grouped = Dictionary(grouping: nonempty, by: { $0.lowercased() })
-        return grouped.values.sorted { lhs, rhs in
-            if lhs.count != rhs.count { return lhs.count > rhs.count }
-            return (lhs.first ?? "") < (rhs.first ?? "")
-        }
-        .compactMap { $0.first }
-        .filter { historyQueryText.isEmpty || $0.localizedStandardContains(historyQueryText) }
-        .prefix(8)
-        .map { $0 }
-    }
-
-    // Browsing expands one month at a time. Search results can keep many months open.
-    @State private var browsedHistoryMonth: Date?
-
-    private func historyMonthIsOpen(_ date: Date, newest: Date?) -> Bool {
-        if historyQueryText.isEmpty { return browsedHistoryMonth == date }
-        return monthExpansion[date] ?? (date == newest)
-    }
-
-    /// A seven-calendar-day preview that respects the active search and date filters.
-    private var recentHistoryLogs: [DayLog] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: store.today)
-        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
-        return matchingHistoryLogs.filter { log in
-            let day = calendar.startOfDay(for: log.date)
-            return day >= start && day <= today
-        }
-    }
-
-    private var historySuggestionsPanel: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(historyField == .symptoms ? "Suggested symptoms" :
-                 historyField == .moods ? "Suggested moods" :
-                 historyField == .flow ? "Suggested flows" : "Suggested symptoms & moods")
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.inkFaint)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(historySuggestions, id: \.self) { suggestion in
-                        Button(suggestion) {
-                            historyQuery = suggestion
-                            isHistorySearchFocused = false
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.ink)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Palette.surface2, in: Capsule())
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Search logs for \(suggestion)")
-                    }
-                }
-            }
-        }
-    }
-
-    private func clearHistoryFilters() {
-        historyQuery = ""
-        historyField = .all
-        historyDateRange = .all
-        isHistorySearchFocused = false
-        monthExpansion = [:] // Reset expanded search months.
-        browsedHistoryMonth = nil
-    }
-
+    /// The three most recent periods (or bleeds); the rest are a tap away, grouped by month.
     private var logHistory: some View {
-        let months = historyMonths
-        let count = matchingHistoryLogs.count
-
+        let records = store.periodHistory.records
         return VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Saved day logs", trailing: "\(store.logs.count) entries")
-
-            // The one-line search is always available. Advanced controls stay optional.
-            HStack(spacing: 9) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Palette.inkFaint)
-                TextField("Search symptoms, moods or notes", text: $historyQuery)
-                    .font(.system(size: 13))
-                    .focused($isHistorySearchFocused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .onSubmit { isHistorySearchFocused = false }
-                    .accessibilityLabel("Search saved history")
-                if !historyQuery.isEmpty {
-                    Button {
-                        historyQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Palette.inkFaint)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search text")
-                }
-                Button {
-                    isHistorySearchFocused = false
-                    withAnimation(.easeInOut(duration: 0.2)) { searchExpanded.toggle() }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 36, height: 36)
-                        .background(Palette.mist.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(searchExpanded ? "Hide advanced filters" : "Show advanced filters")
-            }
-            .padding(.leading, 11)
-            .padding(.trailing, 5)
-            .padding(.vertical, 5)
-            // Light search field; month headings use the previous deeper search tint.
-            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
-
-            if isHistorySearchFocused && !searchExpanded && !historySuggestions.isEmpty {
-                historySuggestionsPanel
-            }
-
-            if historyFiltersActive {
-                HStack {
-                    Text("\(count) of \(store.logs.count) logs match")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.inkFaint)
-                    Spacer()
-                    Button("Clear filters") { clearHistoryFilters() }
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
-                }
-            }
-
-            if searchExpanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
-                        Menu {
-                            ForEach(HistoryField.allCases) { field in
-                                Button {
-                                    historyField = field
-                                } label: {
-                                    if historyField == field {
-                                        Label(field.rawValue, systemImage: "checkmark")
-                                    } else {
-                                        Text(field.rawValue)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label(historyField.rawValue, systemImage: "line.3.horizontal.decrease")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 9)
-                                .background(Palette.surface2, in: Capsule())
-                        }
-                        .accessibilityLabel("Search in \(historyField.rawValue)")
-
-                        Menu {
-                            ForEach(HistoryDateRange.allCases) { range in
-                                Button {
-                                    historyDateRange = range
-                                } label: {
-                                    if historyDateRange == range {
-                                        Label(range.rawValue, systemImage: "checkmark")
-                                    } else {
-                                        Text(range.rawValue)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label(historyDateRange.rawValue, systemImage: "calendar")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 9)
-                                .background(Palette.surface2, in: Capsule())
-                        }
-                        .accessibilityLabel("Date range: \(historyDateRange.rawValue)")
-                        Spacer(minLength: 0)
-                        Button("Reset") { clearHistoryFilters() }
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Palette.accent)
-                            .accessibilityLabel("Reset to All fields and All time")
-                    }
-
-                    if historyField == .notes {
-                        Text("Search for a word from your notes. Note text stays hidden in the list.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.inkFaint)
-                    } else if !historySuggestions.isEmpty {
-                        historySuggestionsPanel
-                    }
-                }
-                .padding(10)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.line))
-                .transition(.opacity)
-            }
-
-            if let error = store.logsError {
+            SectionHeader(title: "\(store.bleedTitle) history",
+                          trailing: "\(records.count) \(store.bleedName)\(records.count == 1 ? "" : "s")")
+            if let error = store.periodStorageError {
                 Text(error).font(.caption).foregroundStyle(.red)
-            } else if !store.logsLoaded {
+            } else if !store.periodsLoaded {
                 ProgressView("Loading history…")
-            } else if store.logs.isEmpty {
-                Text("No logs yet. Tap + to record your day.")
+            } else if records.isEmpty {
+                Text("No \(store.bleedName)s logged yet. Tap a day on the calendar to add one.")
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.inkSoft)
             } else {
-                if months.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("No matching logs found.")
-                            .font(.system(size: 13, weight: .medium))
-                        Text("Try another symptom, a different date range, or clear your filters.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.inkSoft)
-                        Button("Clear filters") { clearHistoryFilters() }
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Palette.accent)
-                    }
-                } else {
-                    // Recent is for unfiltered browsing only; search results live under the month headings.
-                    // Opening any month hides it; clearing filters and closing months restores it.
-                    let anyMonthOpen = months.contains { historyMonthIsOpen($0.date, newest: months.first?.date) }
-                    if !anyMonthOpen && !historyFiltersActive {
-                        VStack(alignment: .leading, spacing: 8) {
-                            SectionHeader(title: "Recent", trailing: "Past 7 days")
-                            if recentHistoryLogs.isEmpty {
-                                Text("No matching logs in the past 7 days. Open a month to browse older entries.")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Palette.inkSoft)
-                            } else {
-                                ForEach(recentHistoryLogs) { log in
-                                    historyLogRow(log)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 5)
-                    }
-
-                    Text("Browse by month")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.inkFaint)
-
-                    ForEach(months) { month in
-                        let open = historyMonthIsOpen(month.date, newest: months.first?.date)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    if historyQueryText.isEmpty {
-                                        browsedHistoryMonth = open ? nil : month.date
-                                    } else {
-                                        monthExpansion[month.date] = !open
-                                    }
-                                }
-                                isHistorySearchFocused = false
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text(month.date.formatted(.dateTime.month(.wide).year()))
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Text("\(month.logs.count) \(month.logs.count == 1 ? "log" : "logs")")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Palette.inkSoft)
-                                    Spacer()
-                                    Image(systemName: open ? "chevron.up" : "chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .foregroundStyle(Palette.ink)
-                                .padding(11)
-                                .background(Palette.mist.opacity(0.82), in: RoundedRectangle(cornerRadius: 12))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint(open ? "Collapse this month" : "Expand this month")
-
-                            if open {
-                                ForEach(month.logs) { log in
-                                    historyLogRow(log)
-                                }
-                            }
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(records.prefix(3)) { historyPeriodRow($0) }
                 }
             }
-        }
-        .card()
-        .onChange(of: historyDateRange) { _, _ in monthExpansion = [:] }
-        .onChange(of: historyField) { _, _ in monthExpansion = [:] }
-        .confirmationDialog("Delete this saved log?", isPresented: Binding(get: { logToDelete != nil }, set: { if !$0 { logToDelete = nil } }),
-                            titleVisibility: .visible) {
-            Button("Delete log", role: .destructive) {
-                if let logToDelete { store.deleteLog(logToDelete) }
-                logToDelete = nil
+            if records.count > 3 {
+                Button { showingAllLogs = true } label: {
+                    HStack(spacing: 6) {
+                        Text("View more")
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens every saved \(store.bleedName)")
             }
-            Button("Cancel", role: .cancel) { logToDelete = nil }
-        } message: {
-            Text("This entry will be removed from your symptom history.")
         }
     }
 
-    /// Shared row for Recent and month sections. Note text is never shown in previews.
-    private func historyLogRow(_ log: DayLog) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button {
-                    openLogPreview(on: log.date)
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(log.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                            .font(.system(size: 14, weight: .semibold))
-                        let periodMarked = store.periodHistory.contains(log.date)
-                        let details = ([log.flow != "None" ? "Flow: \(log.flow)" :
-                                        (periodMarked ? "Period marked" : "")]
-                            + log.symptoms + log.moods).filter { !$0.isEmpty }
-                        Text(details.isEmpty ? (log.note.isEmpty ? "Daily check-in" : "Note saved")
-                             : details.joined(separator: " · "))
-                            .font(.system(size: 12))
-                            .foregroundStyle(Palette.inkSoft)
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                Button {
-                    logToDelete = log
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 15))
-                        .foregroundStyle(Palette.accent)
-                        .padding(10)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Delete log for \(log.date.formatted(date: .abbreviated, time: .omitted))")
-            }
-            Divider().overlay(Palette.line)
+    /// Every period, newest first, under a header for the month it started in.
+    /// Search matches the month or dates, or anything logged during the period.
+    private var allPeriods: some View {
+        let query = periodSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = store.periodHistory.records.filter { periodMatches($0, query) }
+        let byMonth = Dictionary(grouping: matches) { record in
+            Calendar.current.dateInterval(of: .month, for: record.start)?.start ?? record.start
         }
-    }
-}
+        return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Palette.inkFaint)
+                TextField("Search months, symptoms, moods or notes", text: $periodSearch)
+                    .font(.system(size: 13))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                if !periodSearch.isEmpty {
+                    Button { periodSearch = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 11)
+            .frame(minHeight: 44)
+            .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.top, 8)
 
-@MainActor
-private struct PastPeriodEditor: View {
-    @Environment(CycleStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State var start: Date
-    @State private var end: Date?
-    @State private var error: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
+            if matches.isEmpty {
+                Text(query.isEmpty ? "No \(store.bleedName)s logged yet." : "No \(store.bleedName)s match \"\(query)\".")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkSoft)
+                    .padding(.top, 16)
+            }
+            ForEach(byMonth.keys.sorted(by: >), id: \.self) { month in
                 Section {
-                    DatePicker("Period started", selection: $start, in: ...Date(), displayedComponents: .date)
-                        .onChange(of: start) { _, newStart in
-                            if let end, end < newStart { self.end = nil }
-                        }
-                    if end != nil {
-                        DatePicker("Last bleeding day", selection: Binding(
-                            get: { end ?? start }, set: { end = $0 }),
-                            in: start...max(start, Date()), displayedComponents: .date)
-                    } else {
-                        Button("Choose last bleeding day") { end = start }
-                    }
-                } footer: {
-                    Text("Enter both dates for the period you missed. Nothing is saved until you tap Save. Use your actual last bleeding day, including the same day for a one-day period.")
-                }
-                if let error { Text(error).foregroundStyle(.red) }
-            }
-            .navigationTitle("Add past period")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard let end else { return }
-                        do {
-                            try store.savePeriod(start: start, end: end)
-                            dismiss()
-                        } catch { self.error = error.localizedDescription }
-                    }
-                    .disabled(end == nil || store.periodStorageError != nil)
+                    ForEach(byMonth[month] ?? []) { historyPeriodRow($0) }
+                } header: {
+                    Text(month.formatted(.dateTime.month(.wide).year()))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Palette.inkFaint)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 16).padding(.bottom, 4)
+                        .background(Palette.bg)
                 }
             }
-            .tint(Palette.accent)
         }
     }
-}
 
-@MainActor
-private struct PeriodEditor: View {
-    @Environment(CycleStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    let record: PeriodRecord
-    @State private var start: Date
-    @State private var end: Date
-    @State private var ended: Bool
-    @State private var error: String?
-
-    init(record: PeriodRecord) {
-        self.record = record
-        _start = State(initialValue: record.start)
-        _end = State(initialValue: record.end ?? Date())
-        _ended = State(initialValue: record.end != nil)
+    private func periodMatches(_ record: PeriodRecord, _ query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        let last = record.end ?? store.today
+        let dates = [record.start.formatted(.dateTime.month(.wide).year()), store.fmt(record.start), store.fmt(last)]
+        let logged = store.logs
+            .filter { CycleStore.cal.startOfDay(for: $0.date) >= CycleStore.cal.startOfDay(for: record.start)
+                && CycleStore.cal.startOfDay(for: $0.date) <= CycleStore.cal.startOfDay(for: last) }
+            .flatMap { $0.symptoms + $0.moods + [$0.flow == "None" ? "" : $0.flow, $0.note] }
+        return (dates + logged).contains { $0.localizedCaseInsensitiveContains(query) }
     }
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                DatePicker("Start", selection: $start, in: ...Date(), displayedComponents: .date)
-                Toggle("Period has ended", isOn: $ended)
-                if ended { DatePicker("Last bleeding day", selection: $end, in: ...Date(), displayedComponents: .date) }
-                if let error { Text(error).foregroundStyle(.red) }
+    private func historyPeriodRow(_ record: PeriodRecord) -> some View {
+        Button {
+            fromHistory {
+                store.selectedCalendarDate = record.start
+                showingPeriodControls = true
             }
-            .navigationTitle("Edit period")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        do {
-                            try store.savePeriod(id: record.id, start: start, end: ended ? end : nil)
-                            dismiss()
-                        } catch { self.error = error.localizedDescription }
-                    }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "drop.fill").foregroundStyle(Palette.accent)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(store.bleedTitle)").font(.system(size: 14, weight: .semibold))
+                    Text(store.fmt(record.start) + " – " + (record.end.map { store.fmt($0) } ?? "Ongoing"))
+                        .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                 }
+                Spacer()
             }
+            .foregroundStyle(Palette.ink)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens this \(store.bleedName)'s saved dates and controls")
+    }
+
+    /// Rows in the View more sheet open other sheets, so close it first and run the action after.
+    private func fromHistory(_ action: @escaping () -> Void) {
+        if showingAllLogs {
+            afterAllLogs = action
+            showingAllLogs = false
+        } else {
+            action()
         }
     }
 }

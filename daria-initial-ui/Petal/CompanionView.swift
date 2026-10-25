@@ -65,15 +65,6 @@ struct CompanionView: View {
     @Environment(CycleStore.self) private var store
     @State private var draft = ""
     @FocusState private var focused: Bool
-    @State private var editing: ReminderSheet?
-
-    /// Which reminder the editor sheet is open for.
-    private enum ReminderSheet: Identifiable {
-        case new, edit(Reminder)
-        var id: String { if case let .edit(r) = self { return r.id } else { return "new" } }
-    }
-
-    @State private var showReminders = false
 
     private var canSend: Bool {
         store.aiEnabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.thinking
@@ -89,15 +80,8 @@ struct CompanionView: View {
                     if !store.messages.isEmpty {
                         PixelRobotCompanion(thinking: store.thinking, width: 44, pacing: true)
                     }
-                    Button { showReminders = true } label: {
-                        Image(systemName: "bell")
-                            .font(.system(size: 18))
-                            .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Palette.inkSoft)
-                    .accessibilityLabel("Manage reminders")
                 }
+                .frame(minHeight: 44)
                 .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
 
                 if !store.aiEnabled {
@@ -116,9 +100,9 @@ struct CompanionView: View {
                                 }
                                 composerField
                                 VStack(spacing: 4) {
-                                    suggestion("Find a little comfort", question: "Help me feel better with cramps", icon: "heart")
-                                    suggestion("What could I eat today?", question: "What should I eat today?", icon: "leaf")
-                                    suggestion("Help me understand my cycle", question: "When is my next period?", icon: "calendar")
+                                    suggestion("Find a little comfort", question: "Help me feel better with cramps")
+                                    suggestion("What could I eat today?", question: "What should I eat today?")
+                                    suggestion("Help me understand my cycle", question: "When is my next period?")
                                 }
                             }
                             Spacer(minLength: 48)
@@ -140,51 +124,14 @@ struct CompanionView: View {
                 }
             }
         }
-        .sheet(isPresented: $showReminders) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    SheetHeader(eyebrow: "Reminders") {
-                        showReminders = false
-                    } title: {
-                        DisplayTitle(before: "Little ", accent: "reminders", size: 30)
-                    }
-                    reminders
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
-            }
-            .scrollIndicators(.hidden)
-            .foregroundStyle(Palette.ink)
-            .tint(Palette.accent)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(32)
-            .presentationBackground(Palette.bg)
-            .sheet(item: $editing) { target in
-                ReminderEditor(reminder: { if case let .edit(r) = target { return r } else { return nil } }())
-                    .environment(store)
-                    .presentationDetents([.large])
-                    .presentationCornerRadius(32)
-                    .presentationBackground(Palette.bg)
-            }
-        }
     }
 
-    private func suggestion(_ title: String, question: String, icon: String) -> some View {
+    private func suggestion(_ title: String, question: String) -> some View {
         Button {
             draft = question
             focused = true
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundStyle(Palette.secondaryAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.secondarySurface, in: RoundedRectangle(cornerRadius: 12))
-                Text(title).font(.system(size: 14))
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 6)
                 ZStack {
                     Ellipse()
                         .fill(Palette.blush)
@@ -204,6 +151,9 @@ struct CompanionView: View {
                 }
                 .frame(width: 28, height: 30)
                 .accessibilityHidden(true)
+                Text(title).font(.system(size: 14))
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 6)
             }
             .foregroundStyle(Palette.inkSoft)
             .padding(.horizontal, 8).padding(.vertical, 12)
@@ -248,43 +198,6 @@ struct CompanionView: View {
             .font(.system(size: 10))
             .foregroundStyle(Palette.inkFaint)
             .multilineTextAlignment(.center)
-    }
-
-    /// The bell sheet's list: tap a reminder to edit it, or switch it on and off.
-    private var reminders: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Your reminders").font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Text("\(store.reminders.filter(\.on).count) on").font(.caption).foregroundStyle(Palette.inkFaint)
-            }
-            ForEach(store.reminders) { reminder in
-                HStack(spacing: 12) {
-                    Button { editing = .edit(reminder) } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(reminder.text(name: store.name)).font(.system(size: 14, weight: .semibold))
-                            Text(reminder.detail(windowStart: store.windowStart))
-                                .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Toggle(reminder.text(name: store.name), isOn: Binding(
-                        get: { reminder.on }, set: { store.setReminder(reminder, on: $0) }))
-                        .labelsHidden().tint(Palette.accent)
-                }
-                Divider().overlay(Palette.line)
-            }
-            Button { editing = .new } label: {
-                Label("Add a reminder", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-        }
-        .card()
     }
 
     private var composerField: some View {

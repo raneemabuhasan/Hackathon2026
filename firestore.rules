@@ -16,7 +16,8 @@ service cloud.firestore {
         && log.keys().hasAll(['date', 'flow', 'moods', 'symptoms', 'pain', 'energy', 'note'])
         && log.keys().hasOnly(['date', 'flow', 'moods', 'symptoms', 'pain', 'energy', 'note'])
         && log.date is timestamp
-        && log.flow in ['None', 'Light', 'Medium', 'Heavy']
+        // None/Spotting/Light/Medium/Heavy, or a custom label from the log sheet (max 30 characters).
+        && log.flow is string && log.flow.size() >= 1 && log.flow.size() <= 30
         && log.moods is list && log.moods.size() <= 20
         && log.symptoms is list && log.symptoms.size() <= 20
         && log.pain is int && log.pain >= 0 && log.pain <= 10
@@ -31,8 +32,9 @@ service cloud.firestore {
     // Mirrors AIForecast in CycleStore.swift. Document ID is the cycle start, yyyy-MM-dd.
     function isValidForecast(f, id) {
       return f.keys().hasAll(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
-        && f.keys().hasOnly(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'model', 'inputsHash', 'createdAt'])
+        && f.keys().hasOnly(['cycleStart', 'baselineStart', 'baselineSpread', 'shiftDays', 'spreadDays', 'predictedStart', 'reason', 'evidenceCycleStarts', 'model', 'inputsHash', 'createdAt'])
         && f.cycleStart == id
+        && (!('evidenceCycleStarts' in f) || (f.evidenceCycleStarts is list && f.evidenceCycleStarts.size() <= 6))
         && isDay(f.baselineStart) && isDay(f.predictedStart)
         && f.baselineSpread is int && f.baselineSpread >= 1 && f.baselineSpread <= 30
         && f.shiftDays is int && f.shiftDays >= -3 && f.shiftDays <= 3

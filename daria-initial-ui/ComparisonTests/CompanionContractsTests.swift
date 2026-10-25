@@ -4,6 +4,86 @@ import XCTest
 final class CompanionContractsTests: XCTestCase {
     let today = LogDate.parse("2026-10-21")!
 
+    func testArithmeticQuestionsAreBlockedWithoutMatchingCycleNumbers() {
+        for prompt in ["5+10", "What is 5 + 10?", "Can you tell me what is 5 plus 10?", "calculate 5 * 10",
+                       "What is five plus ten?", "What is (5 + 10) * 2?", "5 + 10, then tell me a joke", "Please solve 5+10 and write code"] {
+            XCTAssertTrue(CompanionIntent.isArithmeticQuestion(prompt), prompt)
+        }
+        for prompt in ["What cycle day am I on?", "I logged 5 symptoms over 10 days", "My period lasted from day 5 to day 10",
+                       "I logged my period on 2026-10-01", "How many days since my last period on 2026-10-01?", "My period started on 10/01/2026",
+                       "Is a 21-35 day cycle normal?", "I bleed for 3-7 days, is that ok?", "My cycles are between 26 and 32 days",
+                       "I took 2 x 200mg ibuprofen", "Should I take 1/2 a pill?"] {
+            XCTAssertFalse(CompanionIntent.isArithmeticQuestion(prompt), prompt)
+        }
+    }
+
+    func testCompanionScopeBlocksUnrelatedRequestsAndUsesShortFollowUps() {
+        XCTAssertEqual(CompanionIntent.companionScope("Write a Python program to track my cycle"), .redirect)
+        XCTAssertEqual(CompanionIntent.companionScope("What is the capital of France?"), .redirect)
+        XCTAssertEqual(CompanionIntent.companionScope("What's the weather, and what phase am I in?"), .redirect)
+        XCTAssertEqual(CompanionIntent.companionScope("What can a doctor do?"), .redirect)
+        XCTAssertEqual(CompanionIntent.companionScope("Should I see a doctor?", previousUserRequest: "Why do I feel tired before my period?"), .inScope)
+        XCTAssertTrue(CompanionIntent.containsExplicitUnrelatedRequest("Log my symptoms and tell me a joke"))
+        XCTAssertEqual(CompanionIntent.companionScope("How many days since my last period?"), .inScope)
+        XCTAssertEqual(CompanionIntent.companionScope("What about food?", previousUserRequest: "Why do I feel tired before my period?"), .inScope)
+        XCTAssertEqual(CompanionIntent.companionScope("What is five plus ten?", previousUserRequest: "Why do I feel tired?"), .redirect)
+        XCTAssertEqual(CompanionIntent.companionScope("Hi"), .clarify)
+        for prompt in ["Am I pregnant?", "Is it normal to feel sad?", "I struggle with body image before my period",
+                       "My IUD is making me anxious", "Does the implant stop bleeding?"] {
+            XCTAssertEqual(CompanionIntent.companionScope(prompt), .inScope, prompt)
+        }
+    }
+
+    func testUnsupportedMedicalClaimsAreFlagged() {
+        for answer in ["You have PCOS.", "You are still protected from pregnancy.", "Double your pill dose.",
+                       "These foods balance hormones.", "This diet can treat cramps."] {
+            XCTAssertTrue(CompanionAnswerSafety.hasUnsupportedClaim(answer), answer)
+        }
+        for answer in ["I can’t diagnose PCOS.", "Some people find warm meals comforting.", "Ask your clinician before changing medication.",
+                       "You can take ibuprofen for cramps.", "Don't stop taking your pill without asking your doctor."] {
+            XCTAssertFalse(CompanionAnswerSafety.hasUnsupportedClaim(answer), answer)
+        }
+    }
+
+    func testPersonalDatesAndDurationsRequireReadOnlyEvidence() {
+        XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your next period is 2026-11-02.", evidence: "nextPeriod: 2026-11-01"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your next period is 2026-11-02.", evidence: "nextPeriod: 2026-11-02"))
+        XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your next period is November 2, 2026.", evidence: "nextPeriod: 2026-11-01"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your next period is November 2, 2026.", evidence: "nextPeriod: 2026-11-02"))
+        XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your average cycle is 31 days.", evidence: "averageCycleLength: 30"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your average cycle is 31 days.", evidence: "averageCycleLength: 31"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Many cycles vary from month to month.", evidence: ""))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("Your period usually lasts 3 to 7 days.", evidence: ""))
+        XCTAssertTrue(CompanionAnswerSafety.hasUnverifiedPersonalFacts("You're on cycle day 12.", evidence: "cycleDay: 11"))
+        XCTAssertFalse(CompanionAnswerSafety.hasUnverifiedPersonalFacts("You're on cycle day 12.", evidence: "cycleDay: 12"))
+    }
+
+    func testSelectedWeekdaysPersistAndGenerateRepeatingCalendarTimes() throws {
+        let reminder = Reminder(title: "Take birth control", kind: .daily, hour: 9, minute: 15,
+                                weekdays: [1, 3, 4, 7, 3, 0, 8])
+        let decoded = try JSONDecoder().decode(Reminder.self, from: JSONEncoder().encode(reminder))
+        XCTAssertEqual(decoded.repeatWeekdays, [3, 4, 7, 1])
+        XCTAssertEqual(decoded.dailyNotificationComponents.map(\.weekday), [3, 4, 7, 1])
+        XCTAssertTrue(decoded.dailyNotificationComponents.allSatisfy { $0.hour == 9 && $0.minute == 15 })
+        let changed = try ReminderPatch(time: "10:30").applying(to: decoded, today: today)
+        XCTAssertEqual(changed.repeatWeekdays, decoded.repeatWeekdays)
+        XCTAssertTrue(changed.dailyNotificationComponents.allSatisfy { $0.hour == 10 && $0.minute == 30 })
+    }
+
+    func testLegacyDailyReminderStillSchedulesEveryDay() throws {
+        let old = Reminder(title: "Water", kind: .daily, hour: 14, minute: 0)
+        let decoded = try JSONDecoder().decode(Reminder.self, from: JSONEncoder().encode(old))
+        XCTAssertNil(decoded.weekdays)
+        XCTAssertEqual(decoded.dailyNotificationComponents.count, 1)
+        XCTAssertNil(decoded.dailyNotificationComponents.first?.weekday)
+        var selected = old
+        selected.weekdays = [2, 4]
+        let daily = try ReminderPatch(schedule: "daily").applying(to: selected, today: today)
+        XCTAssertNil(daily.weekdays)
+        selected.weekdays = []
+        XCTAssertTrue(selected.dailyNotificationComponents.isEmpty)
+    }
+
     func testTimeEditPreservesScheduleIdentityPreferencesAndDormantFields() throws {
         let original = Reminder(id: "server-id", title: "Evening check-in", kind: .beforePeriod,
             hour: 20, minute: 30, date: today, daysBefore: 5, on: false, created: today)
