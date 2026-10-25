@@ -161,7 +161,12 @@ struct TodayView: View {
     private var predictionBasis: String {
         if !store.tracksPhases { return "Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule" }
         if let forecast = store.activeAIForecast { return "✨ AI-adjusted · \(forecast.reason)" }
-        if store.completedCycles.isEmpty { return "Based on the \(store.average)-day cycle you told us" }
+        // Mirrors CycleLengthSelection: the length you set is used until enough cycles are logged.
+        let logged = store.completedCycles.count
+        if logged == 0 || (logged < CycleLengthSelection.cyclesToLearn && store.baseline?.cycleDays != nil) {
+            let left = CycleLengthSelection.cyclesToLearn - logged
+            return "Based on the \(store.average)-day cycle you set. Your logs take over after \(left) more cycle\(left == 1 ? "" : "s")."
+        }
         let lengths = store.pastLengths
         return "Based on your last \(lengths.count) cycle\(lengths.count == 1 ? "" : "s") (\(lengths.min() ?? store.average)–\(lengths.max() ?? store.average) days)"
     }
