@@ -43,6 +43,9 @@ struct CycleView: View {
             insights
             if let error = store.logWriteError { Text(error).font(.caption).foregroundStyle(.red) }
         }
+        // Another screen (e.g. Today's prediction card) can pick a date; show its month.
+        .onAppear { showSelectedMonth() }
+        .onChange(of: store.selectedCalendarDate) { _, _ in showSelectedMonth() }
         .sheet(isPresented: $showingPeriodControls, onDismiss: {
             if let date = pendingLogPreview {
                 pendingLogPreview = nil
@@ -339,6 +342,14 @@ struct CycleView: View {
         .tint(Palette.accent)
         .presentationDetents([.height(300)])
         .presentationDragIndicator(.visible)
+    }
+
+    private func showSelectedMonth() {
+        guard let date = store.selectedCalendarDate else { return }
+        let cal = CycleStore.cal
+        let from = cal.dateComponents([.year, .month], from: store.today)
+        let to = cal.dateComponents([.year, .month], from: date)
+        monthOffset = (to.year! - from.year!) * 12 + to.month! - from.month!
     }
 
     private var month: Date {

@@ -14,7 +14,7 @@ struct LogShortcutWidget: Widget {
             LogShortcutEntryView()
         }
         .configurationDisplayName("Quick log")
-        .description("Opens Petal to log today. Shows no cycle details.")
+        .description("Opens Sync to log today. Shows no cycle details.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
@@ -45,7 +45,7 @@ struct LogShortcutEntryView: View {
             }
             .widgetURL(DeepLink.log.url)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Log today in Petal")
+            .accessibilityLabel("Log today in Sync")
     }
 }
 

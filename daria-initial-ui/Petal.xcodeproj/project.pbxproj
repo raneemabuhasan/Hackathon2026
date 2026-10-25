@@ -78,7 +78,7 @@
 
 /* Begin PBXFileReference section */
 		5C0000000000000000000001 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
-		AA0000000000000000000001 /* Petal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Petal.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000001 /* Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000003 /* CycleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleStore.swift; sourceTree = "<group>"; };
@@ -190,7 +190,7 @@
 		AA0000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000001 /* Petal.app */,
+				AA0000000000000000000001 /* Sync.app */,
 				AB0000000000000000000001 /* PetalWidget.appex */,
 			);
 			name = Products;
@@ -244,7 +244,7 @@
 				AA0000000000000000000034 /* FirebaseAI */,
 			);
 			productName = Petal;
-			productReference = AA0000000000000000000001 /* Petal.app */;
+			productReference = AA0000000000000000000001 /* Sync.app */;
 			productType = "com.apple.product-type.application";
 		};
 		AB0000000000000000000006 /* PetalWidget */ = {
@@ -457,7 +457,8 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = Petal;
+				PRODUCT_NAME = Sync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -485,7 +486,8 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = Petal;
+				PRODUCT_NAME = Sync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
