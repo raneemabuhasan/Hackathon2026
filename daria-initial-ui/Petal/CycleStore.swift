@@ -626,6 +626,16 @@ final class CycleStore {
 
     // MARK: Cycle maths
 
+    /// Saved bleeds, newest first, plus the onboarding/settings start date when it isn't saved as a record.
+    /// Matches what the calendar shades, so summaries never disagree with it.
+    var bleedRecords: [PeriodRecord] {
+        var records = periodHistory.records
+        if !periodHistory.contains(lastStart), lastStart <= today {
+            records.append(PeriodRecord(start: lastStart, end: min(today, Self.add(lastStart, periodLength - 1))))
+        }
+        return records.sorted { $0.start > $1.start }
+    }
+
     /// Calendar records include flow-created periods and retain explicit date corrections.
     var starts: [Date] {
         periodHistory.cycleStarts(fallback: profile?.lastPeriodStart ?? today)
@@ -701,6 +711,10 @@ final class CycleStore {
     var tracksPhases: Bool { cycleMode == .natural }
     /// Whether Sync predicts the next period or bleed at all.
     var predictsBleeds: Bool { cycleMode != .steady }
+    /// "period" without hormonal birth control, "bleed" on it: hormonal bleeds aren't periods.
+    var bleedName: String { tracksPhases ? "period" : "bleed" }
+    /// `bleedName` for the start of a sentence or a title.
+    var bleedTitle: String { tracksPhases ? "Period" : "Bleed" }
 
     /// Day 1–28 of the current pack, patch or ring cycle.
     var packDay: Int? {
