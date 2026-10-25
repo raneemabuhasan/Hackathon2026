@@ -189,7 +189,7 @@ struct SettingsView: View {
                         .disabled(!store.aiEnabled || !floatingRobotEnabled)
 
                         Text(store.aiEnabled
-                             ? "Tap the robot to open Companion. Use Edit position to drag it smoothly, then tap Done. It sleeps when idle."
+                             ? "Double-tap the robot to open Companion. Tap once to make it smile, or hold for a curious reaction. Use Edit position to drag without animation, then tap Done. It sleeps when idle."
                              : "Turn on the AI companion above before enabling the floating robot.")
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.inkSoft)

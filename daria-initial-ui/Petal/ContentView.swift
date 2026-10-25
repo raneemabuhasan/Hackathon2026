@@ -2,7 +2,8 @@ import SwiftUI
 
 // Optional in-app overlay; it doesn't enable AI or affect chat permissions.
 // Drag starts only after a hold so ordinary scrolling and tapping keep working.
-// In-app floating robot; dragging is enabled only while placing it.
+// In-app floating robot: touch reactions and animation-free placement.
+// Dragging runs through @GestureState; no repeating movement animation or disk writes during drag.
 @MainActor
 private struct FloatingRobotShortcut: View {
     let size: CGSize
@@ -13,10 +14,16 @@ private struct FloatingRobotShortcut: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("sync.floatingRobot.x") private var savedX = 0.85
     @AppStorage("sync.floatingRobot.y") private var savedY = 0.55
-    @State private var dragPosition: CGPoint?
-    @State private var hovering = false
+    @GestureState private var dragTranslation: CGSize = .zero
     @State private var sleeping = false
-    @State private var wakeNumber = 0
+    @State private var blinking = false
+    @State private var reaction: Reaction = .idle
+    @State private var activityID = 0
+    @State private var reactionID = 0
+
+    private enum Reaction {
+        case idle, happy, curious
+    }
 
     private let margin: CGFloat = 43
 
@@ -31,32 +38,84 @@ private struct FloatingRobotShortcut: View {
         constrain(CGPoint(x: size.width * CGFloat(savedX), y: size.height * CGFloat(savedY)))
     }
 
-    private var displayedPoint: CGPoint { dragPosition ?? restingPoint }
+    private var dragPoint: CGPoint {
+        constrain(CGPoint(
+            x: restingPoint.x + dragTranslation.width,
+            y: restingPoint.y + dragTranslation.height
+        ))
+    }
+
+    private var imageName: String {
+        if isEditing { return "CompanionRobotIdle" }
+        switch reaction {
+        case .happy: return "CompanionRobotHappy"
+        case .curious: return "CompanionRobotThinking"
+        case .idle:
+            if sleeping { return "CompanionRobotSleep" }
+            return blinking ? "CompanionRobotBlink" : "CompanionRobotIdle"
+        }
+    }
+
+    private var robotImage: some View {
+        Image(imageName)
+            .resizable()
+            .interpolation(.none)
+            .scaledToFit()
+            .frame(width: 74, height: 84)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(sleeping && !isEditing ? "Sleeping robot companion" : "Robot companion")
+            .accessibilityHint(isEditing
+                ? "Drag the robot to a new position"
+                : "Double tap to open Companion. Tap for a smile, or hold for a curious reaction")
+    }
 
     private func wake() {
         sleeping = false
-        wakeNumber += 1
+        blinking = false
+        activityID += 1
     }
 
+    private func react(_ next: Reaction) {
+        wake()
+        reaction = next
+        reactionID += 1
+    }
+
+    // A double tap wins over a single tap, so opening the chat never also plays the tap reaction.
+    private var taps: some Gesture {
+        TapGesture(count: 2)
+            .exclusively(before: TapGesture(count: 1))
+            .onEnded { result in
+                switch result {
+                case .first:
+                    wake()
+                    onOpenCompanion()
+                case .second:
+                    react(.happy)
+                }
+            }
+    }
+
+    // Placement uses an unanimated gesture-state offset. Persist only once, on release.
     private var moveGesture: some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                guard isEditing else { return }
-                // Update only local state during drag to avoid laggy disk writes.
-                dragPosition = constrain(CGPoint(
-                    x: restingPoint.x + value.translation.width,
-                    y: restingPoint.y + value.translation.height
-                ))
+            .updating($dragTranslation) { value, translation, transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+                translation = value.translation
             }
             .onEnded { value in
-                guard isEditing else { return }
                 let point = constrain(CGPoint(
                     x: restingPoint.x + value.translation.width,
                     y: restingPoint.y + value.translation.height
                 ))
-                savedX = Double(point.x / max(1, size.width))
-                savedY = Double(point.y / max(1, size.height))
-                dragPosition = nil
+                var noAnimation = Transaction(animation: nil)
+                noAnimation.disablesAnimations = true
+                withTransaction(noAnimation) {
+                    savedX = Double(point.x / max(1, size.width))
+                    savedY = Double(point.y / max(1, size.height))
+                }
                 wake()
             }
     }
@@ -65,28 +124,42 @@ private struct FloatingRobotShortcut: View {
         ZStack(alignment: .top) {
             if isEditing {
                 Color.black.opacity(0.05).contentShape(Rectangle())
-            }
 
-            Image(sleeping && !isEditing ? "CompanionRobotSleep" : "CompanionRobotIdle")
-                .resizable()
-                .interpolation(.none)
-                .scaledToFit()
-                .frame(width: 74, height: 84)
-                .offset(y: reduceMotion || sleeping || isEditing ? 0 : (hovering ? -3 : 2))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard !isEditing else { return }
-                    wake()
-                    onOpenCompanion()
-                }
-                .highPriorityGesture(moveGesture, including: isEditing ? .all : .none)
-                .position(displayedPoint)
-                .transaction { transaction in
-                    if isEditing { transaction.disablesAnimations = true }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(sleeping && !isEditing ? "Sleeping robot companion" : "Robot companion")
-                .accessibilityHint(isEditing ? "Drag to move the robot" : "Tap to open Companion")
+                robotImage
+                    .gesture(moveGesture)
+                    .position(dragPoint)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
+            } else {
+                robotImage
+                    // A quick happy hop only during tap reactions; never while positioning.
+                    .offset(y: reaction == .happy && !reduceMotion ? -5 : 0)
+                    .animation(.spring(duration: 0.22), value: reaction)
+                    .overlay(alignment: .topTrailing) {
+                        if reaction == .happy {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.accent)
+                                .offset(x: 7, y: -8)
+                                .allowsHitTesting(false)
+                        } else if reaction == .curious {
+                            Text("…")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Palette.accent)
+                                .offset(x: 7, y: -9)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .gesture(taps)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.55).onEnded { succeeded in
+                            if succeeded { react(.curious) }
+                        }
+                    )
+                    .position(restingPoint)
+            }
 
             if isEditing {
                 HStack(spacing: 12) {
@@ -105,21 +178,33 @@ private struct FloatingRobotShortcut: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
-                hovering = true
-            }
-        }
         .onChange(of: isEditing) { _, _ in
-            dragPosition = nil
+            reaction = .idle
+            reactionID += 1
             wake()
         }
-        .task(id: wakeNumber) {
+        // A short-lived reaction returns to idle. Only the expression changes, never the position.
+        .task(id: reactionID) {
+            guard reaction != .idle else { return }
+            do {
+                try await Task.sleep(for: .seconds(reaction == .happy ? 1.1 : 1.8))
+            } catch { return }
+            reaction = .idle
+        }
+        // Occasional eye blinks, then sleep. No perpetual floating animation to interfere with dragging.
+        .task(id: activityID) {
             sleeping = false
-            guard !isEditing else { return }
-            do { try await Task.sleep(for: .seconds(14)) } catch { return }
-            if !Task.isCancelled { sleeping = true }
+            blinking = false
+            guard !isEditing, !reduceMotion else { return }
+            for _ in 0..<2 {
+                do { try await Task.sleep(for: .seconds(4.5)) } catch { return }
+                guard reaction == .idle else { continue }
+                blinking = true
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                blinking = false
+            }
+            do { try await Task.sleep(for: .seconds(4.7)) } catch { return }
+            if !Task.isCancelled, reaction == .idle { sleeping = true }
         }
     }
 }
