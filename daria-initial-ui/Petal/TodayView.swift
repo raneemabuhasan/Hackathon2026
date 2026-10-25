@@ -79,6 +79,7 @@ struct TodayView: View {
                 .presentationBackground(Palette.bg)
         }
         .onPreferenceChange(TodayHeaderHeight.self) { headerHeight = $0 }
+        .onChange(of: store.average) { _, _ in previewDay = nil }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environment(store)
@@ -156,13 +157,27 @@ struct TodayView: View {
         if store.predictsBleeds { predictionCard }
     }
 
+    /// One line on how the window was worked out, so the estimate never looks like a promise.
+    private var predictionBasis: String {
+        if !store.tracksPhases { return "Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule" }
+        if let forecast = store.activeAIForecast { return "✨ AI-adjusted · \(forecast.reason)" }
+        // Mirrors CycleLengthSelection: the length you set is used until enough cycles are logged.
+        let logged = store.completedCycles.count
+        if logged == 0 || (logged < CycleLengthSelection.cyclesToLearn && store.baseline?.cycleDays != nil) {
+            let left = CycleLengthSelection.cyclesToLearn - logged
+            return "Based on the \(store.average)-day cycle you set. Your logs take over after \(left) more cycle\(left == 1 ? "" : "s")."
+        }
+        let lengths = store.pastLengths
+        return "Based on your last \(lengths.count) cycle\(lengths.count == 1 ? "" : "s") (\(lengths.min() ?? store.average)–\(lengths.max() ?? store.average) days)"
+    }
+
     private var predictionCard: some View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
-        return VStack(alignment: .leading, spacing: 8) {
-            Button {
-                store.tab = .cycle
-            } label: {
+        return Button {
+            store.tab = .cycle
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
                     Image(systemName: "calendar")
                         .font(.system(size: 25, weight: .medium))
@@ -192,30 +207,20 @@ struct TodayView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Palette.inkSoft)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                Text(predictionBasis)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.inkFaint)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(EstimatePressStyle())
-            .accessibilityHint("Opens the Calendar page. Dates are estimates.")
-
-            if store.tracksPhases {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.activeAIForecast == nil ? "Based on your average cycle" : "✨ AI-adjusted")
-                    if let forecast = store.activeAIForecast { Text(forecast.reason) }
-                }
-                .font(.caption).foregroundStyle(Palette.inkSoft)
-                Text(store.completedCycles.isEmpty
-                     ? "Based on the \(store.average)-day cycle you told us. This gets more accurate as you log periods."
-                     : "Based on your last \(store.pastLengths.count) cycles (\(store.pastLengths.min()!)–\(store.pastLengths.max()!) days). The window widens if your cycles vary more.")
-                    .font(.caption).foregroundStyle(Palette.inkFaint)
-            } else {
-                Text("Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule. A bleed in the break is a withdrawal bleed, not a period, and it can be lighter, later or skipped.")
-                    .font(.caption).foregroundStyle(Palette.inkFaint)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
+        .buttonStyle(EstimatePressStyle())
+        .accessibilityHint("Opens the Calendar page. Dates are estimates.")
     }
 
     // MARK: Week strip

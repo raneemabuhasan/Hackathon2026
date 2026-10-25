@@ -733,7 +733,11 @@ final class CycleStore {
 
     var lastStart: Date { starts[0] }
     private var mean: Double { Double(pastLengths.reduce(0, +)) / Double(pastLengths.count) }
-    var average: Int { Int(mean.rounded()) }
+    var average: Int {
+        CycleLengthSelection.resolve(explicit: baseline?.cycleDays,
+                                     recorded: completedCycles.map(\.length),
+                                     fallback: profile?.cycleLength ?? 28)
+    }
     /// Uncertainty in days either side of the predicted start, never less than 2. A pack bleed is tighter.
     var spread: Int {
         if packBleedStart != nil { return 1 }
