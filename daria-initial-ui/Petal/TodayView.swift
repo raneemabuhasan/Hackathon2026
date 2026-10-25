@@ -12,6 +12,7 @@ struct TodayView: View {
     @State private var headerHeight: CGFloat = 0
     /// Day picked on the cycle ring; nil means today.
     @State private var previewDay: Int?
+    @AppStorage("petal.planCompletions.v1") private var planCompletions = Data()
 
     @State private var editing: ReminderSheet?
 
@@ -339,6 +340,26 @@ struct TodayView: View {
 
     // MARK: Plan
 
+    private var completedPlanKeys: Set<String> {
+        Set((try? JSONDecoder().decode([String].self, from: planCompletions)) ?? [])
+    }
+
+    /// Length-prefixed components keep task identities distinct across users, days and plans.
+    private func planCompletionKey(icon: String, title: String, detail: String, isAI: Bool) -> String {
+        let day = CycleStore.cal.dateComponents([.era, .year, .month, .day], from: store.today)
+        let components = [store.uid, "\(day.era ?? 0)-\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)",
+                          store.foodPhase.rawValue, isAI ? "ai" : "default", icon, title, detail]
+        return components.map { "\($0.utf8.count):\($0)" }.joined()
+    }
+
+    private func togglePlanCompletion(_ key: String) {
+        var keys = completedPlanKeys
+        if !keys.insert(key).inserted { keys.remove(key) }
+        if let data = try? JSONEncoder().encode(keys.sorted()) {
+            planCompletions = data
+        }
+    }
+
     private var planItems: [(icon: String, title: String, detail: String, nhs: Bool)] {
         switch store.foodPhase {
         case .menstrual: [("leaf", "Warm lentil & spinach dal", "Iron-rich and easy on low-appetite days.", false),
@@ -375,7 +396,22 @@ struct TodayView: View {
             }
             if !store.aiEnabled { AIOffNotice(feature: "a daily plan based on your logs") }
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
+                let key = planCompletionKey(icon: item.icon, title: item.title, detail: item.detail, isAI: ai != nil)
+                let completed = completedPlanKeys.contains(key)
                 HStack(alignment: .top, spacing: 14) {
+                    Button { togglePlanCompletion(key) } label: {
+                        Image(systemName: completed ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(completed ? Palette.accent : Palette.inkFaint)
+                            .frame(width: 28, height: 22)
+                            .padding(.vertical, 11)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -11)
+                    .accessibilityLabel(item.title)
+                    .accessibilityValue(completed ? "Completed" : "Not completed")
+                    .accessibilityHint(completed ? "Mark as incomplete" : "Mark as complete")
                     Image(systemName: item.icon)
                         .font(.system(size: 20))
                         .foregroundStyle(Palette.accent)
@@ -388,6 +424,7 @@ struct TodayView: View {
                                 .font(.system(size: 11)).foregroundStyle(Palette.accent)
                         }
                     }
+                    .opacity(completed ? 0.6 : 1)
                 }
             }
             if ai != nil {
