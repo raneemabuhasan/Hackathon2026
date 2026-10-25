@@ -97,15 +97,22 @@ private struct FloatingRobotShortcut: View {
             }
     }
 
-    // Placement uses an unanimated gesture-state offset. Persist only once, on release.
+    // The gesture lives on the stationary canvas, not the moving sprite.
+    // A fixed coordinate space eliminates feedback/jitter as the image moves.
+    // Persist only once, on release; no view animations during placement.
     private var moveGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("floatingRobotDragCanvas"))
             .updating($dragTranslation) { value, translation, transaction in
+                // Only begin a drag when the touch starts on the robot.
+                guard abs(value.startLocation.x - restingPoint.x) <= 48,
+                      abs(value.startLocation.y - restingPoint.y) <= 52 else { return }
                 transaction.animation = nil
                 transaction.disablesAnimations = true
                 translation = value.translation
             }
             .onEnded { value in
+                guard abs(value.startLocation.x - restingPoint.x) <= 48,
+                      abs(value.startLocation.y - restingPoint.y) <= 52 else { return }
                 let point = constrain(CGPoint(
                     x: restingPoint.x + value.translation.width,
                     y: restingPoint.y + value.translation.height
@@ -123,11 +130,15 @@ private struct FloatingRobotShortcut: View {
     var body: some View {
         ZStack(alignment: .top) {
             if isEditing {
-                Color.black.opacity(0.05).contentShape(Rectangle())
-
-                robotImage
+                // Stationary full-screen hit surface: the gesture never moves.
+                Color.black.opacity(0.05)
+                    .contentShape(Rectangle())
                     .gesture(moveGesture)
+
+                // Visual only during editing. The image cannot intercept touches.
+                robotImage
                     .position(dragPoint)
+                    .allowsHitTesting(false)
                     .transaction { transaction in
                         transaction.animation = nil
                         transaction.disablesAnimations = true
@@ -178,6 +189,7 @@ private struct FloatingRobotShortcut: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        .coordinateSpace(name: "floatingRobotDragCanvas")
         .onChange(of: isEditing) { _, _ in
             reaction = .idle
             reactionID += 1
