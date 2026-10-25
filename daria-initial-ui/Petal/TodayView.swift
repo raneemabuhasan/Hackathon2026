@@ -552,8 +552,7 @@ struct CycleRing: View {
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .fill(.white)
-                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
+                            .stroke(Palette.ink, lineWidth: 2.5)
                             .frame(width: 32, height: 32)
                             .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 2)
                     }
@@ -828,8 +827,7 @@ struct PackRing: View {
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .fill(.white)
-                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
+                            .stroke(Palette.ink, lineWidth: 2.5)
                             .frame(width: 28, height: 28)
                             .shadow(color: Palette.wine.opacity(0.12), radius: 3, y: 2)
                     }
