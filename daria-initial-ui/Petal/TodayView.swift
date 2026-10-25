@@ -433,7 +433,6 @@ struct CycleRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var previewDay: Int?
     @State private var showsPhaseExplanation = false
-    @GestureState private var isDraggingHandle = false
 
     /// Same length and phases as the prediction card, calendar and Nourish.
     private var cycleLength: Int { store.average }
@@ -471,19 +470,17 @@ struct CycleRing: View {
                 let todayAngle = (Double(actualRingDay) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
 
                 ZStack {
-                    ForEach(1...cycleLength, id: \.self) { day in
-                        let phase = store.phase(forDay: day)
-                        let iconAngle = (Double(day) - 0.5) / Double(cycleLength) * 2 * .pi - .pi / 2
-                        // Leave room for both current-phase emphasis and the drag pop.
-                        let iconSize = min(23, 2 * .pi * radius / Double(cycleLength) / 1.45)
-                        PhaseRingIcon(phase: phase)
-                            .frame(width: iconSize, height: iconSize)
-                            .scaleEffect(iconScale(day: day, phase: phase))
-                            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.78),
-                                       value: iconScale(day: day, phase: phase))
-                            .position(x: size / 2 + radius * cos(iconAngle),
-                                      y: size / 2 + radius * sin(iconAngle))
-                            .allowsHitTesting(false)
+                    ForEach(Phase.allCases) { phase in
+                        // A very short cycle can leave a phase with no days; skip its arc.
+                        if let range = store.range(of: phase) {
+                            Circle()
+                                .trim(from: Double(range.lowerBound - 1) / Double(cycleLength) + 0.012,
+                                      to: Double(range.upperBound) / Double(cycleLength) - 0.012)
+                                .stroke(phase.color, style: StrokeStyle(lineWidth: phase == selectedPhase ? 16 : 14,
+                                                                      lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .padding(16)
+                        }
                     }
 
                     ZStack {
@@ -501,6 +498,7 @@ struct CycleRing: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             .padding(.horizontal, 12)
+                            .transition(.push(from: .trailing))
                         } else {
                             VStack(spacing: 5) {
                                 Text("CYCLE DAY")
@@ -510,39 +508,38 @@ struct CycleRing: View {
                                 Text("\(shownDay)")
                                     .font(.display(74)).monospacedDigit()
                                     .contentTransition(.numericText())
-                                Text("\(selectedPhase.name) phase")
-                                    .font(.display(19))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
                                 Text("of your \(cycleLength)-day cycle")
                                     .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                             }
+                            .transition(.push(from: .leading))
                         }
                     }
                     .frame(width: max(0, size - 88), height: max(0, size - 88))
+                    // Keep the sliding pages inside the ring.
+                    .clipped()
                     .contentShape(Circle())
+                    .onTapGesture { showPage(explanation: !showsPhaseExplanation) }
                     .gesture(DragGesture(minimumDistance: 20)
                         .onEnded { value in
                             guard abs(value.translation.width) > abs(value.translation.height),
                                   abs(value.translation.width) > 30 else { return }
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                                showsPhaseExplanation = value.translation.width > 0
-                            }
+                            // Like any pager: swipe left for the next page, right to go back.
+                            showPage(explanation: value.translation.width < 0)
                         })
                     .overlay(alignment: .bottom) {
-                        HStack(spacing: 7) {
-                            Circle().fill(showsPhaseExplanation ? Palette.accent.opacity(0.2) : Palette.accent)
-                            Circle().fill(showsPhaseExplanation ? Palette.accent : Palette.accent.opacity(0.2))
+                        HStack(spacing: 0) {
+                            pageDot(explanation: false)
+                            pageDot(explanation: true)
                         }
-                        .frame(width: 22, height: 7)
-                        .offset(y: 9)
-                        .allowsHitTesting(false)
+                        .offset(y: 16)
+                        .accessibilityHidden(true)
                     }
 
                     if selectedDay != actualRingDay {
                         Circle()
-                            .stroke(Color.gray.opacity(0.55), lineWidth: 2.5)
-                            .frame(width: 34, height: 34)
+                            .fill(Color(white: 0.88))
+                            .overlay(Circle().stroke(Color.gray.opacity(0.55), lineWidth: 2.5))
+                            .frame(width: 32, height: 32)
                             .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
                             .position(x: size / 2 + radius * cos(todayAngle),
                                       y: size / 2 + radius * sin(todayAngle))
@@ -552,14 +549,14 @@ struct CycleRing: View {
                     ZStack {
                         Circle().fill(.clear)
                         Circle()
-                            .stroke(Palette.ink, lineWidth: 2.5)
+                            .fill(.white)
+                            .overlay(Circle().stroke(Palette.ink, lineWidth: 2.5))
                             .frame(width: 32, height: 32)
                             .shadow(color: Palette.wine.opacity(0.14), radius: 5, y: 2)
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cyclePreviewRing"))
-                        .updating($isDraggingHandle) { _, dragging, _ in dragging = true }
                         .onChanged { value in selectDay(at: value.location, size: size) })
                     .modifier(CycleHandlePosition(angle: angle, radius: radius, center: size / 2))
                 }
@@ -574,7 +571,7 @@ struct CycleRing: View {
             .accessibilityAction(named: showsPhaseExplanation ? "Show cycle day" : "Show phase explanation") {
                 showsPhaseExplanation.toggle()
             }
-            .accessibilityCustomContent("Phase explanation", showsPhaseExplanation ? phaseExplanation : "Swipe right inside the circle to read about this phase")
+            .accessibilityCustomContent("Phase explanation", showsPhaseExplanation ? phaseExplanation : "Swipe left or tap inside the circle to read about this phase")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: previewDay = min(cycleLength, selectedDay + 1)
@@ -628,13 +625,24 @@ struct CycleRing: View {
         .accessibilityAddTraits(phase == selectedPhase ? .isSelected : [])
     }
 
-    private func iconScale(day: Int, phase: Phase) -> CGFloat {
-        let emphasis: CGFloat = phase == actualPhase ? 1.12 : 1
-        guard isDraggingHandle, !reduceMotion else { return emphasis }
-        let distance = abs(day - selectedDay)
-        let circularDistance = min(distance, cycleLength - distance)
-        let pop: CGFloat = circularDistance == 0 ? 1.15 : circularDistance == 1 ? 1.07 : 1
-        return emphasis * pop
+    private func showPage(explanation: Bool) {
+        guard explanation != showsPhaseExplanation else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+            showsPhaseExplanation = explanation
+        }
+    }
+
+    /// A page indicator dot that also jumps to its page when tapped.
+    private func pageDot(explanation: Bool) -> some View {
+        let current = explanation == showsPhaseExplanation
+        return Button { showPage(explanation: explanation) } label: {
+            Circle()
+                .fill(current ? Palette.ink : Palette.ink.opacity(0.2))
+                .frame(width: 7, height: 7)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func selectDay(at point: CGPoint, size: CGFloat) {
