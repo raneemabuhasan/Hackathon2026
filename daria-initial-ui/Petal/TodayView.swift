@@ -175,6 +175,8 @@ struct TodayView: View {
         let earliest = max(0, CycleStore.days(store.windowStart, from: store.today))
         let latest = max(0, CycleStore.days(store.windowEnd, from: store.today))
         return Button {
+            // Land on the predicted start, in its month, rather than wherever the calendar was.
+            store.selectedCalendarDate = store.nextStart
             store.tab = .cycle
         } label: {
             VStack(alignment: .leading, spacing: 10) {
