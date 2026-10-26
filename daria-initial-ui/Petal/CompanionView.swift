@@ -2,7 +2,7 @@ import SwiftUI
 
 // One selected visual character; both share Sync's existing AI and floating controls.
 enum CompanionCharacter: String, CaseIterable, Identifiable {
-    case robot, bunny, kitten
+    case robot, bunny, kitten, bear
     var id: String { rawValue }
     var name: String { rawValue.capitalized }
     func asset(_ state: String) -> String { "Companion" + name + state }
@@ -37,7 +37,7 @@ struct PixelRobotCompanion: View {
                 let distance: Double = pacing ? (thinking ? 17 : 9) : 0
                 let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
                 let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
-                let wiggle = (character == .bunny || character == .kitten) && !reduceMotion && !smiling && !thinking && !blink
+                let wiggle = (character != .robot) && !reduceMotion && !smiling && !thinking && !blink
                     && Int(t * 1.3).isMultiple(of: 17)
                 Image(wiggle ? character.asset("Wiggle") : imageName)
                     .resizable()
