@@ -2,7 +2,7 @@ import SwiftUI
 
 // One selected visual character; both share Sync's existing AI and floating controls.
 enum CompanionCharacter: String, CaseIterable, Identifiable {
-    case robot, bunny
+    case robot, bunny, kitten
     var id: String { rawValue }
     var name: String { rawValue.capitalized }
     func asset(_ state: String) -> String { "Companion" + name + state }
@@ -37,7 +37,7 @@ struct PixelRobotCompanion: View {
                 let distance: Double = pacing ? (thinking ? 17 : 9) : 0
                 let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
                 let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
-                let wiggle = character == .bunny && !reduceMotion && !smiling && !thinking && !blink
+                let wiggle = (character == .bunny || character == .kitten) && !reduceMotion && !smiling && !thinking && !blink
                     && Int(t * 1.3).isMultiple(of: 17)
                 Image(wiggle ? character.asset("Wiggle") : imageName)
                     .resizable()
@@ -158,7 +158,7 @@ struct CompanionView: View {
                     Text("The same helpful AI, with a different little friend. Your choice also changes the floating companion.")
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.inkSoft)
-                    HStack(spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
                         ForEach(CompanionCharacter.allCases) { candidate in
                             Button {
                                 selectedCharacterRaw = candidate.rawValue

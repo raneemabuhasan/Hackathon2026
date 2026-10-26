@@ -57,7 +57,7 @@ private struct FloatingRobotShortcut: View {
         case .curious: return selectedCharacter.asset("Thinking")
         case .idle:
             if sleeping { return selectedCharacter.asset("Sleep") }
-            if wiggling && selectedCharacter == .bunny { return selectedCharacter.asset("Wiggle") }
+            if wiggling && selectedCharacter != .robot { return selectedCharacter.asset("Wiggle") }
             return selectedCharacter.asset(blinking ? "Blink" : "Idle")
         }
     }
@@ -219,7 +219,7 @@ private struct FloatingRobotShortcut: View {
             for cycle in 0..<2 {
                 do { try await Task.sleep(for: .seconds(4.5)) } catch { return }
                 guard reaction == .idle else { continue }
-                if selectedCharacter == .bunny && cycle == 1 {
+                if selectedCharacter != .robot && cycle == 1 {
                     wiggling = true
                     do { try await Task.sleep(for: .milliseconds(480)) } catch { return }
                     wiggling = false
