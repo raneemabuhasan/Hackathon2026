@@ -19,17 +19,17 @@ struct PixelRobotCompanion: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var blink = false
-    @State private var tapBlink = false
+    @State private var smiling = false
 
     private var imageName: String {
-        if tapBlink { return character.asset("Blink") }
+        if smiling { return character.asset("Happy") }
         if thinking { return character.asset("Thinking") }
         if blink { return character.asset("Blink") }
         return character.asset("Idle")
     }
 
     var body: some View {
-        Button { tapBlink = true } label: {
+        Button { smiling = true } label: {
             TimelineView(.animation(minimumInterval: 0.1, paused: reduceMotion)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 // Move within a dedicated header lane, never on top of the bell.
@@ -37,9 +37,9 @@ struct PixelRobotCompanion: View {
                 let distance: Double = pacing ? (thinking ? 17 : 9) : 0
                 let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
                 let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
-                let wiggle = (character != .robot) && !reduceMotion && !tapBlink && !thinking && !blink
+                let wiggle = (character != .robot) && !reduceMotion && !smiling && !thinking && !blink
                     && Int(t * 1.3).isMultiple(of: 17)
-                Image(wiggle ? character.asset("Wiggle") : imageName)
+                (smiling ? CompanionPageSmile.image(for: character) : Image(wiggle ? character.asset("Wiggle") : imageName))
                     .resizable()
                     .interpolation(.none)
                     .scaledToFit()
@@ -51,7 +51,7 @@ struct PixelRobotCompanion: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(character.name) companion")
-        .accessibilityHint("Tap to make your companion blink")
+        .accessibilityHint("Tap to make your companion smile")
         .task(id: thinking) {
             blink = false
             guard !reduceMotion else { return }
@@ -63,11 +63,47 @@ struct PixelRobotCompanion: View {
                 blink = false
             }
         }
-        .task(id: tapBlink) {
-            guard tapBlink else { return }
-            do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
-            tapBlink = false
+        .task(id: smiling) {
+            guard smiling else { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            smiling = false
         }
+    }
+}
+
+// Companion-page smiles omit decorations; floating Happy assets stay untouched.
+@MainActor
+private enum CompanionPageSmile {
+    private static let images: [String: UIImage] = {
+        let decorations: [(String, CGRect)] = [
+            ("Kitten", CGRect(x: 219, y: 47, width: 27, height: 25)),
+            ("Bear", CGRect(x: 218, y: 37, width: 22, height: 20)),
+            ("Frog", CGRect(x: 1048, y: 183, width: 143, height: 138))
+        ]
+        var result: [String: UIImage] = [:]
+        for (name, decoration) in decorations {
+            guard let source = UIImage(named: "Companion" + name + "Happy"),
+                  let cgImage = source.cgImage else { continue }
+            let size = CGSize(width: cgImage.width, height: cgImage.height)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = false
+            result[name] = UIGraphicsImageRenderer(size: size, format: format).image { context in
+                context.cgContext.interpolationQuality = .none
+                UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: size))
+                context.cgContext.clear(decoration)
+                if name == "Bear" {
+                    // Clear the heart tip without touching the seated bear's ear.
+                    context.cgContext.clear(CGRect(x: 224, y: 57, width: 16, height: 3))
+                }
+            }
+        }
+        return result
+    }()
+
+    static func image(for character: CompanionCharacter) -> Image {
+        if let smile = images[character.name] { return Image(uiImage: smile) }
+        return Image(character.asset("Happy"))
     }
 }
 

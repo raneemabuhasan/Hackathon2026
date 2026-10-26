@@ -153,7 +153,7 @@ private struct FloatingRobotShortcut: View {
             } else {
                 robotImage
                     // A quick happy hop only during tap reactions; never while positioning.
-                    .offset(y: reaction == .happy && !reduceMotion ? -5 : 0)
+                    .offset(y: reaction == .happy && !reduceMotion && selectedCharacter != .bear && selectedCharacter != .kitten ? -5 : 0)
                     .animation(.spring(duration: 0.22), value: reaction)
                     .overlay(alignment: .topTrailing) {
                         if reaction == .happy {
