@@ -19,17 +19,17 @@ struct PixelRobotCompanion: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var blink = false
-    @State private var smiling = false
+    @State private var tapBlink = false
 
     private var imageName: String {
-        if smiling { return character.asset("Happy") }
+        if tapBlink { return character.asset("Blink") }
         if thinking { return character.asset("Thinking") }
         if blink { return character.asset("Blink") }
         return character.asset("Idle")
     }
 
     var body: some View {
-        Button { smiling = true } label: {
+        Button { tapBlink = true } label: {
             TimelineView(.animation(minimumInterval: 0.1, paused: reduceMotion)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 // Move within a dedicated header lane, never on top of the bell.
@@ -37,21 +37,21 @@ struct PixelRobotCompanion: View {
                 let distance: Double = pacing ? (thinking ? 17 : 9) : 0
                 let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
                 let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
-                let wiggle = (character != .robot) && !reduceMotion && !smiling && !thinking && !blink
+                let wiggle = (character != .robot) && !reduceMotion && !tapBlink && !thinking && !blink
                     && Int(t * 1.3).isMultiple(of: 17)
                 Image(wiggle ? character.asset("Wiggle") : imageName)
                     .resizable()
                     .interpolation(.none)
                     .scaledToFit()
                     .frame(width: width, height: width * 1.23)
-                    .offset(x: CGFloat(horizontal), y: CGFloat(smiling && !reduceMotion ? -4 : vertical))
+                    .offset(x: CGFloat(horizontal), y: CGFloat(vertical))
                     .frame(width: pacing ? 90 : width, height: width * 1.23)
                     .contentShape(Rectangle())
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(character.name) companion")
-        .accessibilityHint("Tap to see the robot smile")
+        .accessibilityHint("Tap to make your companion blink")
         .task(id: thinking) {
             blink = false
             guard !reduceMotion else { return }
@@ -63,10 +63,10 @@ struct PixelRobotCompanion: View {
                 blink = false
             }
         }
-        .task(id: smiling) {
-            guard smiling else { return }
-            do { try await Task.sleep(for: .seconds(1)) } catch { return }
-            smiling = false
+        .task(id: tapBlink) {
+            guard tapBlink else { return }
+            do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
+            tapBlink = false
         }
     }
 }
