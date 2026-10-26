@@ -2,7 +2,7 @@ import SwiftUI
 
 // One selected visual character; both share Sync's existing AI and floating controls.
 enum CompanionCharacter: String, CaseIterable, Identifiable {
-    case robot, bunny, kitten, bear
+    case robot, bunny, kitten, bear, frog
     var id: String { rawValue }
     var name: String { rawValue.capitalized }
     func asset(_ state: String) -> String { "Companion" + name + state }
