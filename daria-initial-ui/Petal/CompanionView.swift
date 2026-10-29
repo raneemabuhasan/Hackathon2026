@@ -1,5 +1,13 @@
 import SwiftUI
 
+// One selected visual character; both share Sync's existing AI and floating controls.
+enum CompanionCharacter: String, CaseIterable, Identifiable {
+    case robot, bunny, kitten, bear, frog
+    var id: String { rawValue }
+    var name: String { rawValue.capitalized }
+    func asset(_ state: String) -> String { "Companion" + name + state }
+}
+
 // The default robot is a visual companion. AI logic stays inside CycleStore.
 // Keep this in CompanionView.swift to avoid changing the Xcode project file.
 @MainActor
@@ -7,16 +15,17 @@ struct PixelRobotCompanion: View {
     var thinking = false
     var width: CGFloat = 108
     var pacing = false
+    var character: CompanionCharacter = .robot
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var blink = false
     @State private var smiling = false
 
     private var imageName: String {
-        if smiling { return "CompanionRobotHappy" }
-        if thinking { return "CompanionRobotThinking" }
-        if blink { return "CompanionRobotBlink" }
-        return "CompanionRobotIdle"
+        if smiling { return character.asset("Happy") }
+        if thinking { return character.asset("Thinking") }
+        if blink { return character.asset("Blink") }
+        return character.asset("Idle")
     }
 
     var body: some View {
@@ -28,19 +37,21 @@ struct PixelRobotCompanion: View {
                 let distance: Double = pacing ? (thinking ? 17 : 9) : 0
                 let horizontal = reduceMotion ? 0 : (sin(t * (thinking ? 2.0 : 0.8)) * distance).rounded()
                 let vertical = reduceMotion ? 0 : (cos(t * (thinking ? 8.0 : 2.1)) * (pacing ? 1.5 : 2)).rounded()
-                Image(imageName)
+                let wiggle = (character != .robot) && !reduceMotion && !smiling && !thinking && !blink
+                    && Int(t * 1.3).isMultiple(of: 17)
+                (smiling ? CompanionPageSmile.image(for: character) : Image(wiggle ? character.asset("Wiggle") : imageName))
                     .resizable()
                     .interpolation(.none)
                     .scaledToFit()
                     .frame(width: width, height: width * 1.23)
-                    .offset(x: CGFloat(horizontal), y: CGFloat(smiling && !reduceMotion ? -4 : vertical))
+                    .offset(x: CGFloat(horizontal), y: CGFloat(vertical))
                     .frame(width: pacing ? 90 : width, height: width * 1.23)
                     .contentShape(Rectangle())
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Sync robot companion")
-        .accessibilityHint("Tap to see the robot smile")
+        .accessibilityLabel("\(character.name) companion")
+        .accessibilityHint("Tap to make your companion smile")
         .task(id: thinking) {
             blink = false
             guard !reduceMotion else { return }
@@ -60,11 +71,52 @@ struct PixelRobotCompanion: View {
     }
 }
 
+// Companion-page smiles omit decorations; floating Happy assets stay untouched.
+@MainActor
+private enum CompanionPageSmile {
+    private static let images: [String: UIImage] = {
+        let decorations: [(String, CGRect)] = [
+            ("Kitten", CGRect(x: 219, y: 47, width: 27, height: 25)),
+            ("Bear", CGRect(x: 218, y: 37, width: 22, height: 20)),
+            ("Frog", CGRect(x: 1048, y: 183, width: 143, height: 138))
+        ]
+        var result: [String: UIImage] = [:]
+        for (name, decoration) in decorations {
+            guard let source = UIImage(named: "Companion" + name + "Happy"),
+                  let cgImage = source.cgImage else { continue }
+            let size = CGSize(width: cgImage.width, height: cgImage.height)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = false
+            result[name] = UIGraphicsImageRenderer(size: size, format: format).image { context in
+                context.cgContext.interpolationQuality = .none
+                UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: size))
+                context.cgContext.clear(decoration)
+                if name == "Bear" {
+                    // Clear the heart tip without touching the seated bear's ear.
+                    context.cgContext.clear(CGRect(x: 224, y: 57, width: 16, height: 3))
+                }
+            }
+        }
+        return result
+    }()
+
+    static func image(for character: CompanionCharacter) -> Image {
+        if let smile = images[character.name] { return Image(uiImage: smile) }
+        return Image(character.asset("Happy"))
+    }
+}
+
 @MainActor
 struct CompanionView: View {
     @Environment(CycleStore.self) private var store
     @State private var draft = ""
     @FocusState private var focused: Bool
+    @State private var showCharacterPicker = false
+    @AppStorage("sync.companion.character") private var selectedCharacterRaw = "robot"
+    private var selectedCharacter: CompanionCharacter {
+        CompanionCharacter(rawValue: selectedCharacterRaw) ?? .robot
+    }
 
     private var canSend: Bool {
         store.aiEnabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.thinking
@@ -76,10 +128,19 @@ struct CompanionView: View {
                 HStack {
                     Eyebrow(text: "Companion")
                     Spacer(minLength: 4)
-                    // The robot slowly wanders here while idle, and paces when thinking.
+                    // Keep the selected character visible in the conversation header.
                     if !store.messages.isEmpty {
-                        PixelRobotCompanion(thinking: store.thinking, width: 44, pacing: true)
+                        PixelRobotCompanion(thinking: store.thinking, width: 44, pacing: true,
+                                            character: selectedCharacter)
                     }
+                    Button { showCharacterPicker = true } label: {
+                        Image(systemName: "pawprint")
+                            .font(.system(size: 17))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.inkSoft)
+                    .accessibilityLabel("Choose companion character")
                 }
                 .frame(minHeight: 44)
                 .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 8)
@@ -91,7 +152,8 @@ struct CompanionView: View {
                         VStack(spacing: 0) {
                             Spacer(minLength: 28)
                             VStack(spacing: 24) {
-                                PixelRobotCompanion(thinking: store.thinking, width: 104)
+                                PixelRobotCompanion(thinking: store.thinking, width: 104,
+                                                    character: selectedCharacter)
                                 VStack(spacing: 10) {
                                     DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
                                         .multilineTextAlignment(.center)
@@ -123,6 +185,52 @@ struct CompanionView: View {
                         }
                 }
             }
+        }
+        .sheet(isPresented: $showCharacterPicker) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Choose your companion")
+                        .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    Text("The same helpful AI, with a different little friend. Your choice also changes the floating companion.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.inkSoft)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 12) {
+                        ForEach(CompanionCharacter.allCases) { candidate in
+                            Button {
+                                selectedCharacterRaw = candidate.rawValue
+                                showCharacterPicker = false
+                            } label: {
+                                VStack(spacing: 8) {
+                                    Image(candidate.asset("Idle"))
+                                        .resizable()
+                                        .interpolation(.none)
+                                        .scaledToFit()
+                                        .frame(width: 98, height: 110)
+                                    Text(candidate.name)
+                                        .font(.system(size: 15, weight: .semibold))
+                                    Image(systemName: selectedCharacter == candidate ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(selectedCharacter == candidate ? Palette.accent : Palette.inkFaint)
+                                }
+                                .foregroundStyle(Palette.ink)
+                                .frame(maxWidth: .infinity, minHeight: 170)
+                                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+                                .overlay(RoundedRectangle(cornerRadius: 18)
+                                    .strokeBorder(selectedCharacter == candidate ? Palette.accent : Palette.line,
+                                                  lineWidth: selectedCharacter == candidate ? 2 : 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Select \(candidate.name) companion")
+                            .accessibilityAddTraits(selectedCharacter == candidate ? .isSelected : [])
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .scrollIndicators(.hidden)
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(32)
+            .presentationBackground(Palette.bg)
         }
     }
 

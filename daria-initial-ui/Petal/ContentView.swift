@@ -14,9 +14,14 @@ private struct FloatingRobotShortcut: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("sync.floatingRobot.x") private var savedX = 0.85
     @AppStorage("sync.floatingRobot.y") private var savedY = 0.55
+    @AppStorage("sync.companion.character") private var selectedCharacterRaw = "robot"
+    private var selectedCharacter: CompanionCharacter {
+        CompanionCharacter(rawValue: selectedCharacterRaw) ?? .robot
+    }
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var sleeping = false
     @State private var blinking = false
+    @State private var wiggling = false
     @State private var reaction: Reaction = .idle
     @State private var activityID = 0
     @State private var reactionID = 0
@@ -46,13 +51,14 @@ private struct FloatingRobotShortcut: View {
     }
 
     private var imageName: String {
-        if isEditing { return "CompanionRobotIdle" }
+        if isEditing { return selectedCharacter.asset("Idle") }
         switch reaction {
-        case .happy: return "CompanionRobotHappy"
-        case .curious: return "CompanionRobotThinking"
+        case .happy: return selectedCharacter.asset("Happy")
+        case .curious: return selectedCharacter.asset("Thinking")
         case .idle:
-            if sleeping { return "CompanionRobotSleep" }
-            return blinking ? "CompanionRobotBlink" : "CompanionRobotIdle"
+            if sleeping { return selectedCharacter.asset("Sleep") }
+            if wiggling && selectedCharacter != .robot { return selectedCharacter.asset("Wiggle") }
+            return selectedCharacter.asset(blinking ? "Blink" : "Idle")
         }
     }
 
@@ -64,15 +70,16 @@ private struct FloatingRobotShortcut: View {
             .frame(width: 74, height: 84)
             .contentShape(Rectangle())
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(sleeping && !isEditing ? "Sleeping robot companion" : "Robot companion")
+            .accessibilityLabel(sleeping && !isEditing ? "Sleeping \(selectedCharacter.name) companion" : "\(selectedCharacter.name) companion")
             .accessibilityHint(isEditing
-                ? "Drag the robot to a new position"
+                ? "Drag the companion to a new position"
                 : "Double tap to open Companion. Tap for a smile, or hold for a curious reaction")
     }
 
     private func wake() {
         sleeping = false
         blinking = false
+        wiggling = false
         activityID += 1
     }
 
@@ -146,7 +153,7 @@ private struct FloatingRobotShortcut: View {
             } else {
                 robotImage
                     // A quick happy hop only during tap reactions; never while positioning.
-                    .offset(y: reaction == .happy && !reduceMotion ? -5 : 0)
+                    .offset(y: reaction == .happy && !reduceMotion && selectedCharacter != .bear && selectedCharacter != .kitten ? -5 : 0)
                     .animation(.spring(duration: 0.22), value: reaction)
                     .overlay(alignment: .topTrailing) {
                         if reaction == .happy {
@@ -174,7 +181,7 @@ private struct FloatingRobotShortcut: View {
 
             if isEditing {
                 HStack(spacing: 12) {
-                    Label("Drag robot to move", systemImage: "hand.draw")
+                    Label("Drag companion to move", systemImage: "hand.draw")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer(minLength: 0)
                     Button("Done", action: onFinishEditing)
@@ -207,13 +214,20 @@ private struct FloatingRobotShortcut: View {
         .task(id: activityID) {
             sleeping = false
             blinking = false
+            wiggling = false
             guard !isEditing, !reduceMotion else { return }
-            for _ in 0..<2 {
+            for cycle in 0..<2 {
                 do { try await Task.sleep(for: .seconds(4.5)) } catch { return }
                 guard reaction == .idle else { continue }
-                blinking = true
-                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
-                blinking = false
+                if selectedCharacter != .robot && cycle == 1 {
+                    wiggling = true
+                    do { try await Task.sleep(for: .milliseconds(480)) } catch { return }
+                    wiggling = false
+                } else {
+                    blinking = true
+                    do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                    blinking = false
+                }
             }
             do { try await Task.sleep(for: .seconds(4.7)) } catch { return }
             if !Task.isCancelled, reaction == .idle { sleeping = true }
