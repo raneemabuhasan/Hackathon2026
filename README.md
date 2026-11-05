@@ -1,7 +1,7 @@
 # Petal — Hackathon 2026
 
 The shared app is Daria’s Petal boilerplate in `daria-initial-ui/`.
-`MenstrualCycleWellnessCompanion/` is the earlier starter project; use Petal for new app work.
+`MenstrualCycleWellnessCompanion/` is the earlier starter project; use Petal for new app work. Now the project is called Sync.
 
 ## Run locally
 
