@@ -1,3 +1,8 @@
-// Copy this file to Local.xcconfig (same folder) and replace with your team ID.
-// Find it in Xcode > Settings > Accounts, or developer.apple.com > Membership.
-DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// Copy to Local.xcconfig beside this file; Local.xcconfig is ignored by Git.
+// Replace BOTH placeholders with your own signing team and unique development app ID.
+// Do not change Signing & Capabilities values in the shared Xcode project.
+SYNC_DEVELOPMENT_TEAM = YOUR_TEAM_ID
+SYNC_APP_BUNDLE_IDENTIFIER = com.yourname.sync.dev
+
+// The widget ID automatically becomes $(SYNC_APP_BUNDLE_IDENTIFIER).SyncWidget.
+// Raneem: no overrides are needed; Signing.xcconfig supplies the official defaults.

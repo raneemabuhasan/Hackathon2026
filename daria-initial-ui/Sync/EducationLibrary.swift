@@ -44,7 +44,7 @@ struct EducationLibrary: Codable {
     ]
 
     static func bundled() throws -> EducationLibrary {
-        #if PETAL_EDUCATION_PACKAGE
+        #if SYNC_EDUCATION_PACKAGE
         let bundle = Bundle.module
         #else
         let bundle = Bundle.main

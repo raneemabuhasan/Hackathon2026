@@ -12,13 +12,19 @@
 		AA0000000000000000000022 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* GoogleSignIn */; };
 		AA0000000000000000000023 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000033 /* Lottie */; };
 		AA0000000000000000000024 /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000034 /* FirebaseAI */; };
+		AB0000000000000000000010 /* SyncWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* SyncWidget.swift */; };
+		AB0000000000000000000011 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
+		AB0000000000000000000012 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
+		AB0000000000000000000013 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
+		AB0000000000000000000014 /* SyncWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000001 /* SyncWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AB0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000015 /* Assets.xcassets */; };
 		CC0000000000000000000001 /* CompanionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* CompanionView.swift */; };
 		CC0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000002 /* ContentView.swift */; };
 		CC0000000000000000000003 /* CycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* CycleStore.swift */; };
 		CC0000000000000000000004 /* CycleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000004 /* CycleView.swift */; };
 		CC0000000000000000000005 /* LogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000005 /* LogSheet.swift */; };
 		CC0000000000000000000006 /* NourishView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000006 /* NourishView.swift */; };
-		CC0000000000000000000007 /* PetalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* PetalApp.swift */; };
+		CC0000000000000000000007 /* SyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* SyncApp.swift */; };
 		CC0000000000000000000008 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
 		CC0000000000000000000009 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* TodayView.swift */; };
 		CC000000000000000000000A /* AuthModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000A /* AuthModel.swift */; };
@@ -27,29 +33,23 @@
 		CC000000000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000D /* SettingsView.swift */; };
 		CC000000000000000000000E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000E /* GoogleService-Info.plist */; };
 		CC000000000000000000000F /* signin.json in Resources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000F /* signin.json */; };
+		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
+		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 		CC0000000000000000000012 /* sync-animation.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* sync-animation.json */; };
 		CC0000000000000000000013 /* heart.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* heart.json */; };
 		CC0000000000000000000014 /* bell.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* bell.json */; };
 		CC0000000000000000000015 /* cooking.json in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* cooking.json */; };
-		CC0000000000000000000010 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* Assistant.swift */; };
-		CC0000000000000000000011 /* Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* Reminders.swift */; };
 		DD0000000000000000000001 /* PeriodHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000000000000000002 /* PeriodHistory.swift */; };
-		FF0000000000000000000001 /* PasswordRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0000000000000000000002 /* PasswordRequirement.swift */; };
-		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
-		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
-		AB0000000000000000000010 /* PetalWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000002 /* PetalWidget.swift */; };
-		AB0000000000000000000011 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
-		AB0000000000000000000012 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000004 /* DeepLink.swift */; };
-		AB0000000000000000000013 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* Theme.swift */; };
-		AB0000000000000000000014 /* PetalWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000001 /* PetalWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		AB0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000015 /* Assets.xcassets */; };
-		FA0000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000002 /* Assets.xcassets */; };
 		ED0000000000000000000001 /* EducationLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000003 /* EducationLibrary.swift */; };
-		ED0000000000000000000002 /* education.json in Resources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000004 /* education.json */; };
+		ED0000000000000000000002 /* Education/education.json in Resources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000004 /* Education/education.json */; };
 		ED0000000000000000000005 /* CompanionLogging.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000006 /* CompanionLogging.swift */; };
 		ED000000000000000000000B /* CompanionPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000C /* CompanionPrompt.swift */; };
 		ED000000000000000000000D /* CompanionContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED000000000000000000000E /* CompanionContracts.swift */; };
 		ED0000000000000000000020 /* CycleForecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0000000000000000000021 /* CycleForecast.swift */; };
+		EE0000000000000000000001 /* SymptomComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000001 /* SymptomComparison.swift */; };
+		EE0000000000000000000002 /* SymptomComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0000000000000000000002 /* SymptomComparisonView.swift */; };
+		FA0000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000002 /* Assets.xcassets */; };
+		FF0000000000000000000001 /* PasswordRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0000000000000000000002 /* PasswordRequirement.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,7 +69,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				AB0000000000000000000014 /* PetalWidget.appex in Embed Foundation Extensions */,
+				AB0000000000000000000014 /* SyncWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -79,13 +79,18 @@
 /* Begin PBXFileReference section */
 		5C0000000000000000000001 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000001 /* Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0000000000000000000001 /* SyncWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SyncWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0000000000000000000002 /* SyncWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncWidget.swift; sourceTree = "<group>"; };
+		AB0000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AB0000000000000000000004 /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
+		AB0000000000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000003 /* CycleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleStore.swift; sourceTree = "<group>"; };
 		BB0000000000000000000004 /* CycleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000005 /* LogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSheet.swift; sourceTree = "<group>"; };
 		BB0000000000000000000006 /* NourishView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NourishView.swift; sourceTree = "<group>"; };
-		BB0000000000000000000007 /* PetalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetalApp.swift; sourceTree = "<group>"; };
+		BB0000000000000000000007 /* SyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncApp.swift; sourceTree = "<group>"; };
 		BB0000000000000000000008 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		BB0000000000000000000009 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		BB000000000000000000000A /* AuthModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModel.swift; sourceTree = "<group>"; };
@@ -94,28 +99,23 @@
 		BB000000000000000000000D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BB000000000000000000000E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		BB000000000000000000000F /* signin.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = signin.json; sourceTree = "<group>"; };
+		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
+		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* sync-animation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "sync-animation.json"; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* heart.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = heart.json; sourceTree = "<group>"; };
 		BB0000000000000000000014 /* bell.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = bell.json; sourceTree = "<group>"; };
 		BB0000000000000000000015 /* cooking.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cooking.json; sourceTree = "<group>"; };
-		BB0000000000000000000010 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
-		BB0000000000000000000011 /* Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reminders.swift; sourceTree = "<group>"; };
 		DD0000000000000000000002 /* PeriodHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodHistory.swift; sourceTree = "<group>"; };
-		FF0000000000000000000002 /* PasswordRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRequirement.swift; sourceTree = "<group>"; };
-		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
-		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
-		AB0000000000000000000001 /* PetalWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PetalWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB0000000000000000000002 /* PetalWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetalWidget.swift; sourceTree = "<group>"; };
-		AB0000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AB0000000000000000000004 /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
-		AB0000000000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		FA0000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		ED0000000000000000000003 /* EducationLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EducationLibrary.swift; sourceTree = "<group>"; };
-		ED0000000000000000000004 /* education.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Education/education.json; sourceTree = "<group>"; };
+		ED0000000000000000000004 /* Education/education.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Education/education.json; sourceTree = "<group>"; };
 		ED0000000000000000000006 /* CompanionLogging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLogging.swift; sourceTree = "<group>"; };
 		ED000000000000000000000C /* CompanionPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionPrompt.swift; sourceTree = "<group>"; };
 		ED000000000000000000000E /* CompanionContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionContracts.swift; sourceTree = "<group>"; };
 		ED0000000000000000000021 /* CycleForecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleForecast.swift; sourceTree = "<group>"; };
+		EF0000000000000000000001 /* SymptomComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparison.swift; sourceTree = "<group>"; };
+		EF0000000000000000000002 /* SymptomComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomComparisonView.swift; sourceTree = "<group>"; };
+		FA0000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FF0000000000000000000002 /* PasswordRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordRequirement.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,7 +141,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		AA0000000000000000000002 /* Petal */ = {
+		AA0000000000000000000002 /* Sync */ = {
 			isa = PBXGroup;
 			children = (
 				ED000000000000000000000C /* CompanionPrompt.swift */,
@@ -149,7 +149,7 @@
 				ED0000000000000000000021 /* CycleForecast.swift */,
 				ED0000000000000000000003 /* EducationLibrary.swift */,
 				ED0000000000000000000006 /* CompanionLogging.swift */,
-				ED0000000000000000000004 /* education.json */,
+				ED0000000000000000000004 /* Education/education.json */,
 				EF0000000000000000000001 /* SymptomComparison.swift */,
 				EF0000000000000000000002 /* SymptomComparisonView.swift */,
 				FA0000000000000000000002 /* Assets.xcassets */,
@@ -161,7 +161,7 @@
 				BB0000000000000000000004 /* CycleView.swift */,
 				BB0000000000000000000005 /* LogSheet.swift */,
 				BB0000000000000000000006 /* NourishView.swift */,
-				BB0000000000000000000007 /* PetalApp.swift */,
+				BB0000000000000000000007 /* SyncApp.swift */,
 				BB0000000000000000000008 /* Theme.swift */,
 				BB0000000000000000000009 /* TodayView.swift */,
 				BB000000000000000000000A /* AuthModel.swift */,
@@ -174,15 +174,15 @@
 				BB000000000000000000000E /* GoogleService-Info.plist */,
 				AA0000000000000000000050 /* Animations */,
 			);
-			path = Petal;
+			path = Sync;
 			sourceTree = "<group>";
 		};
 		AA0000000000000000000004 = {
 			isa = PBXGroup;
 			children = (
 				5C0000000000000000000001 /* Signing.xcconfig */,
-				AA0000000000000000000002 /* Petal */,
-				AB0000000000000000000005 /* PetalWidget */,
+				AA0000000000000000000002 /* Sync */,
+				AB0000000000000000000005 /* SyncWidget */,
 				AA0000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -191,7 +191,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* Sync.app */,
-				AB0000000000000000000001 /* PetalWidget.appex */,
+				AB0000000000000000000001 /* SyncWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -208,22 +208,22 @@
 			path = Animations;
 			sourceTree = "<group>";
 		};
-		AB0000000000000000000005 /* PetalWidget */ = {
+		AB0000000000000000000005 /* SyncWidget */ = {
 			isa = PBXGroup;
 			children = (
-				AB0000000000000000000002 /* PetalWidget.swift */,
+				AB0000000000000000000002 /* SyncWidget.swift */,
 				AB0000000000000000000015 /* Assets.xcassets */,
 				AB0000000000000000000003 /* Info.plist */,
 			);
-			path = PetalWidget;
+			path = SyncWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0000000000000000000006 /* Petal */ = {
+		AA0000000000000000000006 /* Sync */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0000000000000000000010 /* Build configuration list for PBXNativeTarget "Petal" */;
+			buildConfigurationList = AA0000000000000000000010 /* Build configuration list for PBXNativeTarget "Sync" */;
 			buildPhases = (
 				AA0000000000000000000007 /* Sources */,
 				AA0000000000000000000003 /* Frameworks */,
@@ -235,7 +235,7 @@
 			dependencies = (
 				AB000000000000000000000E /* PBXTargetDependency */,
 			);
-			name = Petal;
+			name = Sync;
 			packageProductDependencies = (
 				AA0000000000000000000030 /* FirebaseAuth */,
 				AA0000000000000000000031 /* FirebaseFirestore */,
@@ -247,9 +247,9 @@
 			productReference = AA0000000000000000000001 /* Sync.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AB0000000000000000000006 /* PetalWidget */ = {
+		AB0000000000000000000006 /* SyncWidget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AB000000000000000000000A /* Build configuration list for PBXNativeTarget "PetalWidget" */;
+			buildConfigurationList = AB000000000000000000000A /* Build configuration list for PBXNativeTarget "SyncWidget" */;
 			buildPhases = (
 				AB0000000000000000000007 /* Sources */,
 				AB0000000000000000000008 /* Frameworks */,
@@ -259,9 +259,9 @@
 			);
 			dependencies = (
 			);
-			name = PetalWidget;
+			name = SyncWidget;
 			productName = PetalWidget;
-			productReference = AB0000000000000000000001 /* PetalWidget.appex */;
+			productReference = AB0000000000000000000001 /* SyncWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -282,7 +282,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AA0000000000000000000011 /* Build configuration list for PBXProject "Petal" */;
+			buildConfigurationList = AA0000000000000000000011 /* Build configuration list for PBXProject "Sync" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -301,8 +301,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0000000000000000000006 /* Petal */,
-				AB0000000000000000000006 /* PetalWidget */,
+				AA0000000000000000000006 /* Sync */,
+				AB0000000000000000000006 /* SyncWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -315,7 +315,7 @@
 				FA0000000000000000000001 /* Assets.xcassets in Resources */,
 				CC000000000000000000000E /* GoogleService-Info.plist in Resources */,
 				CC000000000000000000000F /* signin.json in Resources */,
-				ED0000000000000000000002 /* education.json in Resources */,
+				ED0000000000000000000002 /* Education/education.json in Resources */,
 				CC0000000000000000000012 /* sync-animation.json in Resources */,
 				CC0000000000000000000013 /* heart.json in Resources */,
 				CC0000000000000000000014 /* bell.json in Resources */,
@@ -348,7 +348,7 @@
 				CC0000000000000000000004 /* CycleView.swift in Sources */,
 				CC0000000000000000000005 /* LogSheet.swift in Sources */,
 				CC0000000000000000000006 /* NourishView.swift in Sources */,
-				CC0000000000000000000007 /* PetalApp.swift in Sources */,
+				CC0000000000000000000007 /* SyncApp.swift in Sources */,
 				CC0000000000000000000008 /* Theme.swift in Sources */,
 				CC0000000000000000000009 /* TodayView.swift in Sources */,
 				CC000000000000000000000A /* AuthModel.swift in Sources */,
@@ -370,7 +370,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB0000000000000000000010 /* PetalWidget.swift in Sources */,
+				AB0000000000000000000010 /* SyncWidget.swift in Sources */,
 				AB0000000000000000000012 /* DeepLink.swift in Sources */,
 				AB0000000000000000000013 /* Theme.swift in Sources */,
 			);
@@ -381,7 +381,7 @@
 /* Begin PBXTargetDependency section */
 		AB000000000000000000000E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AB0000000000000000000006 /* PetalWidget */;
+			target = AB0000000000000000000006 /* SyncWidget */;
 			targetProxy = AB000000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -396,6 +396,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = TC6GNXLH7Y;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -424,6 +425,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = TC6GNXLH7Y;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -442,13 +444,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(SYNC_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Petal-Info.plist";
+				INFOPLIST_FILE = "Sync-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Sync;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -456,8 +458,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal;
-				PRODUCT_MODULE_NAME = Petal;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SYNC_APP_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = Sync;
 				PRODUCT_NAME = Sync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -471,13 +473,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(SYNC_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Petal-Info.plist";
+				INFOPLIST_FILE = "Sync-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Sync;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -485,8 +487,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal;
-				PRODUCT_MODULE_NAME = Petal;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SYNC_APP_BUNDLE_IDENTIFIER)";
+				PRODUCT_MODULE_NAME = Sync;
 				PRODUCT_NAME = Sync;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -499,16 +501,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(SYNC_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PetalWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Petal;
+				INFOPLIST_FILE = SyncWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sync;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal.PetalWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SYNC_WIDGET_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -522,16 +525,17 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(SYNC_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PetalWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Petal;
+				INFOPLIST_FILE = SyncWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sync;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackathon.petal.PetalWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SYNC_WIDGET_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -543,7 +547,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA0000000000000000000010 /* Build configuration list for PBXNativeTarget "Petal" */ = {
+		AA0000000000000000000010 /* Build configuration list for PBXNativeTarget "Sync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0000000000000000000014 /* Debug */,
@@ -552,7 +556,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA0000000000000000000011 /* Build configuration list for PBXProject "Petal" */ = {
+		AA0000000000000000000011 /* Build configuration list for PBXProject "Sync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0000000000000000000012 /* Debug */,
@@ -561,7 +565,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AB000000000000000000000A /* Build configuration list for PBXNativeTarget "PetalWidget" */ = {
+		AB000000000000000000000A /* Build configuration list for PBXNativeTarget "SyncWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AB000000000000000000000B /* Debug */,

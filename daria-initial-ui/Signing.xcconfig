@@ -1,3 +1,8 @@
-// Signing team lives in your own Local.xcconfig (gitignored), so nobody pushes their team ID.
-// Copy Local.xcconfig.example to Local.xcconfig and put your team ID in it.
+// Shared defaults for Raneem's Individual Apple Developer account.
+// Both targets reference these variables. Keep personal overrides in Local.xcconfig.
+SYNC_DEVELOPMENT_TEAM = TC6GNXLH7Y
+SYNC_APP_BUNDLE_IDENTIFIER = com.raneem.sync
+SYNC_WIDGET_BUNDLE_IDENTIFIER = $(SYNC_APP_BUNDLE_IDENTIFIER).SyncWidget
+
+// Optional, gitignored overrides; must come after the defaults.
 #include? "Local.xcconfig"

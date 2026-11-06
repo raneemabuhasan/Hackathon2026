@@ -80,13 +80,13 @@ Swift 5 language mode and the pinned Firebase SDK. Xcode 15.4 itself and an actu
 simulator/device launch were not exercised during this fix.
 
 ```sh
-swift test --package-path daria-initial-ui --scratch-path /tmp/PetalComparisonTests
-xcodebuild -project daria-initial-ui/Petal.xcodeproj -scheme Petal -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/PetalBundleFix CODE_SIGNING_ALLOWED=NO build
+swift test --package-path daria-initial-ui --scratch-path /tmp/SyncComparisonTests
+xcodebuild -project daria-initial-ui/Sync.xcodeproj -scheme Sync -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/SyncBundleFix CODE_SIGNING_ALLOWED=NO build
 ```
 
 ## Required live Gemini / Firestore / iOS checks
 
-Use a test account and launch daria-initial-ui/Petal.xcodeproj, Petal scheme.
+Use a test account and launch daria-initial-ui/Sync.xcodeproj, Sync scheme.
 
 1. Say "I'm feeling really tired today." Expect a consent question and no new
    daily entry. Reply "Yes, log it." Expect a successful dated confirmation only

@@ -1,5 +1,5 @@
 import XCTest
-@testable import PetalComparison
+@testable import SyncComparison
 
 final class CompanionContractsTests: XCTestCase {
     let today = LogDate.parse("2026-10-21")!

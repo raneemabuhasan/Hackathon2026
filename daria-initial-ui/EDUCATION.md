@@ -1,13 +1,13 @@
 # Companion: curated education and real app context
 
-Petal uses Gemini 2.5 Flash through Firebase AI Logic, with Firebase Apple SDK
+Sync uses Gemini 2.5 Flash through Firebase AI Logic, with Firebase Apple SDK
 11.13.0, Swift 5 and iOS 17 unchanged. There is no server-side web search,
 callable function, web-rendering widget or added direct Functions/App Check product.
 Firebase's existing transitive interop dependencies remain managed by Firebase.
 
 ## Prompt and tools
 
-Edit `Petal/CompanionPrompt.swift` to review tone, safety, routing and five example
+Edit `Sync/CompanionPrompt.swift` to review tone, safety, routing and five example
 exchanges. Replies remain warm plain text, normally 1–3 sentences. Displayed answers
 are synchronized from the actual chat before every model turn, including app-owned
 logging offers, reminder clarifications and write receipts. Context also survives
@@ -39,7 +39,7 @@ Firestore access: operations stay within the signed-in user's store and rules.
 
 ## Curated sources and limits
 
-`Petal/Education/education.json` is a manually reviewed snapshot dated October 21,
+`Sync/Education/education.json` is a manually reviewed snapshot dated October 21,
 2026. Stable source and passage IDs, titles, exact URLs, topics and limitations
 accompany each explainer. Primary sources:
 
@@ -75,7 +75,7 @@ Recorded-cycle cards are constructed from saved app data, not generated JSON.
 Chat remains text with structured tool results, verified citations and curated
 follow-ups. [Google's structured-output documentation](https://ai.google.dev/gemini-api/docs/structured-output)
 restricts the documented schema-with-tools combination to Gemini 3-series models.
-Petal retains Gemini 2.5 and the pinned SDK rather than depending on that combination.
+Sync retains Gemini 2.5 and the pinned SDK rather than depending on that combination.
 No new SDK, cloud service, deployment or Firebase rule changes are required.
 
 ## Automated and manual verification
@@ -87,8 +87,8 @@ local dates, period history and recorded-cycle comparison. These run without
 Gemini, Firestore or an iOS UI, so they are not live integration tests.
 
 ```sh
-swift test --package-path daria-initial-ui --scratch-path /tmp/PetalCuratedTests
-xcodebuild -project daria-initial-ui/Petal.xcodeproj -scheme Petal -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/PetalConversationBuild CODE_SIGNING_ALLOWED=NO build
+swift test --package-path daria-initial-ui --scratch-path /tmp/SyncCuratedTests
+xcodebuild -project daria-initial-ui/Sync.xcodeproj -scheme Sync -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/SyncConversationBuild CODE_SIGNING_ALLOWED=NO build
 ```
 
 Run these manual checks signed in on a simulator/device with Firebase AI configured:
@@ -157,6 +157,6 @@ not invent allergy-safe recommendations.
 
 PR integration verification: after merging the latest main, all 67 Foundation
 regressions passed (including the team's password-requirement checks). The Debug
-iOS Simulator build passed for the app and PetalWidget on Xcode 27.1. Main's
+iOS Simulator build passed for the app and SyncWidget on Xcode 27.1. Main's
 palettes, launch animation, password UI, widget and local signing setup were retained.
 Firebase remains pinned to 11.13.0. Live Gemini/Firestore/device tests remain manual.

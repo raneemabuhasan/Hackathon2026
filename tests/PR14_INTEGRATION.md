@@ -37,13 +37,13 @@ server records and profile. No production data was migrated by the review tools.
 
 ```sh
 swift test --package-path daria-initial-ui --scratch-path /tmp/PetalIntegrationTests
-swiftc daria-initial-ui/Petal/PeriodHistory.swift tests/PeriodHistoryChecks.swift -o /tmp/period-checks
+swiftc daria-initial-ui/Sync/PeriodHistory.swift tests/PeriodHistoryChecks.swift -o /tmp/period-checks
 /tmp/period-checks
-swiftc daria-initial-ui/Petal/PeriodHistory.swift tests/RecordedCycleChecks.swift -o /tmp/cycle-checks
+swiftc daria-initial-ui/Sync/PeriodHistory.swift tests/RecordedCycleChecks.swift -o /tmp/cycle-checks
 /tmp/cycle-checks
-xcodebuild -project daria-initial-ui/Petal.xcodeproj -scheme Petal \
+xcodebuild -project daria-initial-ui/Sync.xcodeproj -scheme Sync \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath /tmp/PetalPR14Review CODE_SIGNING_ALLOWED=NO build
+  -derivedDataPath /tmp/SyncPR14Review CODE_SIGNING_ALLOWED=NO build
 ```
 
 ## Validation results (2026-10-19)
