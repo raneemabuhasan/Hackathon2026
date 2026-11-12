@@ -129,7 +129,7 @@ struct SignInView: View {
     }
 
     @ViewBuilder
-    private func field(_ placeholder: String, text: Binding<String>, secure: Bool = false) -> some View {
+    private func field(_ placeholder: LocalizedStringKey, text: Binding<String>, secure: Bool = false) -> some View {
         Group {
             if secure { SecureField(placeholder, text: text) } else { TextField(placeholder, text: text) }
         }
@@ -148,11 +148,13 @@ private struct PasswordChecklist: View {
         let allMet = PasswordRequirement.allMet(password)
         VStack(alignment: .leading, spacing: 6) {
             if allMet {
-                row("Password looks good", met: true, spoken: "Password looks good, all requirements met")
+                row(String(localized: "Password looks good"), met: true, spoken: String(localized: "Password looks good, all requirements met"))
             } else {
                 ForEach(PasswordRequirement.all) { requirement in
                     let met = requirement.isMet(password)
-                    row(requirement.label, met: met, spoken: "\(requirement.label), \(met ? "met" : "not met")")
+                    let label = requirement.label
+                    let status = met ? String(localized: "met") : String(localized: "not met")
+                    row(label, met: met, spoken: "\(label), \(status)")
                 }
             }
         }

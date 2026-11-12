@@ -1,0 +1,11 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Log %@": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Log %@"}},"vi":{"stringUnit":{"state":"translated","value":"Ghi %@"}}}},
+    "Log today in Sync": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Log today in Sync"}},"vi":{"stringUnit":{"state":"translated","value":"Ghi hôm nay trong Sync"}}}},
+    "Opens Sync to log today. Shows no cycle details.": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Opens Sync to log today. Shows no cycle details."}},"vi":{"stringUnit":{"state":"translated","value":"Mở Sync để ghi hôm nay. Thông tin chu kỳ được ẩn."}}}},
+    "Quick log": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Quick log"}},"vi":{"stringUnit":{"state":"translated","value":"Ghi nhanh"}}}},
+    "today": {"extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"today"}},"vi":{"stringUnit":{"state":"translated","value":"hôm nay"}}}}
+  },
+  "version": "1.0"
+}

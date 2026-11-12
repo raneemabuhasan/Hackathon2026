@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		740000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 740000000000000000000003 /* Localizable.xcstrings */; };
+		740000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 740000000000000000000004 /* Localizable.xcstrings */; };
 		AA0000000000000000000020 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000030 /* FirebaseAuth */; };
 		AA0000000000000000000021 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000031 /* FirebaseFirestore */; };
 		AA0000000000000000000022 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* GoogleSignIn */; };
@@ -77,6 +79,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		740000000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		740000000000000000000004 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		5C0000000000000000000001 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000001 /* Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000001 /* CompanionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionView.swift; sourceTree = "<group>"; };
@@ -144,6 +148,7 @@
 		AA0000000000000000000002 /* Petal */ = {
 			isa = PBXGroup;
 			children = (
+				740000000000000000000003 /* Localizable.xcstrings */,
 				ED000000000000000000000C /* CompanionPrompt.swift */,
 				ED000000000000000000000E /* CompanionContracts.swift */,
 				ED0000000000000000000021 /* CycleForecast.swift */,
@@ -212,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				AB0000000000000000000002 /* PetalWidget.swift */,
+				740000000000000000000004 /* Localizable.xcstrings */,
 				AB0000000000000000000015 /* Assets.xcassets */,
 				AB0000000000000000000003 /* Info.plist */,
 			);
@@ -288,6 +294,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				vi,
 				Base,
 			);
 			mainGroup = AA0000000000000000000004;
@@ -316,6 +323,7 @@
 				CC000000000000000000000E /* GoogleService-Info.plist in Resources */,
 				CC000000000000000000000F /* signin.json in Resources */,
 				ED0000000000000000000002 /* education.json in Resources */,
+				740000000000000000000001 /* Localizable.xcstrings in Resources */,
 				CC0000000000000000000012 /* sync-animation.json in Resources */,
 				CC0000000000000000000013 /* heart.json in Resources */,
 				CC0000000000000000000014 /* bell.json in Resources */,
@@ -328,6 +336,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB0000000000000000000016 /* Assets.xcassets in Resources */,
+				740000000000000000000002 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -59,6 +59,8 @@ enum Phase: String, CaseIterable, Identifiable {
         }
     }
 
+    var displayName: String { NSLocalizedString(name, comment: "Cycle phase") }
+
     var blurb: String {
         switch self {
         case .menstrual: "Iron-rich foods, warm meals and plenty of fluids are good general choices while you bleed. Rest counts too."
@@ -141,9 +143,19 @@ struct BirthControl: Codable, Equatable {
             }
         }
 
+        var displayName: String { NSLocalizedString(name, comment: "Birth control method") }
+
         /// Methods with a pack, patch or ring schedule that can include a planned break.
         var hasSchedule: Bool { [.combinedPill, .patch, .ring].contains(self) }
         var isPill: Bool { self == .combinedPill || self == .miniPill }
+        func scheduleLabel(firstPatch: Bool = true) -> String {
+            switch self {
+            case .patch: firstPatch ? String(localized: "first patch") : String(localized: "patch")
+            case .ring: String(localized: "ring")
+            default: String(localized: "pack")
+            }
+        }
+
         /// What the schedule is called in "… started".
         var scheduleNoun: String {
             switch self {
@@ -173,8 +185,8 @@ struct BirthControl: Codable, Equatable {
     /// Break options shown for this method, as (active days, label).
     var regimens: [(days: Int?, label: String)] {
         method == .combinedPill
-            ? [(21, "21 + 7 break"), (24, "24 + 4 break"), (nil, "No breaks")]
-            : [(21, "3 weeks + 1 off"), (nil, "No breaks")]
+            ? [(21, String(localized: "21 + 7 break")), (24, String(localized: "24 + 4 break")), (nil, String(localized: "No breaks"))]
+            : [(21, String(localized: "3 weeks + 1 off")), (nil, String(localized: "No breaks"))]
     }
 }
 
@@ -268,14 +280,14 @@ final class CycleStore {
         try next.save(id: id, start: start, end: end)
         guard let saved = next.records.first(where: { !periodHistory.records.contains($0) }) else { return }
         try periodsRef.document(saved.id.uuidString).setData(from: saved) { error in
-            if let error { Task { @MainActor in self.showToast("Couldn't save period: \(error.localizedDescription)") } }
+            if let error { Task { @MainActor in self.showToast(String(localized: "Couldn't save period: \(error.localizedDescription)")) } }
         }
         periodHistory = next
     }
 
     func removePeriod(id: UUID) throws {
         periodsRef.document(id.uuidString).delete { error in
-            if let error { Task { @MainActor in self.showToast("Couldn't delete period: \(error.localizedDescription)") } }
+            if let error { Task { @MainActor in self.showToast(String(localized: "Couldn't delete period: \(error.localizedDescription)")) } }
         }
         periodHistory.remove(id: id)
     }
@@ -448,10 +460,27 @@ final class CycleStore {
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
 
-    static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping", "Low sex drive", "High sex drive"]
-    static let moodOptions = ["Calm", "Happy", "Confident", "Tired", "Anxious", "Irritable", "Low", "Sensitive"]
-    static let dietOptions = ["vegetarian", "vegan", "gluten-free", "dairy-free"]
-    static let allergenOptions = ["nuts", "dairy", "gluten", "soy", "eggs", "fish", "sesame"]
+    nonisolated static let symptomOptions = ["Cramps", "Headache", "Bloating", "Tender breasts", "Back pain", "Acne", "Fatigue", "Cravings", "Trouble sleeping", "Low sex drive", "High sex drive"]
+    nonisolated static let moodOptions = ["Calm", "Happy", "Confident", "Tired", "Anxious", "Irritable", "Low", "Sensitive"]
+    nonisolated static let dietOptions = ["vegetarian", "vegan", "gluten-free", "dairy-free"]
+    nonisolated static let allergenOptions = ["nuts", "dairy", "gluten", "soy", "eggs", "fish", "sesame"]
+    /// Translate the displayed labels while keeping the values used by saved logs and filters.
+    nonisolated static func displayTag(_ tag: String) -> String {
+        guard symptomOptions.contains(tag) || moodOptions.contains(tag) else { return tag }
+        return NSLocalizedString(tag, comment: "Built-in symptom or mood")
+    }
+
+    nonisolated static func displayFlow(_ flow: String) -> String {
+        switch flow {
+        case "None": String(localized: "None")
+        case "Spotting": String(localized: "Spotting")
+        case "Light": String(localized: "Light")
+        case "Medium": String(localized: "Medium")
+        case "Heavy": String(localized: "Heavy")
+        default: flow
+        }
+    }
+
     static let nhsPeriodPain = URL(string: "https://www.nhs.uk/conditions/period-pain/")!
     static let nhsHeavyPeriods = URL(string: "https://www.nhs.uk/conditions/heavy-periods/")!
 
@@ -469,7 +498,7 @@ final class CycleStore {
             userRef.addSnapshotListener { [weak self] snap, error in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.profileError = error.map { "Could not load profile: \($0.localizedDescription)" }
+                    self.profileError = error.map { String(localized: "Could not load profile: \($0.localizedDescription)") }
                     if error != nil { self.syncNotifications(); return }
                     // A brand-new account has no document yet: that's "needs onboarding", not an error.
                     if let snap, snap.exists {
@@ -490,7 +519,7 @@ final class CycleStore {
                     guard let self else { return }
                     self.logsLoaded = true
                     if let error {
-                        self.logsError = "Could not load symptom history: \(error.localizedDescription)"
+                        self.logsError = String(localized: "Could not load symptom history: \(error.localizedDescription)")
                         self.syncNotifications()
                         return
                     }
@@ -636,7 +665,7 @@ final class CycleStore {
             "baseline": try Firestore.Encoder().encode(baseline),
         ], forDocument: userRef)
         try await batch.commit()
-        showToast("Settings saved")
+        showToast(String(localized: "Settings saved"))
     }
 
     /// Applies the palette immediately and saves it to the profile so other devices pick it up.
@@ -790,8 +819,10 @@ final class CycleStore {
     var predictsBleeds: Bool { cycleMode != .steady }
     /// "period" without hormonal birth control, "bleed" on it: hormonal bleeds aren't periods.
     var bleedName: String { tracksPhases ? "period" : "bleed" }
-    /// `bleedName` for the start of a sentence or a title.
-    var bleedTitle: String { tracksPhases ? "Period" : "Bleed" }
+    /// Display labels for the currently tracked event.
+    var bleedTitle: String { tracksPhases ? String(localized: "Period") : String(localized: "Bleed") }
+    var bleedLabel: String { tracksPhases ? String(localized: "period") : String(localized: "bleed") }
+    var bleedPluralLabel: String { tracksPhases ? String(localized: "periods") : String(localized: "bleeds") }
 
     /// Day 1–28 of the current pack, patch or ring cycle.
     var packDay: Int? {
@@ -821,9 +852,14 @@ final class CycleStore {
         return phase == .menstrual ? "Bleed days" : "Every day"
     }
 
+    func foodLabel(_ phase: Phase) -> String {
+        if tracksPhases { return phase.displayName }
+        return phase == .menstrual ? String(localized: "Bleed days") : String(localized: "Every day")
+    }
+
     func foodTip(_ phase: Phase) -> String {
-        guard !tracksPhases else { return phase.foodTip }
-        return phase == .menstrual ? Phase.menstrual.foodTip : "Balanced plates, lots of veg, and stay hydrated."
+        let tip = tracksPhases || phase == .menstrual ? phase.foodTip : Phase.ovulation.foodTip
+        return NSLocalizedString(tip, comment: "Built-in food tip")
     }
 
     func foodBlurb(_ phase: Phase) -> String {
@@ -844,7 +880,7 @@ final class CycleStore {
     func saveBirthControl(_ value: BirthControl?) {
         let field: Any = (try? value.map { try Firestore.Encoder().encode($0) }) ?? FieldValue.delete()
         userRef.updateData(["birthControl": field]) { error in if let error { print("Birth control update failed:", error) } }
-        showToast("Settings saved")
+        showToast(String(localized: "Settings saved"))
     }
 
     func isPeriod(_ date: Date) -> Bool {
@@ -908,9 +944,9 @@ final class CycleStore {
                 try await write(log)
                 showLog = false
                 selectedLogDate = nil
-                showToast("Entry saved")
+                showToast(String(localized: "Entry saved"))
             } catch {
-                logWriteError = "Entry was not saved: \(error.localizedDescription)"
+                logWriteError = String(localized: "Entry was not saved: \(error.localizedDescription)")
             }
         }
     }
@@ -1079,8 +1115,8 @@ final class CycleStore {
         logWriteError = nil
         userRef.collection("logs").document(log.id).delete { [weak self] error in
             Task { @MainActor in
-                if let error { self?.logWriteError = "Entry was not deleted: \(error.localizedDescription)" }
-                else { self?.showToast("Entry deleted") }
+                if let error { self?.logWriteError = String(localized: "Entry was not deleted: \(error.localizedDescription)") }
+                else { self?.showToast(String(localized: "Entry deleted")) }
             }
         }
     }
@@ -1093,12 +1129,12 @@ final class CycleStore {
     func saveReminder(_ reminder: Reminder) {
         try? userRef.collection("reminders").document(reminder.id).setData(from: reminder)
         ReminderNotifications.requestPermission()
-        showToast("Reminder saved")
+        showToast(String(localized: "Reminder saved"))
     }
 
     func deleteReminder(_ reminder: Reminder) {
         userRef.collection("reminders").document(reminder.id).delete()
-        showToast("Reminder deleted")
+        showToast(String(localized: "Reminder deleted"))
     }
 
     private func visibleTags(builtins: [String], custom: [String], hidden: [String], order: [String]) -> [String] {
@@ -1212,13 +1248,13 @@ final class CycleStore {
             assistant = nil
         }
         userRef.updateData(["aiConsent": on]) { error in
-            if let error { Task { @MainActor in self.showToast("Couldn't update AI setting: \(error.localizedDescription)") } }
+            if let error { Task { @MainActor in self.showToast(String(localized: "Couldn't update AI setting: \(error.localizedDescription)")) } }
         }
     }
 
     func savePreferences(diets: Set<String>, avoid: Set<String>, dislikes: [String]) {
         userRef.updateData(["diets": diets.sorted(), "avoid": avoid.sorted(), "dislikes": dislikes]) { error in
-            if let error { Task { @MainActor in self.showToast("Couldn't save preferences: \(error.localizedDescription)") } }
+            if let error { Task { @MainActor in self.showToast(String(localized: "Couldn't save preferences: \(error.localizedDescription)")) } }
         }
     }
 
@@ -1241,7 +1277,7 @@ final class CycleStore {
             refs[offset..<min(offset + 450, refs.count)].forEach { batch.deleteDocument($0) }
             try await batch.commit()
         }
-        showToast("Grocery list cleared")
+        showToast(String(localized: "Grocery list cleared"))
     }
 
     /// Deletes every document this user owns and waits for Firestore to confirm.
@@ -1289,7 +1325,7 @@ final class CycleStore {
         assistant = nil
         ReminderNotifications.sync([], windowStart: windowStart, name: name, bleed: false)
         tab = .today
-        showToast("Your data was deleted")
+        showToast(String(localized: "Your data was deleted"))
     }
 
 
@@ -1512,13 +1548,13 @@ final class CycleStore {
             for item in grocery where meal.items.contains(item.name) {
                 batch.deleteDocument(userRef.collection("grocery").document(item.id))
             }
-            showToast("Removed from grocery list")
+            showToast(String(localized: "Removed from grocery list"))
         } else {
             for name in meal.items where !grocery.contains(where: { $0.name == name }) {
                 let item = GroceryItem(name: name)
                 _ = try? batch.setData(from: item, forDocument: userRef.collection("grocery").document(item.id))
             }
-            showToast("Added \(meal.items.count) items to your list")
+            showToast(String(localized: "Added \(meal.items.count) items to your list"))
         }
         batch.commit()
     }
@@ -1809,7 +1845,7 @@ extension CycleStore {
         invalidateForecastRequest()
         syncNotifications()
         userRef.updateData(["aiPredictions": on]) { error in
-            if let error { Task { @MainActor in self.showToast("Couldn't update AI predictions: \(error.localizedDescription)") } }
+            if let error { Task { @MainActor in self.showToast(String(localized: "Couldn't update AI predictions: \(error.localizedDescription)")) } }
         }
         if on { prefetchAI() }
     }

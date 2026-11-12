@@ -44,7 +44,7 @@ final class AuthModel {
     func resetPassword(email: String) async {
         await run {
             try await Auth.auth().sendPasswordReset(withEmail: email)
-            self.error = "Check your inbox for a reset link."
+            self.error = String(localized: "Check your inbox for a reset link.")
         }
     }
 
@@ -111,13 +111,13 @@ final class AuthModel {
     private static func message(for error: Error) -> String {
         guard let code = AuthErrorCode(rawValue: (error as NSError).code) else { return error.localizedDescription }
         switch code {
-        case .invalidEmail: return "That email address doesn't look right."
-        case .emailAlreadyInUse: return "There's already an account with that email. Try signing in."
-        case .weakPassword: return "Choose a password with at least 6 characters."
-        case .wrongPassword, .invalidCredential, .userNotFound: return "Email or password is incorrect."
-        case .networkError: return "Couldn't reach the server. Check your connection."
-        case .accountExistsWithDifferentCredential: return "This email is already linked to another sign-in method."
-        case .requiresRecentLogin: return "Your data was deleted, but the account needs a fresh sign-in to remove. Sign in, then delete it again from Settings."
+        case .invalidEmail: return String(localized: "That email address doesn't look right.")
+        case .emailAlreadyInUse: return String(localized: "There's already an account with that email. Try signing in.")
+        case .weakPassword: return String(localized: "Choose a password with at least 6 characters.")
+        case .wrongPassword, .invalidCredential, .userNotFound: return String(localized: "Email or password is incorrect.")
+        case .networkError: return String(localized: "Couldn't reach the server. Check your connection.")
+        case .accountExistsWithDifferentCredential: return String(localized: "This email is already linked to another sign-in method.")
+        case .requiresRecentLogin: return String(localized: "Your data was deleted, but the account needs a fresh sign-in to remove. Sign in, then delete it again from Settings.")
         default: return error.localizedDescription
         }
     }

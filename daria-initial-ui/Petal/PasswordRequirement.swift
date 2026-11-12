@@ -11,7 +11,7 @@ struct PasswordRequirement: Identifiable {
     static let minLength = 6
 
     static let all: [PasswordRequirement] = [
-        PasswordRequirement(id: "length", label: "At least \(minLength) characters") { $0.count >= minLength }
+        PasswordRequirement(id: "length", label: String(localized: "At least \(minLength) characters")) { $0.count >= minLength }
     ]
 
     static func allMet(_ password: String) -> Bool {

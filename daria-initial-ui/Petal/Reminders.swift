@@ -4,26 +4,47 @@ import UserNotifications
 extension Reminder {
     static func greeting(hour: Int) -> String {
         switch hour {
-        case 5..<12: "Good morning"
-        case 12..<17: "Good afternoon"
-        default: "Good evening"
+        case 5..<12: String(localized: "Good morning")
+        case 12..<17: String(localized: "Good afternoon")
+        default: String(localized: "Good evening")
         }
     }
 
     /// What the notification and the reminders list show.
     func text(name: String) -> String {
-        guard greets == true else { return title }
-        return "\(Self.greeting(hour: hour))\(name.isEmpty ? "" : ", \(name)"). \(title)"
+        guard greets == true else { return displayTitle }
+        let greeting = Self.greeting(hour: hour) + (name.isEmpty ? "" : ", \(name)")
+        return "\(greeting). \(displayTitle)"
     }
 
     /// Short name for the settings list; the built-in reminders get a label, custom ones keep their title.
     var listName: String {
-        if greets == true { return "Daily check-in" }
+        if greets == true { return String(localized: "Daily check-in") }
         switch title {
-        case "Period may start soon": return "Period reminder"
-        case "Bleed may start soon": return "Bleed reminder"
-        default: return title
+        case "Period may start soon": return String(localized: "Period reminder")
+        case "Bleed may start soon": return String(localized: "Bleed reminder")
+        default: return displayTitle
         }
+    }
+
+    var displayTitle: String {
+        switch (kind, title) {
+        case (.daily, "Time for your pill"): String(localized: "Time for your pill")
+        case (.daily, "Don't forget to log your symptoms today!") where greets == true:
+            String(localized: "Don't forget to log your symptoms today!")
+        case (.everyWeeks, "Time to change your patch"): String(localized: "Time to change your patch")
+        case (.everyWeeks, "Time for your ring change"): String(localized: "Time for your ring change")
+        case (.beforePeriod, "Period may start soon"): String(localized: "Period may start soon")
+        case (.beforePeriod, "Bleed may start soon"): String(localized: "Bleed may start soon")
+        default: title
+        }
+    }
+
+    static func periodMessage(bleed: Bool, days: Int) -> String {
+        if bleed {
+            return String(localized: "Your next bleed may start in about \(days) days.")
+        }
+        return String(localized: "Your period may start in about \(days) days.")
     }
 
     /// The next day this fires on (ignoring the time), or nil if it's a past one-off.
@@ -61,21 +82,22 @@ extension Reminder {
         switch kind {
         case .daily:
             if let weekdays = repeatWeekdays {
-                let labels = [1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat"]
-                return "Every \(weekdays.compactMap { labels[$0] }.joined(separator: ", ")) · \(time)"
+                let labels = Calendar.current.shortWeekdaySymbols
+                let names = weekdays.compactMap { (1...labels.count).contains($0) ? labels[$0 - 1] : nil }
+                return String(localized: "Every \(names.joined(separator: ", ")) · \(time)")
             }
-            return "Every day · \(time)"
+            return String(localized: "Every day · \(time)")
         case .once:
-            guard let fire = fireDate(windowStart: windowStart) else { return "Once · \(time)" }
-            return fire < .now ? "Done · \(fire.formatted(.dateTime.month(.abbreviated).day()))" : "\(fire.formatted(.dateTime.month(.abbreviated).day())) · \(time)"
+            guard let fire = fireDate(windowStart: windowStart) else { return String(localized: "Once · \(time)") }
+            return fire < .now ? String(localized: "Done · \(fire.formatted(.dateTime.month(.abbreviated).day()))") : "\(fire.formatted(.dateTime.month(.abbreviated).day())) · \(time)"
         case .beforePeriod:
             let days = daysBefore ?? 2
             let when = fireDate(windowStart: windowStart).map { $0.formatted(.dateTime.month(.abbreviated).day()) } ?? ""
-            return "\(days) day\(days == 1 ? "" : "s") before your period · \(when), \(time)"
+            return String(localized: "\(days) days before your period · \(when), \(time)")
         case .everyWeeks:
             let every = weeks ?? 1
-            let next = fireDate(windowStart: windowStart).map { " · next \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? ""
-            return "Every \(every == 1 ? "week" : "\(every) weeks")\(next), \(time)"
+            let next = fireDate(windowStart: windowStart).map { String(localized: " · next \($0.formatted(.dateTime.month(.abbreviated).day()))") } ?? ""
+            return String(localized: "Every \(every) weeks") + next + ", " + time
         }
     }
 
@@ -159,8 +181,8 @@ enum ReminderNotifications {
         content.title = appName
         if reminder.kind == .beforePeriod {
             let days = reminder.daysBefore ?? 2
-            content.subtitle = reminder.title
-            content.body = "Your \(bleed ? "next bleed" : "period") may start in about \(days) day\(days == 1 ? "" : "s")."
+            content.subtitle = reminder.displayTitle
+            content.body = Reminder.periodMessage(bleed: bleed, days: days)
         } else {
             content.body = reminder.text(name: name)
         }
@@ -240,7 +262,8 @@ struct ReminderEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    DisplayTitle(before: original == nil ? "New " : "Edit ", accent: "reminder", size: 26)
+                    Text(original == nil ? "New reminder" : "Edit reminder")
+                        .font(.display(26))
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
@@ -282,12 +305,12 @@ struct ReminderEditor: View {
                         case .once:
                             DatePicker("Date", selection: $date, in: Date.now..., displayedComponents: .date)
                         case .beforePeriod:
-                            Stepper("\(daysBefore) day\(daysBefore == 1 ? "" : "s") before", value: $daysBefore, in: 1...7)
+                            Stepper("\(daysBefore) days before", value: $daysBefore, in: 1...7)
                             Text("Moves with your predicted window. Next: \(CycleStore.add(store.windowStart, -daysBefore).formatted(.dateTime.month(.abbreviated).day())).")
                                 .font(.caption).foregroundStyle(Palette.inkFaint)
                         case .everyWeeks:
                             DatePicker("Starting", selection: $date, displayedComponents: .date)
-                            Stepper("Every \(weeks == 1 ? "week" : "\(weeks) weeks")", value: $weeks, in: 1...4)
+                            Stepper("Every \(weeks) weeks", value: $weeks, in: 1...4)
                         }
                         DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                     }
@@ -342,7 +365,7 @@ struct ReminderEditor: View {
         !trimmedTitle.isEmpty && !(kind == .daily && selectedDays && weekdays.isEmpty)
     }
 
-    private func label(_ text: String) -> some View {
+    private func label(_ text: LocalizedStringKey) -> some View {
         Text(text).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.inkSoft)
     }
 
@@ -350,7 +373,7 @@ struct ReminderEditor: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 13))
-                Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
+                Text(LocalizedStringKey(title)).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity, minHeight: 38)
             .padding(.horizontal, 8)

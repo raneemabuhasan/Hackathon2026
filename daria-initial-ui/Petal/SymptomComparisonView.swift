@@ -56,13 +56,13 @@ struct SymptomComparisonView: View {
                         }
                         ForEach(result.observations.prefix(3)) { observation in
                             HStack {
-                                Text(observation.symptom).font(.system(size: 13, weight: .medium))
+                                Text(CycleStore.displayTag(observation.symptom)).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 Text("\(observation.earlierDays) · \(observation.laterDays)")
                                     .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft)
                             }
                             .accessibilityElement(children: .ignore)
-                            .accessibilityLabel("\(observation.symptom): \(observation.earlierDays) days in the earlier cycle, \(observation.laterDays) in the later")
+                            .accessibilityLabel("\(CycleStore.displayTag(observation.symptom)): \(observation.earlierDays) days in the earlier cycle, \(observation.laterDays) in the later")
                         }
                     }
                 } else {
@@ -128,7 +128,7 @@ struct SymptomComparisonView: View {
                     }
                     ForEach(result.observations) { observation in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(observation.symptom).font(.headline)
+                            Text(CycleStore.displayTag(observation.symptom)).font(.headline)
                             cycleValues(result, earlier: dayCount(observation.earlierDays),
                                         later: dayCount(observation.laterDays))
                             Text(observation.cyclesReported == 2
@@ -161,12 +161,12 @@ struct SymptomComparisonView: View {
         }.font(.system(size: 13)).card()
     }
 
-    private func rating(_ value: Int?) -> String { value.map { "\($0) out of 10" } ?? "No rating above 0 logged" }
+    private func rating(_ value: Int?) -> String { value.map { String(localized: "\($0) out of 10") } ?? String(localized: "No rating above 0 logged") }
     private func dayCount(_ count: Int) -> String {
-        count == 0 ? "No entries" : "\(count) \(count == 1 ? "day" : "days") logged"
+        count == 0 ? String(localized: "No entries") : String(localized: "\(count) days logged")
     }
     private func entryTitle(_ count: Int) -> String {
-        "View \(count) \(count == 1 ? "entry" : "entries")"
+        String(localized: "View \(count) entries")
     }
     private func cycleValues(_ result: CycleComparison, earlier: String, later: String) -> some View {
         ViewThatFits(in: .horizontal) {
@@ -180,7 +180,7 @@ struct SymptomComparisonView: View {
             }
         }
     }
-    private func cycleValue(_ cycle: ComparedCycle, title: String, value: String) -> some View {
+    private func cycleValue(_ cycle: ComparedCycle, title: LocalizedStringKey, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(Palette.inkSoft)
             Text("Started \(label(cycle))").font(.caption.weight(.medium))
@@ -192,9 +192,9 @@ struct SymptomComparisonView: View {
         .accessibilityElement(children: .combine)
     }
     private func label(_ cycle: ComparedCycle) -> String {
-        cycle.start.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))
+        cycle.start.formatted(.dateTime.month(.wide).day().year())
     }
-    private func selector(_ title: String, selection: Binding<Date?>, fallback: Date) -> some View {
+    private func selector(_ title: LocalizedStringKey, selection: Binding<Date?>, fallback: Date) -> some View {
         Picker(title, selection: Binding<Date>(get: {
             cycles.contains { $0.start == selection.wrappedValue } ? (selection.wrappedValue ?? fallback) : fallback
         }, set: { selection.wrappedValue = $0 })) {
@@ -212,8 +212,8 @@ struct SymptomComparisonView: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.date.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))).bold()
-                Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
+                Text(entry.date.formatted(.dateTime.month(.wide).day().year())).bold()
+                Text(entry.symptoms.isEmpty ? String(localized: "No symptoms recorded") : entry.symptoms.map(CycleStore.displayTag).joined(separator: ", "))
                 Text("Daily pain: \(rating(entry.pain))")
                 if !entry.note.isEmpty { Text(entry.note) }
                 Label("View or edit entry", systemImage: "pencil").foregroundStyle(Palette.accent)
