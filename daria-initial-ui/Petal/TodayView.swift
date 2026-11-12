@@ -25,7 +25,7 @@ struct TodayView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Eyebrow(text: store.today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
                             DisplayTitle(
-                                before: Self.greeting(at: context.date) + (store.name.isEmpty ? "" : ", "),
+                                before: Reminder.greeting(hour: Calendar.current.component(.hour, from: context.date)) + (store.name.isEmpty ? "" : ", "),
                                 accent: store.name
                             )
                         }
@@ -86,14 +86,6 @@ struct TodayView: View {
                 .environment(auth)
                 .presentationCornerRadius(32)
                 .presentationBackground(Palette.bg)
-        }
-    }
-
-    static func greeting(at date: Date) -> String {
-        switch Calendar.current.component(.hour, from: date) {
-        case 5..<12: "Good morning"
-        case 12..<17: "Good afternoon"
-        default: "Good evening"
         }
     }
 
@@ -159,16 +151,24 @@ struct TodayView: View {
 
     /// One line on how the window was worked out, so the estimate never looks like a promise.
     private var predictionBasis: String {
-        if !store.tracksPhases { return "Based on your \(store.birthControl?.method.scheduleNoun ?? "pack") schedule" }
-        if let forecast = store.activeAIForecast { return "✨ AI-adjusted · \(forecast.reason)" }
+        if !store.tracksPhases { return String(localized: "Based on your \(store.birthControl?.method.scheduleLabel() ?? String(localized: "pack")) schedule") }
+        if let forecast = store.activeAIForecast { return String(localized: "✨ AI-adjusted · \(forecast.reason)") }
         // Mirrors CycleLengthSelection: the length you set is used until enough cycles are logged.
         let logged = store.completedCycles.count
         if logged == 0 || (logged < CycleLengthSelection.cyclesToLearn && store.baseline?.cycleDays != nil) {
             let left = CycleLengthSelection.cyclesToLearn - logged
-            return "Based on the \(store.average)-day cycle you set. Your logs take over after \(left) more cycle\(left == 1 ? "" : "s")."
+            if left == 1 {
+                return String(localized: "Based on the \(store.average)-day cycle you set. Your logs take over after one more cycle.")
+            }
+            return String(localized: "Based on the \(store.average)-day cycle you set. Your logs take over after \(left) more cycles.")
         }
         let lengths = store.pastLengths
-        return "Based on your last \(lengths.count) cycle\(lengths.count == 1 ? "" : "s") (\(lengths.min() ?? store.average)–\(lengths.max() ?? store.average) days)"
+        let shortest = lengths.min() ?? store.average
+        let longest = lengths.max() ?? store.average
+        if lengths.count == 1 {
+            return String(localized: "Based on your last cycle (\(shortest)–\(longest) days)")
+        }
+        return String(localized: "Based on your last \(lengths.count) cycles (\(shortest)–\(longest) days)")
     }
 
     private var predictionCard: some View {
@@ -188,7 +188,7 @@ struct TodayView: View {
                         .fill(Palette.rose.opacity(0.25))
                         .frame(width: 1, height: 36)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text((store.tracksPhases ? "Next period, estimated" : "Next bleed, estimated").uppercased())
+                        Text((store.tracksPhases ? String(localized: "Next period, estimated") : String(localized: "Next bleed, estimated")).uppercased())
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(0.8)
                             .foregroundStyle(Palette.inkSoft)
@@ -268,7 +268,7 @@ struct TodayView: View {
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundStyle(Palette.accent)
-                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(LocalizedStringKey(title)).font(.system(size: 12, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -334,10 +334,18 @@ struct TodayView: View {
                     Text(ai == nil ? "optional" : "from today's log").font(.caption).foregroundStyle(Palette.inkFaint)
                 }
             }
-            if !store.aiEnabled { AIOffNotice(feature: "a daily plan based on your logs") }
+            if !store.aiEnabled { AIOffNotice(feature: String(localized: "a daily plan based on your logs")) }
             ForEach(ai.map { $0.map { (icon: $0.icon, title: $0.title, detail: $0.detail, nhs: false) } } ?? planItems, id: \.title) { item in
                 let key = planCompletionKey(icon: item.icon, title: item.title, detail: item.detail, isAI: ai != nil)
                 let completed = completedPlanKeys.contains(key)
+                let title = ai == nil ? NSLocalizedString(item.title, comment: "Default plan item") : item.title
+                let detail = if ai == nil && item.title == "Pack your period kit" {
+                    String(localized: "Your period may start from \(store.fmt(store.windowStart)).")
+                } else if ai == nil {
+                    NSLocalizedString(item.detail, comment: "Default plan item detail")
+                } else {
+                    item.detail
+                }
                 HStack(alignment: .top, spacing: 14) {
                     Button { togglePlanCompletion(key) } label: {
                         Image(systemName: completed ? "checkmark.circle.fill" : "circle")
@@ -349,12 +357,12 @@ struct TodayView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, -11)
-                    .accessibilityLabel(item.title)
+                    .accessibilityLabel(title)
                     .accessibilityValue(completed ? "Completed" : "Not completed")
                     .accessibilityHint(completed ? "Mark as incomplete" : "Mark as complete")
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(item.title).font(.system(size: 14, weight: .semibold))
-                        Text(item.detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                        Text(title).font(.system(size: 14, weight: .semibold))
+                        Text(detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                         if item.nhs {
                             Link("Source: NHS", destination: CycleStore.nhsPeriodPain)
                                 .font(.system(size: 11)).foregroundStyle(Palette.accent)
@@ -396,13 +404,13 @@ struct CycleRing: View {
     private var phaseExplanation: String {
         switch selectedPhase {
         case .menstrual:
-            "During menstruation, the uterus sheds its lining. Rest and gentle movement may feel supportive."
+            String(localized: "During menstruation, the uterus sheds its lining. Rest and gentle movement may feel supportive.")
         case .follicular:
-            "During the follicular phase, follicles develop in the ovaries and the uterine lining begins to build again."
+            String(localized: "During the follicular phase, follicles develop in the ovaries and the uterine lining begins to build again.")
         case .ovulation:
-            "Ovulation is when an ovary releases an egg. This calendar estimate cannot confirm when ovulation happens."
+            String(localized: "Ovulation is when an ovary releases an egg. This calendar estimate cannot confirm when ovulation happens.")
         case .luteal:
-            "After ovulation, the uterine lining prepares for a possible pregnancy. Some people notice PMS symptoms before their period."
+            String(localized: "After ovulation, the uterine lining prepares for a possible pregnancy. Some people notice PMS symptoms before their period.")
         }
     }
 
@@ -432,7 +440,7 @@ struct CycleRing: View {
                     ZStack {
                         if showsPhaseExplanation {
                             VStack(spacing: 14) {
-                                Text("\(selectedPhase.name.uppercased()) PHASE")
+                                Text("\(selectedPhase.displayName.uppercased()) PHASE")
                                     .font(.system(size: 11, weight: .semibold))
                                     .tracking(1.5)
                                     .foregroundStyle(Palette.inkSoft)
@@ -512,7 +520,7 @@ struct CycleRing: View {
             .frame(width: 280, height: 280)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Cycle day preview")
-            .accessibilityValue("Exploring day \(shownDay) of about \(cycleLength), \(selectedPhase.name) phase. Today is day \(actualDay), \(actualPhase.name) phase.")
+            .accessibilityValue("Exploring day \(shownDay) of about \(cycleLength), \(selectedPhase.displayName) phase. Today is day \(actualDay), \(actualPhase.displayName) phase.")
             .accessibilityHint("Adjust to explore a day without changing your saved cycle")
             .accessibilityAction(named: showsPhaseExplanation ? "Show cycle day" : "Show phase explanation") {
                 showsPhaseExplanation.toggle()
@@ -563,7 +571,7 @@ struct CycleRing: View {
     private func phaseLabel(_ phase: Phase) -> some View {
         HStack(spacing: 4) {
             PhaseRingIcon(phase: phase).frame(width: 14, height: 14)
-            Text(phase.name)
+            Text(phase.displayName)
                 .font(.system(size: 12, weight: phase == selectedPhase ? .bold : .regular))
                 .fixedSize()
         }
@@ -735,20 +743,20 @@ struct SteadySummary: View {
                     .padding(16)
                 VStack(spacing: 5) {
                     if let bleed = lastBleed, bleed.end == nil {
-                        Eyebrow(text: "Bleed day")
+                        Eyebrow(text: String(localized: "Bleed day"))
                         Text("\(CycleStore.days(today, from: bleed.start) + 1)")
                             .font(.display(74)).monospacedDigit()
                         Text("since \(bleed.start.formatted(.dateTime.month(.abbreviated).day()))")
                             .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     } else if let bleed = lastBleed {
-                        Eyebrow(text: "Days since bleeding")
+                        Eyebrow(text: String(localized: "Days since bleeding"))
                         Text("\(CycleStore.days(today, from: bleed.end ?? bleed.start))")
                             .font(.display(74)).monospacedDigit()
-                        Text("on your \(store.birthControl?.method.name.lowercased() ?? "method")")
+                        Text("on your \(store.birthControl?.method.displayName.lowercased() ?? "method")")
                             .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                     } else {
-                        Eyebrow(text: "Birth control")
-                        Text(store.birthControl?.method.name ?? "")
+                        Eyebrow(text: String(localized: "Birth control"))
+                        Text(store.birthControl?.method.displayName ?? "")
                             .font(.display(34))
                             .multilineTextAlignment(.center)
                         Text("No bleeding logged yet")
@@ -761,7 +769,7 @@ struct SteadySummary: View {
             .accessibilityElement(children: .combine)
 
             HStack(spacing: 16) {
-                stat(lastBleed.map { $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? "None", "last bleed")
+                stat(lastBleed.map { $0.start.formatted(.dateTime.month(.abbreviated).day()) } ?? String(localized: "None"), "last bleed")
                 stat("\(bleedsLast90Days)", "bleeds in 90 days")
             }
 
@@ -774,7 +782,7 @@ struct SteadySummary: View {
         }
     }
 
-    private func stat(_ value: String, _ label: String) -> some View {
+    private func stat(_ value: String, _ label: LocalizedStringKey) -> some View {
         HStack(spacing: 4) {
             Text(value).font(.system(size: 12, weight: .bold))
             Text(label).font(.system(size: 12))
@@ -825,7 +833,7 @@ struct PackRing: View {
                         arc(from: active, to: length, length: length, color: Palette.rose, current: day > active)
                     }
                     VStack(spacing: 4) {
-                        Eyebrow(text: store.birthControl?.method == .combinedPill ? "Pack day" : "Day")
+                        Eyebrow(text: store.birthControl?.method == .combinedPill ? String(localized: "Pack day") : String(localized: "Day"))
                         Text("\(day)").font(.display(74)).monospacedDigit()
                             .contentTransition(.numericText())
                         Text("of \(length)").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
@@ -861,7 +869,7 @@ struct PackRing: View {
             .frame(width: 280, height: 280)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Pack day preview")
-            .accessibilityValue("Exploring day \(day) of \(length), \(day <= active ? "active days" : "break"). Today is day \(actualDay).")
+            .accessibilityValue("Exploring day \(day) of \(length), \(day <= active ? String(localized: "active days") : String(localized: "break")). Today is day \(actualDay).")
             .accessibilityHint("Adjust to explore a day without changing anything")
             .accessibilityAdjustableAction { direction in
                 switch direction {
@@ -891,7 +899,7 @@ struct PackRing: View {
                         .contentShape(Rectangle())
                         .transition(.opacity)
                 } else {
-                    Label("Drag the circle to explore your \(store.birthControl?.method.scheduleNoun.replacingOccurrences(of: "first ", with: "") ?? "pack")", systemImage: "hand.draw")
+                    Label("Drag the circle to explore your \(store.birthControl?.method.scheduleLabel(firstPatch: false) ?? String(localized: "pack"))", systemImage: "hand.draw")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.inkFaint)
                         .transition(.opacity)
@@ -921,7 +929,7 @@ struct PackRing: View {
             .padding(16)
     }
 
-    private func legend(_ color: Color, _ label: String, bold: Bool) -> some View {
+    private func legend(_ color: Color, _ label: LocalizedStringKey, bold: Bool) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(.system(size: 12, weight: bold ? .bold : .regular))
@@ -958,17 +966,17 @@ struct PeriodQuickEntry: View {
     }
 
     private func label(_ day: Date) -> String {
-        if CycleStore.cal.isDateInToday(day) { return "Today" }
-        if CycleStore.cal.isDateInYesterday(day) { return "Yesterday" }
+        if CycleStore.cal.isDateInToday(day) { return String(localized: "Today") }
+        if CycleStore.cal.isDateInYesterday(day) { return String(localized: "Yesterday") }
         return day.formatted(.dateTime.weekday(.abbreviated))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(eyebrow: period.map { "Period · day \(CycleStore.days(store.today, from: $0.start) + 1)" } ?? "Period") {
+            SheetHeader(eyebrow: period.map { String(localized: "Period · day \(CycleStore.days(store.today, from: $0.start) + 1)") } ?? String(localized: "Period")) {
                 dismiss()
             } title: {
-                DisplayTitle(before: "When did it ", accent: period == nil ? "start?" : "end?", size: 30)
+                DisplayTitle(before: String(localized: "When did it "), accent: period == nil ? String(localized: "start?") : String(localized: "end?"), size: 30)
             }
 
             VStack(alignment: .leading, spacing: 14) {
@@ -1062,13 +1070,13 @@ struct CycleSetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(eyebrow: store.tracksPhases ? "Cycle details" : "Bleeding details") {
+            SheetHeader(eyebrow: store.tracksPhases ? String(localized: "Cycle details") : String(localized: "Bleeding details")) {
                 store.showCycleSetup = false
             } title: {
-                DisplayTitle(before: store.tracksPhases ? "Your cycle " : "Your bleeding ", accent: "basics", size: 30)
+                DisplayTitle(before: store.tracksPhases ? String(localized: "Your cycle ") : String(localized: "Your bleeding "), accent: String(localized: "basics"), size: 30)
             }
 
-            section("Most recent \(store.bleedName)", note: "Used as a baseline for estimates. We never infer an actual end date.") {
+            section("Most recent \(store.bleedLabel)", note: "Used as a baseline for estimates. We never infer an actual end date.") {
                 Toggle("I know the start date", isOn: $knowsStart)
                 if knowsStart {
                     Divider().overlay(Palette.line)
@@ -1090,7 +1098,7 @@ struct CycleSetupView: View {
                     }
                 }
             } else if store.cycleMode == .pack {
-                Text("Your \(store.birthControl?.method.scheduleNoun ?? "pack") start date and break are in Settings → Birth control.")
+                Text("Your \(store.birthControl?.method.scheduleLabel() ?? String(localized: "pack")) start date and break are in Settings → Birth control.")
                     .font(.caption).foregroundStyle(Palette.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1132,7 +1140,7 @@ struct CycleSetupView: View {
         }
     }
 
-    private func section<C: View>(_ title: String, note: String, @ViewBuilder content: () -> C) -> some View {
+    private func section<C: View>(_ title: LocalizedStringKey, note: LocalizedStringKey, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.system(size: 15, weight: .semibold))
             VStack(spacing: 12) { content() }
@@ -1144,7 +1152,7 @@ struct CycleSetupView: View {
         .card()
     }
 
-    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+    private func stepper(_ title: LocalizedStringKey, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
         Stepper(value: value, in: range) {
             HStack {
                 Text(title)

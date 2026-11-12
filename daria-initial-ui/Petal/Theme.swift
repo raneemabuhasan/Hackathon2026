@@ -25,20 +25,20 @@ enum CoordinatedTheme: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var name: String {
         switch self {
-        case .blush: "Blush & Sage"
-        case .lavender: "Lavender & Buttercream"
-        case .sage: "Sage & Apricot"
-        case .sky: "Sky & Sand"
-        case .peach: "Peach & Lilac"
+        case .blush: String(localized: "Blush & Sage")
+        case .lavender: String(localized: "Lavender & Buttercream")
+        case .sage: String(localized: "Sage & Apricot")
+        case .sky: String(localized: "Sky & Sand")
+        case .peach: String(localized: "Peach & Lilac")
         }
     }
     var detail: String {
         switch self {
-        case .blush: "Blush pink · sage · warm ivory · forest green"
-        case .lavender: "Lilac accents · honey-brown text · buttercream"
-        case .sage: "Sage accents · terracotta text · apricot"
-        case .sky: "Sky-blue accents · sand-brown text · warm sand"
-        case .peach: "Apricot accents · plum text · lilac"
+        case .blush: String(localized: "Blush pink · sage · warm ivory · forest green")
+        case .lavender: String(localized: "Lilac accents · honey-brown text · buttercream")
+        case .sage: String(localized: "Sage accents · terracotta text · apricot")
+        case .sky: String(localized: "Sky-blue accents · sand-brown text · warm sand")
+        case .peach: String(localized: "Apricot accents · plum text · lilac")
         }
     }
     var colors: ThemeColors {
@@ -220,7 +220,7 @@ struct DisplayTitle: View {
 }
 
 struct SectionHeader: View {
-    let title: String
+    let title: LocalizedStringKey
     var trailing: String? = nil
     var body: some View {
         HStack {

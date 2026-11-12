@@ -138,7 +138,7 @@ struct OnboardingView: View {
         .padding(.bottom, 8)
     }
 
-    private func primaryButton(_ title: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ title: LocalizedStringKey, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 16, weight: .semibold))
@@ -183,9 +183,9 @@ struct OnboardingView: View {
 
     // MARK: Slides
 
-    private func heading(_ before: String, _ accent: String, _ subtitle: String? = nil) -> some View {
+    private func heading(_ before: String.LocalizationValue, _ accent: String.LocalizationValue, _ subtitle: LocalizedStringKey? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            DisplayTitle(before: before, accent: accent, size: 36)
+            DisplayTitle(before: String(localized: before), accent: String(localized: accent), size: 36)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle).font(.system(size: 15)).foregroundStyle(Palette.inkSoft)
@@ -211,14 +211,14 @@ struct OnboardingView: View {
                 if let method, method.hasSchedule {
                     Divider()
                     row {
-                        DatePicker("\(method.scheduleNoun.prefix(1).uppercased() + method.scheduleNoun.dropFirst()) started",
+                        DatePicker("\(method.scheduleLabel().localizedCapitalized) started",
                                    selection: $packStart, in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
                     }
                     Divider()
                     row {
                         LabeledContent("Breaks") {
                             Picker("Breaks", selection: $activeDays) {
-                                ForEach(birthControl?.regimens ?? [], id: \.label) { Text($0.label).tag($0.days) }
+                                ForEach(birthControl?.regimens ?? [], id: \.days) { Text($0.label).tag($0.days) }
                             }
                             .pickerStyle(.menu)
                             .labelsHidden()
@@ -261,7 +261,7 @@ struct OnboardingView: View {
                 if let picked, !picked.hasSchedule || (picked != .combinedPill && activeDays == 24) { activeDays = 21 }
             })) {
                 Text("No").tag(BirthControl.Method?.none)
-                ForEach(BirthControl.Method.allCases) { Text($0.name).tag(Optional($0)) }
+                ForEach(BirthControl.Method.allCases) { Text($0.displayName).tag(Optional($0)) }
             }
             .pickerStyle(.menu)
             .labelsHidden()
@@ -276,13 +276,13 @@ struct OnboardingView: View {
             OnboardingArt(animation: "bell", height: 120)
 
             if let method, method.isPill {
-                reminderPreview(when: pillTime.formatted(date: .omitted, time: .shortened), title: nil, message: "Time for your pill") {
+                reminderPreview(when: pillTime.formatted(date: .omitted, time: .shortened), title: nil, message: String(localized: "Time for your pill")) {
                     DatePicker("Remind me at", selection: $pillTime, displayedComponents: .hourAndMinute)
                 }
             } else if let method, method == .patch || method == .ring {
                 let first = CycleStore.add(packStart, changeWeeks * 7)
                 reminderPreview(when: first.formatted(.dateTime.month(.abbreviated).day()), title: nil,
-                                message: method == .patch ? "Time to change your patch" : "Time for your ring change") {
+                                message: method == .patch ? String(localized: "Time to change your patch") : String(localized: "Time for your ring change")) {
                     VStack(spacing: 0) {
                         HStack {
                             Text("How often")
@@ -304,15 +304,14 @@ struct OnboardingView: View {
             }
 
             if mode != .steady {
-                let noun = mode == .natural ? "period" : "next bleed"
-                reminderPreview(when: "\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s") before",
-                                title: mode == .natural ? "Period may start soon" : "Bleed may start soon",
-                                message: "Your \(noun) may start in about \(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s").") {
+                reminderPreview(when: String(localized: "\(periodDaysBefore) days before"),
+                                title: mode == .natural ? String(localized: "Period may start soon") : String(localized: "Bleed may start soon"),
+                                message: Reminder.periodMessage(bleed: mode != .natural, days: periodDaysBefore)) {
                     Text("Heads-up")
                     Spacer()
                     roundButton("minus", label: "Fewer days") { periodDaysBefore = max(1, periodDaysBefore - 1) }
                         .disabled(periodDaysBefore == 1)
-                    Text("\(periodDaysBefore) day\(periodDaysBefore == 1 ? "" : "s")")
+                    Text("\(periodDaysBefore) days")
                         .fontWeight(.semibold).monospacedDigit()
                         .frame(minWidth: 58)
                     roundButton("plus", label: "More days") { periodDaysBefore = min(7, periodDaysBefore + 1) }
@@ -322,7 +321,7 @@ struct OnboardingView: View {
 
             reminderPreview(when: logTime.formatted(date: .omitted, time: .shortened),
                             title: nil,
-                            message: "\(greeting). Don't forget to log your symptoms today!") {
+                            message: "\(greeting). " + String(localized: "Don't forget to log your symptoms today!")) {
                 DatePicker("Remind me at", selection: $logTime, displayedComponents: .hourAndMinute)
             }
         }
@@ -358,7 +357,7 @@ struct OnboardingView: View {
         .shadow(color: Palette.berry.opacity(0.08), radius: 12, y: 4)
     }
 
-    private func roundButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func roundButton(_ icon: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Palette.accent)
@@ -391,7 +390,7 @@ struct OnboardingView: View {
         }
     }
 
-    private func bullet(_ icon: String, _ text: String) -> some View {
+    private func bullet(_ icon: String, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
@@ -409,7 +408,7 @@ struct OnboardingView: View {
             .frame(minHeight: 52)
     }
 
-    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+    private func stepper(_ title: LocalizedStringKey, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
         Stepper(value: value, in: range) {
             HStack {
                 Text(title)

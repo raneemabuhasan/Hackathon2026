@@ -371,7 +371,7 @@ struct TabBar: View {
         .padding(.bottom, 4)
     }
 
-    private func item(_ tab: Tab, _ title: String, _ icon: String) -> some View {
+    private func item(_ tab: Tab, _ title: LocalizedStringKey, _ icon: String) -> some View {
         let selected = store.tab == tab
         return Button { store.tab = tab } label: {
             VStack(spacing: 3) {

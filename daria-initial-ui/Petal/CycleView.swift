@@ -10,6 +10,7 @@ private struct InsightContentHeight: PreferenceKey {
 
 @MainActor
 struct CycleView: View {
+    @Environment(\.locale) private var locale
     @Environment(CycleStore.self) private var store
     @State private var showingCycleDetails = false
     @State private var selectedCycleStart: Date?
@@ -114,7 +115,7 @@ struct CycleView: View {
             .card()
 
             if let record = displayedStartPeriod, !isFutureDate {
-                Button("Delete \(store.bleedName)", systemImage: "trash", role: .destructive) { deletingPeriod = record }
+                Button("Delete \(store.bleedLabel)", systemImage: "trash", role: .destructive) { deletingPeriod = record }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Palette.wine)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -127,11 +128,11 @@ struct CycleView: View {
         .foregroundStyle(Palette.ink)
         .tint(Palette.accent)
         .fittedSheet()
-        .alert("Could not save \(store.bleedName)", isPresented: Binding(get: { periodError != nil }, set: { if !$0 { periodError = nil } })) {
+        .alert("Could not save \(store.bleedLabel)", isPresented: Binding(get: { periodError != nil }, set: { if !$0 { periodError = nil } })) {
             Button("OK") { periodError = nil }
         } message: { Text(periodError ?? "") }
-        .confirmationDialog("Delete this entire \(store.bleedName), including its start and end dates?", isPresented: Binding(get: { deletingPeriod != nil }, set: { if !$0 { deletingPeriod = nil } }), titleVisibility: .visible) {
-            Button("Delete \(store.bleedName)", role: .destructive) {
+        .confirmationDialog("Delete this entire \(store.bleedLabel), including its start and end dates?", isPresented: Binding(get: { deletingPeriod != nil }, set: { if !$0 { deletingPeriod = nil } }), titleVisibility: .visible) {
+            Button("Delete \(store.bleedLabel)", role: .destructive) {
                 if let record = deletingPeriod { performPeriodAction { try store.removePeriod(id: record.id) } }
                 deletingPeriod = nil
             }
@@ -149,7 +150,7 @@ struct CycleView: View {
     }
 
     private var selectedDayLabel: String {
-        Calendar.current.isDateInToday(selectedDate) ? "today" : "on " + store.fmt(selectedDate)
+        Calendar.current.isDateInToday(selectedDate) ? String(localized: "today") : String(localized: "on \(store.fmt(selectedDate))")
     }
 
     // Keep the saved start visible while choosing an ongoing period's end,
@@ -171,7 +172,7 @@ struct CycleView: View {
     @ViewBuilder
     private var bleedRows: some View {
         if isFutureDate {
-            Label("\(store.bleedTitle)s can only be recorded for today or earlier.", systemImage: "info.circle")
+            Label("\(store.bleedPluralLabel) can only be recorded for today or earlier.", systemImage: "info.circle")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
         } else if let record = displayedStartPeriod {
             // Changing a date saves straight away; the store rejects overlaps and shows why.
@@ -200,7 +201,7 @@ struct CycleView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("No \(store.bleedName) logged \(selectedDayLabel).")
+                Text("No \(store.bleedLabel) logged \(selectedDayLabel).")
                     .font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
                 Button {
                     // Before a later bleed it can't run on, so start it as a one-day bleed; the end date is editable right here.
@@ -216,7 +217,7 @@ struct CycleView: View {
                 .buttonStyle(.plain)
                 // Only offer to stretch a bleed that ended in the last few days, not one from months ago.
                 if let record = periodToEnd, CycleStore.days(selectedDate, from: record.end ?? record.start) <= 10 {
-                    Button("Or end your \(store.fmt(record.start)) \(store.bleedName) here") {
+                    Button("Or end your \(store.fmt(record.start)) \(store.bleedLabel) here") {
                         performPeriodAction { try store.savePeriod(id: record.id, start: record.start, end: selectedDate) }
                     }
                     .font(.system(size: 12, weight: .semibold))
@@ -227,7 +228,7 @@ struct CycleView: View {
         }
     }
 
-    private func dateRow(_ title: String, date: Binding<Date>, range: ClosedRange<Date>) -> some View {
+    private func dateRow(_ title: LocalizedStringKey, date: Binding<Date>, range: ClosedRange<Date>) -> some View {
         HStack {
             Text(title)
             Spacer()
@@ -262,9 +263,9 @@ struct CycleView: View {
             .buttonStyle(.plain)
         }
         if let log {
-            let tags = log.moods + log.symptoms
+            let tags = (log.moods + log.symptoms).map(CycleStore.displayTag)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Flow: \(log.flow) · Pain: \(log.pain == 0 ? "None" : String(log.pain)) · Energy: \(log.energy)/5")
+                Text("Flow: \(CycleStore.displayFlow(log.flow)) · Pain: \(log.pain == 0 ? String(localized: "None") : String(log.pain)) · Energy: \(log.energy)/5")
                 if !tags.isEmpty {
                     Text(tags.joined(separator: " · ")).lineLimit(2)
                 } else if !log.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -282,10 +283,10 @@ struct CycleView: View {
         let (icon, text, strong): (String, String, Bool) = {
             if let record = displayedStartPeriod {
                 let day = CycleStore.days(selectedDate, from: record.start) + 1
-                return ("drop.fill", record.end == nil ? "\(store.bleedTitle) day \(day) · ongoing" : "\(store.bleedTitle) day \(day)", true)
+                return ("drop.fill", record.end == nil ? String(localized: "\(store.bleedTitle) day \(day) · ongoing") : String(localized: "\(store.bleedTitle) day \(day)"), true)
             }
-            if store.isPredicted(selectedDate) { return ("sparkles", "Predicted \(store.bleedName)", false) }
-            return ("circle.dashed", "No \(store.bleedName) recorded", false)
+            if store.isPredicted(selectedDate) { return ("sparkles", String(localized: "Predicted \(store.bleedLabel)"), false) }
+            return ("circle.dashed", String(localized: "No \(store.bleedLabel) recorded"), false)
         }()
         return Label(text, systemImage: icon)
             .font(.system(size: 12, weight: .semibold))
@@ -297,11 +298,15 @@ struct CycleView: View {
 
     // MARK: Calendar
 
+    private var displayCalendar: Calendar {
+        // The grid already uses Gregorian months and starts on Sunday.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        return calendar
+    }
+
     private var monthPicker: some View {
-        let monthNames = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]
+        let monthNames = displayCalendar.standaloneMonthSymbols
         let currentYear = CycleStore.cal.component(.year, from: store.today)
         let displayedYear = CycleStore.cal.component(.year, from: month)
         let years = min(currentYear - 100, displayedYear)...max(currentYear + 100, displayedYear)
@@ -395,7 +400,7 @@ struct CycleView: View {
             }
             .padding(.bottom, 4)
             LazyVGrid(columns: columns, spacing: 0) {
-                ForEach(Array(["S", "M", "T", "W", "T", "F", "S"].enumerated()), id: \.offset) { _, d in
+                ForEach(Array(displayCalendar.veryShortStandaloneWeekdaySymbols.enumerated()), id: \.offset) { _, d in
                     Text(d)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Palette.inkFaint)
@@ -433,15 +438,15 @@ struct CycleView: View {
                 .accessibilityHidden(true)
             }
             HStack(spacing: 14) {
-                legend(Rectangle().fill(Palette.mist), "\(store.bleedTitle)")
+                legend(Rectangle().fill(Palette.mist), store.bleedTitle)
                 if store.predictsBleeds {
-                    legend(Rectangle().fill(Palette.mist.opacity(0.5)), "Predicted")
+                    legend(Rectangle().fill(Palette.mist.opacity(0.5)), String(localized: "Predicted"))
                 }
-                legend(Circle().stroke(Palette.accent, lineWidth: 2), "Today")
-                legend(Circle().fill(Palette.accent), "Selected")
+                legend(Circle().stroke(Palette.accent, lineWidth: 2), String(localized: "Today"))
+                legend(Circle().fill(Palette.accent), String(localized: "Selected"))
             }.font(.caption).foregroundStyle(Palette.inkSoft)
             Text(store.predictsBleeds
-                 ? "Predictions are estimates. Your \(store.bleedName) may come a few days earlier or later."
+                 ? "Predictions are estimates. Your \(store.bleedLabel) may come a few days earlier or later."
                  : "Sync doesn't predict bleeding on your method. Log any bleeding or spotting to see your pattern.")
                 .font(.caption).foregroundStyle(Palette.inkFaint)
                 .multilineTextAlignment(.center)
@@ -459,8 +464,8 @@ struct CycleView: View {
 
     /// Quick peek for the tapped calendar day. Notes stay private until the full log opens.
     private func calendarLogPreview(_ log: DayLog) -> some View {
-        let tags = log.moods + log.symptoms
-        let painLabel = log.pain == 0 ? "None" : String(log.pain)
+        let tags = (log.moods + log.symptoms).map(CycleStore.displayTag)
+        let painLabel = log.pain == 0 ? String(localized: "None") : String(log.pain)
         let hasNote = !log.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(alignment: .leading, spacing: 9) {
@@ -485,7 +490,7 @@ struct CycleView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("Flow: \(log.flow) · Pain: \(painLabel) · Energy: \(log.energy)/5")
+            Text("Flow: \(CycleStore.displayFlow(log.flow)) · Pain: \(painLabel) · Energy: \(log.energy)/5")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.inkSoft)
             if !tags.isEmpty {
@@ -560,10 +565,10 @@ struct CycleView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? ", today" : "")
-                            + (predicted ? ", predicted \(store.bleedName)" : period ? ", \(store.bleedName)" : "")
-                            + (periodDay.map { ", \(store.bleedName) day \($0)" } ?? ""))
-        .accessibilityHint(isSelected ? "Opens \(store.bleedName) start and end controls for this date" : "Selects this date. Activate again to open \(store.bleedName) start and end controls.")
+        .accessibilityLabel(day.formatted(date: .complete, time: .omitted) + (isToday ? String(localized: ", today") : "")
+                            + (predicted ? String(localized: ", predicted \(store.bleedLabel)") : period ? ", \(store.bleedLabel)" : "")
+                            + (periodDay.map { String(localized: ", \(store.bleedLabel) day \($0)") } ?? ""))
+        .accessibilityHint(isSelected ? "Opens \(store.bleedLabel) start and end controls for this date" : "Selects this date. Activate again to open \(store.bleedLabel) start and end controls.")
         .sensoryFeedback(.selection, trigger: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -658,7 +663,7 @@ struct CycleView: View {
 
     private static let insightCount = 3
 
-    private func carouselArrow(_ icon: String, label: String, enabled: Bool, to page: @escaping () -> Int) -> some View {
+    private func carouselArrow(_ icon: String, label: LocalizedStringKey, enabled: Bool, to page: @escaping () -> Int) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.3)) { insightPage = page() }
         } label: {
@@ -684,10 +689,10 @@ struct CycleView: View {
         let active = store.birthControl?.activeDays ?? length
         let day = store.packDay ?? 1
         let packStart = CycleStore.add(store.today, 1 - day)
-        let noun = store.birthControl?.method.scheduleNoun.replacingOccurrences(of: "first ", with: "") ?? "pack"
+        let noun = store.birthControl?.method.scheduleLabel(firstPatch: false) ?? String(localized: "pack")
         let inBreak = day > active
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Your \(noun)", trailing: store.birthControl?.method.name)
+            SectionHeader(title: "Your \(noun)", trailing: store.birthControl?.method.displayName)
             VStack(alignment: .leading, spacing: 4) {
                 Text(inBreak ? "Break day \(day - active) of \(length - active)" : "Active day \(day) of \(active)")
                     .font(.system(size: 17, weight: .semibold))
@@ -720,7 +725,7 @@ struct CycleView: View {
         }
     }
 
-    private func packLegend(_ color: Color, _ label: String) -> some View {
+    private func packLegend(_ color: Color, _ label: LocalizedStringKey) -> some View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 9, height: 9)
             Text(label)
@@ -743,7 +748,7 @@ struct CycleView: View {
         let lengths = bleeds.compactMap { r in r.end.map { CycleStore.days($0, from: r.start) + 1 } }
         let usual = lengths.isEmpty ? nil : lengths.sorted()[lengths.count / 2]
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Bleeding pattern", trailing: "last 6 months")
+            SectionHeader(title: "Bleeding pattern", trailing: String(localized: "last 6 months"))
             if bleeds.isEmpty {
                 Text("No bleeding logged in the last 6 months.")
                     .font(.subheadline).foregroundStyle(Palette.inkSoft)
@@ -771,7 +776,7 @@ struct CycleView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens every saved bleed")
             }
-            Text("Bleeding often changes or stops on \(store.birthControl?.method.name.lowercased() ?? "this method"). Log any bleeding or spotting; the pattern is useful to show your doctor.")
+            Text("Bleeding often changes or stops on \(store.birthControl?.method.displayName.lowercased() ?? "this method"). Log any bleeding or spotting; the pattern is useful to show your doctor.")
                 .font(.caption).foregroundStyle(Palette.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -782,11 +787,11 @@ struct CycleView: View {
         let average = cycles.isEmpty ? 0 : Int((Double(cycles.reduce(0) { $0 + $1.days }) / Double(cycles.count)).rounded())
         let maximum = max(cycles.map(\.days).max() ?? 1, 1)
         return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Cycle length", trailing: "saved \(store.bleedName)s")
+            SectionHeader(title: "Cycle length", trailing: String(localized: "saved \(store.bleedPluralLabel)"))
             if cycles.isEmpty {
-                Text("Save at least two \(store.bleedName) start dates to see your first cycle length.")
+                Text("Save at least two \(store.bleedLabel) start dates to see your first cycle length.")
                     .font(.subheadline).foregroundStyle(Palette.inkSoft)
-                Text("Cycle length is the number of days between consecutive \(store.bleedName) starts.")
+                Text("Cycle length is the number of days between consecutive \(store.bleedLabel) starts.")
                     .font(.caption).foregroundStyle(Palette.inkSoft)
             } else {
                 HStack(alignment: .bottom, spacing: 4) {
@@ -808,7 +813,7 @@ struct CycleView: View {
                         selectedCycleStart = nil
                         showingCycleDetails = true
                     } label: {
-                        bar(value: average, height: CGFloat(average) / CGFloat(maximum) * 90, label: "Avg", highlight: true)
+                        bar(value: average, height: CGFloat(average) / CGFloat(maximum) * 90, label: String(localized: "Avg"), highlight: true)
                             .frame(maxWidth: .infinity, minHeight: 130, alignment: .bottom)
                             .contentShape(Rectangle())
                     }
@@ -828,7 +833,7 @@ struct CycleView: View {
                     Section("Recorded cycle") {
                         LabeledContent("Cycle length", value: "\(cycle.days) days")
                         LabeledContent("\(store.bleedTitle) started", value: cycle.start.formatted(date: .abbreviated, time: .omitted))
-                        LabeledContent("Next \(store.bleedName) started", value: cycle.nextStart.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Next \(store.bleedLabel) started", value: cycle.nextStart.formatted(date: .abbreviated, time: .omitted))
                     }
                     Section {
                         Text("\(cycle.days) calendar days between these two saved starts. The next start belongs to the next cycle. This measures cycle length, not the number of bleeding days.")
@@ -850,10 +855,10 @@ struct CycleView: View {
                         }
                     }
                 } else {
-                    Text("This cycle is no longer available. Save at least two \(store.bleedName) starts to see cycle details.")
+                    Text("This cycle is no longer available. Save at least two \(store.bleedLabel) starts to see cycle details.")
                 }
                 Section {
-                    Text("Calculated from \(store.bleedName) dates saved on this device. Missing starts can make intervals longer.")
+                    Text("Calculated from \(store.bleedLabel) dates saved on this device. Missing starts can make intervals longer.")
                 }
             }
             .navigationTitle(selectedCycleStart == nil ? "Cycle average" : "Cycle details")
@@ -889,7 +894,7 @@ struct CycleView: View {
         let counts = store.symptomCounts
         let top = Double(counts.first?.count ?? 1)
         return VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Symptom summary", trailing: "last 60 days")
+            SectionHeader(title: "Symptom summary", trailing: String(localized: "last 60 days"))
             if counts.isEmpty {
                 Text("No symptoms logged yet. Tap + to add today.")
                     .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -909,7 +914,7 @@ struct CycleView: View {
 
     private func symptomRow(_ item: (name: String, count: Int), top: Double) -> some View {
         HStack(spacing: 10) {
-            Text(item.name).font(.system(size: 13)).frame(width: 110, alignment: .leading)
+            Text(CycleStore.displayTag(item.name)).font(.system(size: 13)).frame(width: 110, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Palette.surface2)
@@ -920,7 +925,7 @@ struct CycleView: View {
             Text("\(item.count)d").font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.inkSoft).frame(width: 28, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(item.name), \(item.count) days")
+        .accessibilityLabel("\(CycleStore.displayTag(item.name)), \(item.count) days")
     }
 
     private var allSymptoms: some View {
@@ -957,13 +962,13 @@ struct CycleView: View {
         let records = store.periodHistory.records
         return VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "\(store.bleedTitle) history",
-                          trailing: "\(records.count) \(store.bleedName)\(records.count == 1 ? "" : "s")")
+                          trailing: "\(records.count) \(records.count == 1 ? store.bleedLabel : store.bleedPluralLabel)")
             if let error = store.periodStorageError {
                 Text(error).font(.caption).foregroundStyle(.red)
             } else if !store.periodsLoaded {
                 ProgressView("Loading history…")
             } else if records.isEmpty {
-                Text("No \(store.bleedName)s logged yet. Tap a day on the calendar to add one.")
+                Text("No \(store.bleedPluralLabel) logged yet. Tap a day on the calendar to add one.")
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.inkSoft)
             } else {
@@ -983,7 +988,7 @@ struct CycleView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens every saved \(store.bleedName)")
+                .accessibilityHint("Opens every saved \(store.bleedLabel)")
             }
         }
     }
@@ -1019,7 +1024,7 @@ struct CycleView: View {
             .padding(.top, 8)
 
             if matches.isEmpty {
-                Text(query.isEmpty ? "No \(store.bleedName)s logged yet." : "No \(store.bleedName)s match \"\(query)\".")
+                Text(query.isEmpty ? "No \(store.bleedPluralLabel) logged yet." : "No \(store.bleedPluralLabel) match \"\(query)\".")
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.inkSoft)
                     .padding(.top, 16)
@@ -1046,7 +1051,11 @@ struct CycleView: View {
         let logged = store.logs
             .filter { CycleStore.cal.startOfDay(for: $0.date) >= CycleStore.cal.startOfDay(for: record.start)
                 && CycleStore.cal.startOfDay(for: $0.date) <= CycleStore.cal.startOfDay(for: last) }
-            .flatMap { $0.symptoms + $0.moods + [$0.flow == "None" ? "" : $0.flow, $0.note] }
+            .flatMap { log in
+                let tags = log.symptoms + log.moods
+                let flow = log.flow == "None" ? "" : log.flow
+                return tags + tags.map(CycleStore.displayTag) + [flow, CycleStore.displayFlow(flow), log.note]
+            }
         return (dates + logged).contains { $0.localizedCaseInsensitiveContains(query) }
     }
 
@@ -1061,7 +1070,7 @@ struct CycleView: View {
                 Image(systemName: "drop.fill").foregroundStyle(Palette.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(store.bleedTitle)").font(.system(size: 14, weight: .semibold))
-                    Text(store.fmt(record.start) + " – " + (record.end.map { store.fmt($0) } ?? "Ongoing"))
+                    Text(store.fmt(record.start) + " – " + (record.end.map { store.fmt($0) } ?? String(localized: "Ongoing")))
                         .font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
                 }
                 Spacer()
@@ -1071,7 +1080,7 @@ struct CycleView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens this \(store.bleedName)'s saved dates and controls")
+        .accessibilityHint("Opens this \(store.bleedLabel)'s saved dates and controls")
     }
 
     /// Rows in the View more sheet open other sheets, so close it first and run the action after.

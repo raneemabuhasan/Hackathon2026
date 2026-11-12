@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Personal settings, opened from the gear in the top corner of Today.
 /// A compact list of rows; each opens its own page.
@@ -6,6 +7,7 @@ struct SettingsView: View {
     @Environment(CycleStore.self) private var store
     @Environment(AuthModel.self) private var auth
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     private enum Page: Hashable {
         case profile, cycle, birthControl, reminders, appearance, companion, privacy
@@ -68,11 +70,14 @@ struct SettingsView: View {
 
                     group("General") {
                         link(.profile, value: trimmedName)
-                        link(.cycle, value: "\(cycleLength) days")
-                        link(.birthControl, value: method?.name ?? "None")
-                        link(.reminders, value: "\(store.reminders.filter(\.on).count) on")
+                        link(.cycle, value: String(localized: "\(cycleLength) days"))
+                        link(.birthControl, value: method?.displayName ?? String(localized: "None"))
+                        link(.reminders, value: String(localized: "\(store.reminders.filter(\.on).count) on"))
                         link(.appearance, value: PalettePreferences.shared.theme.name)
-                        link(.companion, value: store.aiEnabled ? "On" : "Off")
+                        link(.companion, value: store.aiEnabled ? String(localized: "On") : String(localized: "Off"))
+                        row("Language", icon: "globe") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        }
                     }
 
                     group("Account") {
@@ -155,7 +160,7 @@ struct SettingsView: View {
                     do {
                         try await store.deleteAllData()
                         dismiss()
-                    } catch { store.showToast("Couldn't delete your data: \(error.localizedDescription)") }
+                    } catch { store.showToast(String(localized: "Couldn't delete your data: \(error.localizedDescription)")) }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -194,7 +199,7 @@ struct SettingsView: View {
         activeDays = p.birthControl?.packStart == nil ? 21 : p.birthControl?.activeDays
     }
 
-    private func title(for page: Page) -> String {
+    private func title(for page: Page) -> LocalizedStringKey {
         switch page {
         case .profile: "Profile"
         case .cycle: "Your cycle"
@@ -218,7 +223,7 @@ struct SettingsView: View {
         }
     }
 
-    private func blurb(for page: Page) -> String {
+    private func blurb(for page: Page) -> LocalizedStringKey {
         switch page {
         case .profile: "What should we call you?"
         case .cycle: "Sync uses these to predict your period and phases."
@@ -283,14 +288,14 @@ struct SettingsView: View {
                     if let picked, !picked.hasSchedule || (picked != .combinedPill && activeDays == 24) { activeDays = 21 }
                 })) {
                     Text("None").tag(BirthControl.Method?.none)
-                    ForEach(BirthControl.Method.allCases) { Text($0.name).tag(Optional($0)) }
+                    ForEach(BirthControl.Method.allCases) { Text($0.displayName).tag(Optional($0)) }
                 }
                 .pickerStyle(.menu)
                 if let method, method.hasSchedule {
-                    DatePicker("Current \(method.scheduleNoun) started", selection: $packStart,
+                    DatePicker("Current \(method.scheduleLabel()) started", selection: $packStart,
                                in: CycleStore.add(.now, -90)...Date.now, displayedComponents: .date)
                     Picker("Breaks", selection: $activeDays) {
-                        ForEach(birthControl?.regimens ?? [], id: \.label) { Text($0.label).tag($0.days) }
+                        ForEach(birthControl?.regimens ?? [], id: \.days) { Text($0.label).tag($0.days) }
                     }
                     .pickerStyle(.menu)
                 }
@@ -401,7 +406,7 @@ struct SettingsView: View {
                     confirmingAccountDelete = true
                 }
             } footer: {
-                Text(auth.error ?? "Your logs are stored in your private account and only you can read them. Nothing is sold, and nothing is sent to AI unless you turn the companion on.")
+                Text(auth.error ?? String(localized: "Your logs are stored in your private account and only you can read them. Nothing is sold, and nothing is sent to AI unless you turn the companion on."))
             }
         }
 
@@ -473,7 +478,7 @@ struct SettingsView: View {
     }
 
     /// A titled run of rows, as in the General and Account groups.
-    private func group<C: View>(_ title: String, @ViewBuilder rows: () -> C) -> some View {
+    private func group<C: View>(_ title: LocalizedStringKey, @ViewBuilder rows: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).font(.system(size: 15, weight: .semibold))
                 .padding(.bottom, 4)
@@ -481,7 +486,7 @@ struct SettingsView: View {
         }
     }
 
-    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+    private func stepper(_ title: LocalizedStringKey, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
         Stepper(value: value, in: range) {
             HStack {
                 Text(title)
@@ -495,7 +500,7 @@ struct SettingsView: View {
         row(title(for: page), icon: icon(for: page), value: value) { path.append(page) }
     }
 
-    private func row(_ title: String, icon: String, value: String = "", action: @escaping () -> Void) -> some View {
+    private func row(_ title: LocalizedStringKey, icon: String, value: String = "", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon).font(.system(size: 17)).foregroundStyle(Palette.ink).frame(width: 24)

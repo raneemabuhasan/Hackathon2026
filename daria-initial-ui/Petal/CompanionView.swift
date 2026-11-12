@@ -126,7 +126,7 @@ struct CompanionView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 HStack {
-                    Eyebrow(text: "Companion")
+                    Eyebrow(text: String(localized: "Companion"))
                     Spacer(minLength: 4)
                     // Keep the selected character visible in the conversation header.
                     if !store.messages.isEmpty {
@@ -155,7 +155,7 @@ struct CompanionView: View {
                                 PixelRobotCompanion(thinking: store.thinking, width: 104,
                                                     character: selectedCharacter)
                                 VStack(spacing: 10) {
-                                    DisplayTitle(before: "What’s on\n", accent: "your mind?", size: 34)
+                                    DisplayTitle(before: String(localized: "What’s on\n"), accent: String(localized: "your mind?"), size: 34)
                                         .multilineTextAlignment(.center)
                                     Text("A little support for your cycle.")
                                         .font(.subheadline).foregroundStyle(Palette.inkSoft)
@@ -234,7 +234,7 @@ struct CompanionView: View {
         }
     }
 
-    private func suggestion(_ title: String, question: String) -> some View {
+    private func suggestion(_ title: LocalizedStringKey, question: String) -> some View {
         Button {
             draft = question
             focused = true
@@ -490,13 +490,13 @@ struct CompanionView: View {
                             ForEach(symptoms, id: \.self) { symptom in
                                 let count = Set(cycle.logs.filter { $0.symptoms.contains(symptom) }
                                     .map { CycleStore.cal.startOfDay(for: $0.date) }).count
-                                Text("\(symptom): \(count) recorded \(count == 1 ? "day" : "days")")
+                                Text(count == 1 ? "\(CycleStore.displayTag(symptom)): \(count) recorded day" : "\(CycleStore.displayTag(symptom)): \(count) recorded days")
                             }
                             ForEach(cycle.logs) { entry in
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(readableDate(entry.date))
                                         .fontWeight(.medium)
-                                    Text(entry.symptoms.isEmpty ? "No symptoms recorded" : entry.symptoms.joined(separator: ", "))
+                                    Text(entry.symptoms.isEmpty ? String(localized: "No symptoms recorded") : entry.symptoms.map(CycleStore.displayTag).joined(separator: ", "))
                                     if let pain = entry.pain { Text("Overall daily pain: \(pain)/10") }
                                     if !entry.note.isEmpty { Text(entry.note) }
                                     Button("View or edit entry") {
@@ -518,7 +518,7 @@ struct CompanionView: View {
     }
 
     private func readableDate(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.wide).day().year().locale(Locale(identifier: "en_US")))
+        date.formatted(.dateTime.month(.wide).day().year())
     }
 
     private func savedEntries(_ result: SavedLogResult) -> some View {
@@ -533,9 +533,9 @@ struct CompanionView: View {
                 ForEach(result.logs) { log in
                     DisclosureGroup {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Symptoms: \(log.symptoms.isEmpty ? "None recorded" : log.symptoms.joined(separator: ", "))")
-                            Text("Moods: \(log.moods.isEmpty ? "None recorded" : log.moods.joined(separator: ", "))")
-                            Text("Flow: \(log.flow)")
+                            Text("Symptoms: \(log.symptoms.isEmpty ? String(localized: "None recorded") : log.symptoms.map(CycleStore.displayTag).joined(separator: ", "))")
+                            Text("Moods: \(log.moods.isEmpty ? String(localized: "None recorded") : log.moods.map(CycleStore.displayTag).joined(separator: ", "))")
+                            Text("Flow: \(CycleStore.displayFlow(log.flow))")
                             Text(log.pain > 0 ? "Daily pain: \(log.pain)/10" : "Daily pain: 0 or not rated")
                             Text("Saved energy: \(log.energy)/5")
                             if !log.note.isEmpty { Text(log.note) }

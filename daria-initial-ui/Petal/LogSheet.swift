@@ -111,8 +111,8 @@ struct LogSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
-                    DisplayTitle(before: viewingSavedLog ? "How you " : "How do you ",
-                                 accent: viewingSavedLog ? "felt" : "feel?", size: 32)
+                    DisplayTitle(before: viewingSavedLog ? String(localized: "How you ") : String(localized: "How do you "),
+                                 accent: viewingSavedLog ? String(localized: "felt") : String(localized: "feel?"), size: 32)
                     Spacer()
                     Button { store.showLog = false } label: {
                         Image(systemName: "xmark").font(.system(size: 20))
@@ -261,17 +261,17 @@ struct LogSheet: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(Array(standardFlowNames.enumerated()), id: \.element) { index, name in
                     Button { flow = name } label: {
-                        flowTile(name: name, index: index, selected: flow == name)
+                        flowTile(name: CycleStore.displayFlow(name), index: index, selected: flow == name)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(name)
+                    .accessibilityLabel(CycleStore.displayFlow(name))
                     .accessibilityAddTraits(flow == name ? .isSelected : [])
                 }
                 Button {
                     customFlowName = standardFlowNames.contains(flow) ? "" : flow
                     editingCustomFlow = true
                 } label: {
-                    flowTile(name: standardFlowNames.contains(flow) ? "Custom" : flow,
+                    flowTile(name: standardFlowNames.contains(flow) ? String(localized: "Custom") : flow,
                              index: nil, selected: !standardFlowNames.contains(flow))
                 }
                 .buttonStyle(.plain)
@@ -382,7 +382,7 @@ struct LogSheet: View {
                         VStack(spacing: 8) {
                             Image(systemName: level.1).font(.system(size: 20))
                                 .foregroundStyle(selected ? Palette.accent : Palette.inkFaint)
-                            Text(level.0).foregroundStyle(selected ? Palette.ink : Palette.ink)
+                            Text(LocalizedStringKey(level.0)).foregroundStyle(selected ? Palette.ink : Palette.ink)
                                 .font(.system(size: 11, weight: .semibold))
                                 .lineLimit(1).minimumScaleFactor(0.7)
                         }
@@ -419,7 +419,7 @@ struct LogSheet: View {
             defer { savingIndividual = false }
             do {
                 try await store.write(entry)
-                store.showToast(flowOnly ? "Flow saved" : (symptomsOnly ? "Symptoms saved" : "Mood saved"))
+                store.showToast(flowOnly ? String(localized: "Flow saved") : (symptomsOnly ? String(localized: "Symptoms saved") : String(localized: "Mood saved")))
                 dismiss()
             } catch { individualError = "Entry wasn't saved: \(error.localizedDescription)" }
         }
@@ -474,8 +474,8 @@ struct LogSheet: View {
                                     .foregroundStyle(Palette.accent)
                             }
                         }
-                        Text(manualWithoutSavedFlow ? "Period marked · choose flow" :
-                             saved.flow == "None" ? "Not recorded" : saved.flow)
+                        Text(manualWithoutSavedFlow ? String(localized: "Period marked · choose flow") :
+                             saved.flow == "None" ? String(localized: "Not recorded") : CycleStore.displayFlow(saved.flow))
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Palette.inkSoft)
                     }
@@ -489,7 +489,7 @@ struct LogSheet: View {
 
                 HStack(spacing: 10) {
                     savedStat("Pain", icon: "waveform.path.ecg",
-                              value: saved.pain == 0 ? "None" : "\(saved.pain) / 10")
+                              value: saved.pain == 0 ? String(localized: "None") : "\(saved.pain) / 10")
                     savedStat("Energy",
                               icon: energyLevels[max(0, min(energyLevels.count - 1, saved.energy - 1))].1,
                               value: "\(saved.energy) / 5")
@@ -500,7 +500,7 @@ struct LogSheet: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Palette.ink)
                     Text(saved.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                         ? "No note for this day." : saved.note)
+                         ? String(localized: "No note for this day.") : saved.note)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.inkSoft)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -516,7 +516,7 @@ struct LogSheet: View {
         }
     }
 
-    private func savedTagSection(_ title: String, icon: String,
+    private func savedTagSection(_ title: LocalizedStringKey, icon: String,
                                  tags: [String], symptom: Bool) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             Label(title, systemImage: icon)
@@ -537,7 +537,7 @@ struct LogSheet: View {
                     ?? Self.emoji[tag] ?? "✨"
                         VStack(spacing: 5) {
                             Text(icon).font(.system(size: 23))
-                            Text(tag)
+                            Text(CycleStore.displayTag(tag))
                                 .font(.system(size: 11, weight: .medium))
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
@@ -553,7 +553,7 @@ struct LogSheet: View {
         }
     }
 
-    private func savedStat(_ title: String, icon: String, value: String) -> some View {
+    private func savedStat(_ title: LocalizedStringKey, icon: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon)
                 .font(.system(size: 13, weight: .semibold))
@@ -632,7 +632,7 @@ struct LogSheet: View {
                     ?? (symptom ? ["Cramps": "⚡️", "Headache": "🤕", "Bloating": "🫧", "Tender breasts": "👙"][tag] : nil)
                     ?? Self.emoji[tag] ?? "✨"
                 if managing {
-                    tile(emoji: icon, label: tag, on: on)
+                    tile(emoji: icon, label: CycleStore.displayTag(tag), on: on)
                         .phaseAnimator([false, true]) { content, phase in
                             content.rotationEffect(.degrees(reduceMotion ? 0 : (phase ? 1.4 : -1.4)))
                         } animation: { _ in .easeInOut(duration: 0.17) }
@@ -654,16 +654,16 @@ struct LogSheet: View {
                                     .background(Palette.surface, in: Circle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(tag) from my list")
+                            .accessibilityLabel("Remove \(CycleStore.displayTag(tag)) from my list")
                             .offset(x: -5, y: -5)
                         }
-                        .accessibilityLabel("\(tag), hold and drag to reorder or double tap to edit")
+                        .accessibilityLabel("\(CycleStore.displayTag(tag)), hold and drag to reorder or double tap to edit")
                 } else {
                     Button { toggle(&selected.wrappedValue, tag) } label: {
-                        tile(emoji: icon, label: tag, on: on)
+                        tile(emoji: icon, label: CycleStore.displayTag(tag), on: on)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(tag)
+                    .accessibilityLabel(CycleStore.displayTag(tag))
                     .accessibilityAddTraits(on ? .isSelected : [])
                     .contextMenu {
                         Button { editTag(tag, symptom: symptom) } label: {
@@ -683,7 +683,7 @@ struct LogSheet: View {
                     tagEditor = TagEditRequest(symptom: symptom, originalName: nil,
                                                emoji: symptom ? "🌀" : "😊")
                 } label: {
-                    tile(emoji: "＋", label: symptom ? "Add symptom" : "Add mood", on: false, dashed: true)
+                    tile(emoji: "＋", label: symptom ? String(localized: "Add symptom") : String(localized: "Add mood"), on: false, dashed: true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(symptom ? "Add your own symptom" : "Add your own mood")
@@ -716,11 +716,11 @@ struct LogSheet: View {
 
     static func painWord(_ level: Int) -> String {
         switch level {
-        case 0: "None"
-        case 1...3: "Mild"
-        case 4...6: "Moderate"
-        case 7...8: "Strong"
-        default: "Severe"
+        case 0: String(localized: "None")
+        case 1...3: String(localized: "Mild")
+        case 4...6: String(localized: "Moderate")
+        case 7...8: String(localized: "Strong")
+        default: String(localized: "Severe")
         }
     }
 
@@ -778,7 +778,7 @@ private struct TagEditorSheet: View {
                     Text("Use a unique name of 1–30 characters.")
                         .font(.footnote).foregroundStyle(.red)
                 }
-                Text("Choose a \(symptom ? "general emoji" : "face emoji") and a name. Changes affect future choices; saved daily entries keep their original labels.")
+                Text("Choose a \(symptom ? String(localized: "general emoji") : String(localized: "face emoji")) and a name. Changes affect future choices; saved daily entries keep their original labels.")
                     .font(.footnote).foregroundStyle(Palette.inkSoft)
             }
             .navigationTitle(originalName == nil ? (symptom ? "New symptom" : "New mood") : "Edit tag")
@@ -841,7 +841,7 @@ private struct PetalEmojiPicker: View {
         .presentationDetents([.medium, .large])
     }
 
-    private func emojiGroup(_ title: String, values: [String]) -> some View {
+    private func emojiGroup(_ title: LocalizedStringKey, values: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
             LazyVGrid(columns: columns, spacing: 8) {

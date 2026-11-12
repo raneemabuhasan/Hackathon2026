@@ -22,8 +22,8 @@ struct NourishView: View {
 
         Page {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: "Nourish")
-                DisplayTitle(before: "Food ideas for ", accent: title)
+                Eyebrow(text: String(localized: "Nourish"))
+                DisplayTitle(before: String(localized: "Food ideas for "), accent: title)
             }
 
             preferencesButton
@@ -53,7 +53,7 @@ struct NourishView: View {
                         .accessibilityLabel("New meal ideas")
                     }
                 }
-                if !store.aiEnabled { AIOffNotice(feature: store.tracksPhases ? "recipes picked for your phase and preferences" : "recipes picked for your preferences") }
+                if !store.aiEnabled { AIOffNotice(feature: store.tracksPhases ? String(localized: "recipes picked for your phase and preferences") : String(localized: "recipes picked for your preferences")) }
                 if loading && generated == nil {
                     Text("Cooking up recipes for you…")
                         .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -136,7 +136,7 @@ struct NourishView: View {
         )) {
             Button("OK", role: .cancel) { groceryClearError = nil }
         } message: {
-            Text(groceryClearError ?? "Please try again.")
+            Text(groceryClearError ?? String(localized: "Please try again."))
         }
         .task(id: key) { await store.loadMeals(for: selected) }
         .sheet(isPresented: $editingPreferences) {
@@ -152,19 +152,19 @@ struct NourishView: View {
     }
 
     private var title: String {
-        if !store.tracksPhases { return store.foodName(selected).lowercased() }
+        if !store.tracksPhases { return store.foodLabel(selected).lowercased() }
         return switch selected {
-        case .menstrual: "menstrual phase"
-        case .follicular: "follicular phase"
-        case .ovulation: "ovulation phase"
-        case .luteal: "luteal phase"
+        case .menstrual: String(localized: "menstrual phase")
+        case .follicular: String(localized: "follicular phase")
+        case .ovulation: String(localized: "ovulation phase")
+        case .luteal: String(localized: "luteal phase")
         }
     }
 
     /// A filter-style chip row: the preferences button, then what's selected. Any chip opens PreferencesEditor.
     private var preferencesButton: some View {
         let picked = CycleStore.dietOptions.filter(store.diets.contains).map { ($0, PreferencesEditor.label($0)) }
-            + CycleStore.allergenOptions.filter(store.avoid.contains).map { ($0, "No \($0)") }
+            + CycleStore.allergenOptions.filter(store.avoid.contains).map { ($0, String(localized: "No \(FoodPreferencesForm.label($0).lowercased())")) }
         return ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 Button { editingPreferences = true } label: {
@@ -192,7 +192,7 @@ struct NourishView: View {
         }
         .scrollIndicators(.hidden)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Food preferences: \(picked.isEmpty ? "none set" : picked.map(\.1).joined(separator: ", "))")
+        .accessibilityLabel("Food preferences: \(picked.isEmpty ? String(localized: "none set") : picked.map(\.1).joined(separator: ", "))")
         .accessibilityHint("Opens the preferences editor")
         .accessibilityAddTraits(.isButton)
     }
@@ -205,7 +205,7 @@ struct NourishView: View {
             HStack(spacing: 4) {
                 ForEach(store.foodPhases) { p in
                     Button { phase = p } label: {
-                        Text(store.foodName(p) + (p == store.foodPhase ? " ·" : ""))
+                        Text(store.foodLabel(p) + (p == store.foodPhase ? " ·" : ""))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(p == selected ? Palette.accent : Palette.inkSoft)
                             .frame(maxWidth: .infinity)
@@ -223,7 +223,7 @@ struct NourishView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(text: store.tracksPhases ? "Eat for this phase" : "Eat for these days")
+                Eyebrow(text: store.tracksPhases ? String(localized: "Eat for this phase") : String(localized: "Eat for these days"))
                 Text(store.foodTip(selected)).font(.system(size: 14, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -292,7 +292,7 @@ struct RecipeSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
-                    Eyebrow(text: "Recipe · \(store.foodName(phase))")
+                    Eyebrow(text: String(localized: "Recipe · \(store.foodLabel(phase))"))
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
@@ -393,10 +393,10 @@ private struct PreferencesEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            SheetHeader(eyebrow: "Nourish") {
+            SheetHeader(eyebrow: String(localized: "Nourish")) {
                 dismiss()
             } title: {
-                DisplayTitle(before: "Your ", accent: "preferences", size: 30)
+                DisplayTitle(before: String(localized: "Your "), accent: String(localized: "preferences"), size: 30)
             }
             Text("Meal ideas only show recipes that fit.")
                 .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
@@ -439,7 +439,16 @@ struct FoodPreferencesForm: View {
     @Binding var dislikes: [String]
     @State private var newDislike = ""
 
-    static func label(_ option: String) -> String { option.prefix(1).uppercased() + option.dropFirst() }
+    static func label(_ option: String) -> String {
+        guard CycleStore.dietOptions.contains(option) || CycleStore.allergenOptions.contains(option) else {
+            return capitalizedLabel(option)
+        }
+        return Bundle.main.localizedString(forKey: option, value: capitalizedLabel(option), table: nil)
+    }
+
+    private static func capitalizedLabel(_ option: String) -> String {
+        option.prefix(1).uppercased() + option.dropFirst()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
@@ -449,9 +458,9 @@ struct FoodPreferencesForm: View {
         }
     }
 
-    private func section(_ title: String, options: [String], selected: Set<String>, toggle: @escaping (String) -> Void) -> some View {
+    private func section(_ title: String.LocalizationValue, options: [String], selected: Set<String>, toggle: @escaping (String) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Eyebrow(text: title).padding(.bottom, 4)
+            Eyebrow(text: String(localized: title)).padding(.bottom, 4)
             ForEach(Array(options.enumerated()), id: \.element) { index, option in
                 let on = selected.contains(option)
                 if index > 0 { Divider() }
@@ -481,7 +490,7 @@ struct FoodPreferencesForm: View {
         let cleaned = CycleStore.cleanDislike(newDislike)
         let canAdd = !cleaned.isEmpty && !dislikes.contains(cleaned) && dislikes.count < 20
         return VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: "Don't like")
+            Eyebrow(text: String(localized: "Don't like"))
             Text("Foods to leave out of meal ideas")
                 .font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
             HStack(spacing: 8) {
@@ -507,7 +516,7 @@ struct FoodPreferencesForm: View {
                     ForEach(dislikes, id: \.self) { food in
                         Button { dislikes.removeAll { $0 == food } } label: {
                             HStack(spacing: 6) {
-                                Text(Self.label(food)).font(.system(size: 14, weight: .medium))
+                                Text(Self.capitalizedLabel(food)).font(.system(size: 14, weight: .medium))
                                 Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.inkSoft)
                             }
                             .padding(.horizontal, 12).padding(.vertical, 7)
