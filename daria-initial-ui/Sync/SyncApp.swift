@@ -4,7 +4,7 @@ import FirebaseCore
 import GoogleSignIn
 
 @main
-struct PetalApp: App {
+struct SyncApp: App {
     @State private var auth: AuthModel
 
     init() {

@@ -1,5 +1,5 @@
 import XCTest
-@testable import PetalComparison
+@testable import SyncComparison
 
 final class CompanionResponseFocusTests: XCTestCase {
     func testExactScreenshotFoodQuestionRoutesToNutrition() {

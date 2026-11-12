@@ -1,5 +1,5 @@
 import Foundation
-@testable import PetalComparison
+@testable import SyncComparison
 
 /// Fictional fixture, also used by unit tests. Dates supplied by the caller.
 enum ComparisonMockData {

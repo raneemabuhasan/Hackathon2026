@@ -2,7 +2,7 @@ import WidgetKit
 import SwiftUI
 
 @main
-struct PetalWidgets: WidgetBundle {
+struct SyncWidgets: WidgetBundle {
     var body: some Widget { LogShortcutWidget() }
 }
 
