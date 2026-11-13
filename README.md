@@ -122,7 +122,9 @@ Sign in with Apple and HealthKit integration are not implemented in this checkou
 
 ## Companion
 
-Curated education, profile and reminder tools require no web service. See [EDUCATION.md](daria-initial-ui/EDUCATION.md) for behavior and manual acceptance checks.
+Curated education resources are bundled with the app. Saved profile and reminder
+actions use Firestore, and generated companion replies use Firebase AI Logic.
+See [EDUCATION.md](daria-initial-ui/EDUCATION.md) for behavior and manual acceptance checks.
 
 ## Home screen widget checks
 
