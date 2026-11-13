@@ -1,18 +1,21 @@
 # Sync — Hackathon 2026
 
-The shared app is Daria’s Sync boilerplate in `daria-initial-ui/`.
+Sync (formerly Petal) is a SwiftUI wellness app with cycle tracking, daily symptom
+logs, reminders, meal planning, and an AI companion. The shared app lives in
+`daria-initial-ui/`.
 `MenstrualCycleWellnessCompanion/` is the earlier starter project; use Sync for new app work.
 
 ## Run locally
 
-1. Clone this repository, or pull the latest `main` after this compatibility PR is merged.
+1. Clone this repository, or pull the latest `main`.
 2. Open `daria-initial-ui/Sync.xcodeproj` in Xcode.
 3. Select the **Sync** app scheme and an installed iPhone simulator running iOS 17 or later.
 4. Press **Command-R** to build and run.
 
 Xcode 15.4 is the compatibility baseline. The deployment target is iOS 17.0.
 Newer Xcode versions should be checked by teammates; compatibility with every version is not guaranteed.
-There is no separate test project. Simulator runs do not require an Apple development team; physical-device runs require signing setup.
+Foundation-only unit tests run through the Swift package described below.
+Simulator runs do not require an Apple development team; physical-device runs require signing setup.
 
 Swift packages (Firebase, GoogleSignIn, Lottie) download automatically the first time Xcode opens the project. Their versions are pinned so they still build on Xcode 15.4: Firebase exactly 11.13.0, GoogleSignIn 9.0.x, Lottie 4.5.x and swift-protobuf exactly 1.33.1. Newer releases need Xcode 16+ (Firebase 11.14+ uses Swift 6 syntax even though its package says 5.9), so don't upgrade them without checking with the team.
 
@@ -70,6 +73,36 @@ xcodebuild -project daria-initial-ui/Sync.xcodeproj -scheme Sync -sdk iphonesimu
 ```
 
 The simulator build checks compilation; manually exercise the tabs and logging flow after launch.
+
+## Unit tests
+
+From the repository root, run:
+
+```sh
+swift test --package-path daria-initial-ui
+```
+
+`daria-initial-ui/Package.swift` builds the `SyncComparison` library and the
+tests in `daria-initial-ui/ComparisonTests/`. These cover cycle forecasts,
+period history, symptom comparisons, password requirements, education resources,
+and companion logging and response contracts. They do not exercise Firebase
+authentication, Firestore writes, Gemini requests, or the app's SwiftUI screens.
+The earlier starter project's test targets are separate from this package.
+
+## Services and configuration
+
+Email/password and Google sign-in use Firebase Authentication. Account deletion
+is available in Settings and asks for password or Google reauthentication before
+deleting stored data and the authentication account. Verify both flows with test
+accounts before treating account-deletion work as complete.
+
+The companion uses Firebase AI Logic with the Vertex AI backend. Its model names
+and requested location are defined in `daria-initial-ui/Sync/Assistant.swift`;
+the current location setting is `global`. This code setting does not establish
+data residency, retention, training policies, or backup configuration. Those need
+verification in the service configuration and provider agreements.
+
+Sign in with Apple and HealthKit integration are not implemented in this checkout.
 
 ## Calendar and onboarding checks
 
